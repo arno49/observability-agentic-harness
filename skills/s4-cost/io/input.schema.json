@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s4-cost/input.schema.json",
+  "title": "S4 cost lens — input",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "points"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "points": {
+      "type": "array",
+      "minItems": 1,
+      "description": "surface_map.json points of kind llm_generation only -- the lens designs for these, no others.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "file", "line"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "llm_generation" },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "symbol": { "type": "string" },
+          "framework": { "type": "string" },
+          "sync_nature": { "enum": ["sync", "async", "queued", "streamed"] },
+          "gap_status": { "enum": ["dark", "partial", "covered"], "description": "from gap_model.json, if available" },
+          "gap_priority": { "enum": ["p0", "p1", "p2", "p3"] }
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "context.yaml, if an interview has run -- optional; the lens must produce valid, complete signals for every point with or without it, but workflow criticality (when present) changes how tight spend thresholds/throttling should be.",
+      "properties": {
+        "workflows": { "type": "array" }
+      }
+    }
+  }
+}

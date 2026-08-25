@@ -101,3 +101,8 @@ def design_generation_capture(points, repo_git_sha, context=None, model=None, _c
 def design_pii_governance(points, repo_git_sha, context=None, model=None, _completion_fn=None):
     llm_gen_points = [p for p in points if p.get("kind") == "llm_generation"]
     return design_lens("s4-pii-governance", llm_gen_points, repo_git_sha, context, model, _completion_fn)
+
+
+def design_cost(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+    llm_gen_points = [p for p in points if p.get("kind") == "llm_generation"]
+    return design_lens("s4-cost", llm_gen_points, repo_git_sha, context, model, _completion_fn)
