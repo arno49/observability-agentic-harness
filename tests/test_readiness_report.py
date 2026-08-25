@@ -97,14 +97,25 @@ def test_no_context_omits_data_and_governance_section_rather_than_fabricating():
 
 
 def test_known_limitations_and_unknown_evidence_always_present():
-    """The honest scoping (1-of-9 lens, 1-of-3 persona, no S10/S11) must
-    always be stated, not just when something fails."""
+    """The honest scoping (5-of-9 lens, no S10/S11) must always be stated,
+    not just when something fails."""
     report = build_readiness_report(
         EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS, repo_git_sha="deadbeef",
     )
-    assert len(report["known_limitations"]) >= 3
+    assert len(report["known_limitations"]) >= 2
     assert any("S10" in u for u in report["recommendation"]["evidence_position"]["unknown"])
     assert any("S11" in u for u in report["recommendation"]["evidence_position"]["unknown"])
+
+
+def test_missing_persona_verdicts_surfaced_as_unknown():
+    """PASSING_PANEL only has a cost_skeptic verdict -- sre/security ran
+    but produced none this round (or never ran) must be named explicitly,
+    not silently absent from evidence_position.unknown."""
+    report = build_readiness_report(
+        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS, repo_git_sha="deadbeef",
+    )
+    unknown = report["recommendation"]["evidence_position"]["unknown"]
+    assert any("sre" in u and "security" in u for u in unknown)
 
 
 def test_no_gates_or_panel_run_does_not_falsely_claim_confirmed():

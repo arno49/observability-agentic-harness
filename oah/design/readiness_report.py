@@ -82,22 +82,29 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
         if trust_boundaries else None
     )
 
+    all_personas = {"cost_skeptic", "sre", "security"}
+    ran_personas = {v["persona"] for v in panel_verdicts}
+    missing_personas = sorted(all_personas - ran_personas)
+
     confirmed = []
     if gate_findings and not any(not f["passed"] and f["severity"] == "error" for f in gate_findings):
         confirmed.append("S5 deterministic invariant gates pass on the current design")
     if panel_verdicts and all(v["overall"] != "fail" for v in panel_verdicts):
-        confirmed.append("S6 reviewed personas (cost_skeptic only, 1 of 3) found no error-severity issues")
+        confirmed.append(
+            f"S6 reviewed personas ({len(ran_personas)} of 3: {sorted(ran_personas)}) found no error-severity issues"
+        )
 
     unknown = []
     if not gate_findings:
         unknown.append("S5 gates have not run -- no design fragment exists yet to check (S4 did not produce one)")
     if not panel_verdicts:
         unknown.append("S6 panel has not run -- no design fragment exists yet to review (S4 did not produce one)")
+    elif missing_personas:
+        unknown.append(f"S6 persona(s) did not produce a verdict this run: {missing_personas}")
     unknown += [
         "S10 instrumentation has not been applied to the target repo",
         "S11 dynamic validation has not run -- no real Trace Completeness Rate or overhead measurement exists",
         "4 of 9 S4 lenses are not built (only generation-capture, pii-governance, cost, ops, retrieval) -- coverage claims are scoped to those lenses only",
-        "2 of 3 S6 personas are not built (only cost_skeptic) -- SRE and security review have not happened",
     ]
     if not workflow_names:
         unknown.append("no context.yaml interview has run -- workflow criticality, PII presence, and governance answers are all unknown")
@@ -106,7 +113,6 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
         "Only the generation-capture, pii-governance, cost, ops, and retrieval S4 lenses are "
         "built; tracing, tools, feedback, and realtime-multimodal lenses are not designed for "
         "this repo yet.",
-        "Only the cost_skeptic S6 persona has reviewed this design; SRE and security personas have not run.",
         "rollout_step ordering is gap-priority-only, not real workflow-criticality-ordered rollout_plan.md.",
     ]
 

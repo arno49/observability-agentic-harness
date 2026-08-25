@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s6-security/output.schema.json",
+  "title": "S6 security — output",
+  "description": "Same shape as schemas/panel_verdict.schema.json (source of truth), persona fixed to security -- self-contained per s6-cost-skeptic's own io/ schema precedent.",
+  "type": "object",
+  "required": ["schema_version", "persona", "repo_git_sha", "overall", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "persona": { "const": "security" },
+    "repo_git_sha": { "type": "string" },
+    "overall": { "enum": ["pass", "pass_with_findings", "fail"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category", "severity", "gate", "summary", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "category": { "type": "string" },
+          "severity": { "enum": ["error", "warning"] },
+          "gate": { "type": "string" },
+          "summary": { "type": "string" },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "recommendation": { "type": "string" }
+        }
+      }
+    }
+  }
+}

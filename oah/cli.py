@@ -235,8 +235,8 @@ def cmd_gaps(args):
 
 def cmd_design(args):
     """S4 (partial: generation-capture + pii-governance + cost + ops + retrieval,
-    five of nine listed lenses) + S5's deterministic gates + S6 (partial:
-    cost-skeptic persona only, one of three). Not `oah design`'s full
+    five of nine listed lenses) + S5's deterministic gates + S6 (all
+    three personas: cost_skeptic, sre, security). Not `oah design`'s full
     scope per architecture.md -- runs what exists and says so explicitly,
     rather than silently producing an incomplete design as if it were
     complete. A lens that fails to produce a fragment (e.g. missing
@@ -253,7 +253,7 @@ def cmd_design(args):
         design_retrieval, LensDesignError,
     )
     from oah.design.gates import run_gates, gates_passed
-    from oah.design.panel import run_cost_skeptic, PanelReviewError
+    from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
     from oah.schemas import validate
 
     git_sha = _git_sha(args.target)
@@ -297,20 +297,27 @@ def cmd_design(args):
         findings.extend(run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map)))
     s5_passed = gates_passed(findings)
 
-    panel_error = None
-    verdict = None
-    try:
-        verdict = run_cost_skeptic(fragments, git_sha, context=context)
-    except PanelReviewError as e:
-        panel_error = str(e)
+    verdicts = []
+    for persona_name, run_fn in (
+        ("cost_skeptic", run_cost_skeptic),
+        ("sre", run_sre),
+        ("security", run_security),
+    ):
+        try:
+            verdict = run_fn(fragments, git_sha, context=context)
+        except PanelReviewError as e:
+            print(f"S6 {persona_name} panel did not run: {e}", file=sys.stderr)
+            continue
+        if verdict:
+            verdicts.append(verdict)
 
-    s6_passed = verdict is None or verdict["overall"] != "fail"
+    s6_passed = all(v["overall"] != "fail" for v in verdicts)
 
     output = {
         "design_fragments": fragments,
         "gate_findings": [f.__dict__ for f in findings],
         "gates_passed": s5_passed,
-        "panel_verdicts": [verdict] if verdict else [],
+        "panel_verdicts": verdicts,
     }
     if args.output:
         Path(args.output).write_text(json.dumps(output, indent=2) + "\n")
@@ -324,17 +331,16 @@ def cmd_design(args):
             print(f"[{marker}] S5 {f.gate}: {f.reason}", file=sys.stderr)
     print(f"S5 gates: {'PASSED' if s5_passed else 'FAILED'}", file=sys.stderr)
 
-    if panel_error:
-        print(f"S6 cost-skeptic panel did not run: {panel_error}", file=sys.stderr)
-    elif verdict is not None:
+    for verdict in verdicts:
         for f in verdict["findings"]:
             marker = "ERROR" if f["severity"] == "error" else "WARN"
-            print(f"[{marker}] S6 cost_skeptic {f['gate']}: {f['summary']}", file=sys.stderr)
-        print(f"S6 cost_skeptic: {verdict['overall'].upper()}", file=sys.stderr)
+            print(f"[{marker}] S6 {verdict['persona']} {f['gate']}: {f['summary']}", file=sys.stderr)
+        print(f"S6 {verdict['persona']}: {verdict['overall'].upper()}", file=sys.stderr)
 
     print("\nnote: only the generation-capture, pii-governance, cost, ops, and retrieval "
-          "lenses (of nine) and the cost_skeptic persona (of three) are built — this is a "
-          "partial design/review, not the full S4/S6 output.", file=sys.stderr)
+          "lenses (of nine) are built — this is a partial design/review, not the full S4 "
+          "output; all three S6 personas (cost_skeptic, sre, security) are built and run.",
+          file=sys.stderr)
     return 0 if (s5_passed and s6_passed) else 1
 
 
@@ -500,7 +506,7 @@ def cmd_readiness(args):
         design_retrieval, LensDesignError,
     )
     from oah.design.gates import run_gates
-    from oah.design.panel import run_cost_skeptic, PanelReviewError
+    from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
     from oah.design.dto_generator import generate_dtos, DtoGenerationError
     from oah.design.readiness_report import build_readiness_report
@@ -550,12 +556,18 @@ def cmd_readiness(args):
                 for f in run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map))
             ]
 
-            try:
-                verdict = run_cost_skeptic(fragments, git_sha, context=context)
+            for persona_name, run_fn in (
+                ("cost_skeptic", run_cost_skeptic),
+                ("sre", run_sre),
+                ("security", run_security),
+            ):
+                try:
+                    verdict = run_fn(fragments, git_sha, context=context)
+                except PanelReviewError as e:
+                    print(f"warning: S6 {persona_name} panel did not run: {e}", file=sys.stderr)
+                    continue
                 if verdict:
-                    panel_verdicts = [verdict]
-            except PanelReviewError as e:
-                print(f"warning: S6 cost-skeptic panel did not run: {e}", file=sys.stderr)
+                    panel_verdicts.append(verdict)
 
             try:
                 event_schema = build_event_schema(fragments, git_sha)

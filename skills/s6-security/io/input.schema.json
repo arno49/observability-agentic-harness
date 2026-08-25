@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s6-security/input.schema.json",
+  "title": "S6 security — input",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "design_fragments"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "design_fragments": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Whatever S4 lens design_fragments exist so far -- not necessarily all nine lenses.",
+      "items": { "type": "object" }
+    },
+    "context": {
+      "type": "object",
+      "description": "context.yaml, if an interview has run -- optional; trust_boundaries and source_inventory ground checks 4 and 5, but the persona must still produce a valid verdict without it."
+    }
+  }
+}

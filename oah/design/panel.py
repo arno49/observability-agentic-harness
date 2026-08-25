@@ -91,3 +91,11 @@ def run_persona(skill_name, design_fragments, repo_git_sha, context=None, model=
 
 def run_cost_skeptic(design_fragments, repo_git_sha, context=None, model=None, _completion_fn=None):
     return run_persona("s6-cost-skeptic", design_fragments, repo_git_sha, context, model, _completion_fn)
+
+
+def run_sre(design_fragments, repo_git_sha, context=None, model=None, _completion_fn=None):
+    return run_persona("s6-sre", design_fragments, repo_git_sha, context, model, _completion_fn)
+
+
+def run_security(design_fragments, repo_git_sha, context=None, model=None, _completion_fn=None):
+    return run_persona("s6-security", design_fragments, repo_git_sha, context, model, _completion_fn)
