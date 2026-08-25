@@ -1,0 +1,34 @@
+commit 3bccc37e5a44a0f7071055175f06c2c1c61ffd0c
+Author: Ivan Bogomazov <ivan.bogomazov@gmail.com>
+Date:   Tue Aug 25 11:20:27 2026 -0400
+
+    instrument: apply dto-002 (agents/eligibility.py telemetry wrap)
+
+diff --git a/agents/eligibility.py b/agents/eligibility.py
+index 3f3b943..b3b5506 100644
+--- a/agents/eligibility.py
++++ b/agents/eligibility.py
+@@ -7,6 +7,7 @@ from typing import Generator
+ 
+ import anthropic
+ 
++import oah_telemetry
+ from beacon_logging import get_logger
+ from config import ELIGIBILITY_MODEL
+ from models import (
+@@ -145,6 +146,7 @@ def _parse_criteria(client: anthropic.Anthropic, eligibility_text: str) -> list[
+     if not eligibility_text.strip():
+         return []
+ 
++    oah_telemetry.emit("gen_ai.request.start", model=ELIGIBILITY_MODEL)
+     response = client.messages.create(
+         model=ELIGIBILITY_MODEL,
+         max_tokens=4096,
+@@ -153,6 +155,7 @@ def _parse_criteria(client: anthropic.Anthropic, eligibility_text: str) -> list[
+         tool_choice={"type": "tool", "name": "parse_criteria"},
+         messages=[{"role": "user", "content": eligibility_text}],
+     )
++    oah_telemetry.emit("gen_ai.request.end", model=ELIGIBILITY_MODEL)
+ 
+     tool_use = next((b for b in response.content if b.type == "tool_use"), None)
+     if tool_use is None:

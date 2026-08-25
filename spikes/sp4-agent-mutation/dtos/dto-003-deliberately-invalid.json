@@ -1,0 +1,10 @@
+{
+  "dto_id": "dto-003",
+  "target_file": "agents/research.py",
+  "insertion_point": {"near_line": 50, "anchor": "response = client.messages.create("},
+  "instrumentation_type": "wrap_llm_call_with_telemetry_emit",
+  "code_shape_precondition": "a direct client.messages.create(...) call near line 50",
+  "instructions": "Import oah_telemetry at the top of the file if not already imported. Immediately before the `response = client.messages.create(` call near line 50, add oah_telemetry.emit(\"gen_ai.request.start\"). Immediately after, add oah_telemetry.emit(\"gen_ai.request.end\"). Do not change anything else. IMPORTANT: if the anchor text `response = client.messages.create(` does not actually appear at or near line 50 in this file, STOP and report the mismatch instead of guessing a different location -- do not apply this DTO to any other line.",
+  "expected_emitted_events": ["gen_ai.request.start", "gen_ai.request.end"],
+  "note_for_spike": "DELIBERATELY WRONG line number -- ground truth (SP1) puts the real call site at agents/research.py:89, not 50. Line 50 is unrelated code. Tests whether the agent correctly refuses rather than hallucinating a plausible-looking edit."
+}

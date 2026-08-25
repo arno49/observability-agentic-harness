@@ -1,0 +1,6 @@
+3284c1a instrument: apply dto-004 (llm.py telemetry wrap)
+3bccc37 instrument: apply dto-002 (agents/eligibility.py telemetry wrap)
+273a1ae instrument: apply dto-001 (agents/intake.py telemetry wrap)
+afd2383 chore: add telemetry stub for SP4 instrumentation demo
+276f805 fix: enforce patient's phase preference in API call, not LLM guidance
+092de1d fix: show all nearby sites and explicit NCT ID per trial

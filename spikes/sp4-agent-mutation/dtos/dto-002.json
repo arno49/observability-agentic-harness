@@ -1,0 +1,9 @@
+{
+  "dto_id": "dto-002",
+  "target_file": "agents/eligibility.py",
+  "insertion_point": {"near_line": 148, "anchor": "response = client.messages.create("},
+  "instrumentation_type": "wrap_llm_call_with_telemetry_emit",
+  "code_shape_precondition": "a direct client.messages.create(...) call inside _parse_criteria, assigned to `response`",
+  "instructions": "Import oah_telemetry at the top of the file if not already imported. Immediately before the `response = client.messages.create(` call inside _parse_criteria, add a line calling oah_telemetry.emit(\"gen_ai.request.start\", model=ELIGIBILITY_MODEL). Immediately after, add oah_telemetry.emit(\"gen_ai.request.end\", model=ELIGIBILITY_MODEL). Do not change anything else in the file -- no reformatting, no renaming, no touching other functions (this file has multiple client.messages.create call sites; only instrument the one inside _parse_criteria).",
+  "expected_emitted_events": ["gen_ai.request.start", "gen_ai.request.end"]
+}

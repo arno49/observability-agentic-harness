@@ -1,0 +1,44 @@
+diff --git a/agents/research.py b/agents/research.py
+index 3422107..5f22b12 100644
+--- a/agents/research.py
++++ b/agents/research.py
+@@ -5,6 +5,7 @@ from typing import Generator
+ 
+ import anthropic
+ 
++import oah_telemetry
+ from agents.eligibility import bulk_parse_and_strip
+ from beacon_logging import get_logger
+ from config import RESEARCH_MODEL
+@@ -86,6 +87,7 @@ def run_research_agent(client: anthropic.Anthropic, profile: PatientProfile) ->
+     ]
+ 
+     while True:
++        oah_telemetry.emit("gen_ai.request.start", model=RESEARCH_MODEL)
+         response = client.messages.create(
+             model=RESEARCH_MODEL,
+             max_tokens=3000,
+@@ -93,6 +95,7 @@ def run_research_agent(client: anthropic.Anthropic, profile: PatientProfile) ->
+             tools=cached_tools(RESEARCH_TOOLS),
+             messages=messages,
+         )
++        oah_telemetry.emit("gen_ai.request.end", model=RESEARCH_MODEL)
+ 
+         messages.append({"role": "assistant", "content": response.content})
+ 
+@@ -168,6 +171,7 @@ def stream_research_agent(
+ 
+     while True:
+         stream_text = ""
++        oah_telemetry.emit("gen_ai.request.start", model=RESEARCH_MODEL)
+         with client.messages.stream(
+             model=RESEARCH_MODEL,
+             max_tokens=3000,
+@@ -179,6 +183,7 @@ def stream_research_agent(
+                 stream_text += chunk
+                 yield ("token", chunk)
+             rresponse = stream.get_final_message()
++        oah_telemetry.emit("gen_ai.request.end", model=RESEARCH_MODEL)
+ 
+         messages.append({"role": "assistant", "content": rresponse.content})
+ 

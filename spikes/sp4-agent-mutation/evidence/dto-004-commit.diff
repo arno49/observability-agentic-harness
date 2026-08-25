@@ -1,0 +1,30 @@
+commit 3284c1abf44c28ece886bd8bf3c3f2eb974e5eda
+Author: Ivan Bogomazov <ivan.bogomazov@gmail.com>
+Date:   Tue Aug 25 11:25:23 2026 -0400
+
+    instrument: apply dto-004 (llm.py telemetry wrap)
+
+diff --git a/llm.py b/llm.py
+index ff77280..714d88e 100644
+--- a/llm.py
++++ b/llm.py
+@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
+ import anthropic
+ import openai
+ 
++import oah_telemetry
++
+ 
+ def cached_system(text: str) -> list[dict]:
+     """Wrap a system prompt string for Anthropic prompt caching."""
+@@ -57,8 +59,10 @@ class AnthropicProvider(LLMProvider):
+         )
+         if system:
+             kwargs["system"] = system
++        oah_telemetry.emit("gen_ai.request.start", model=self.MODEL)
+         with self._client.messages.stream(**kwargs) as stream:
+             response = stream.get_final_message()
++        oah_telemetry.emit("gen_ai.request.end", model=self.MODEL)
+         return next((b.text for b in response.content if b.type == "text"), "")
+ 
+ 

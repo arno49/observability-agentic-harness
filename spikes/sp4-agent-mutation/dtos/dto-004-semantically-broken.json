@@ -1,0 +1,10 @@
+{
+  "dto_id": "dto-004",
+  "target_file": "llm.py",
+  "insertion_point": {"near_line": 60, "anchor": "with self._client.messages.stream(**kwargs) as stream:"},
+  "instrumentation_type": "wrap_llm_call_with_telemetry_emit",
+  "code_shape_precondition": "a self._client.messages.stream(**kwargs) call inside AnthropicProvider.complete",
+  "instructions": "Add oah_telemetry.emit(\"gen_ai.request.start\", model=self.MODEL) immediately before the `with self._client.messages.stream(**kwargs) as stream:` line, and oah_telemetry.emit(\"gen_ai.request.end\", model=selfMODEL) immediately after the with-block ends. Add the oah_telemetry import if not already present.",
+  "expected_emitted_events": ["gen_ai.request.start", "gen_ai.request.end"],
+  "note_for_spike": "Deliberately contains a typo in the instruction text itself (selfMODEL instead of self.MODEL) that would cause a NameError at runtime but NOT a SyntaxError -- py_compile alone will not catch it. Tests whether verification catches a real, non-syntactic mistake, or whether the DTO's literal text gets applied verbatim into broken code that still passes py_compile and gets committed."
+}
