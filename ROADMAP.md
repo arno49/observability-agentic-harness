@@ -149,6 +149,20 @@ M2 closes; Java follows using the same bar, timeboxed independently so a slow Ja
 port doesn't block M2. *Depends on:* SP10, E2. *Starts immediately after SP10's
 decision record lands — not deferred to post-M4.*
 
+### E12 — Second domain pack *(stub, post-M4)*
+Proves — or disproves — the pipeline-core/domain-pack split from README's "Why":
+port S3's reference domain model and S4's three GenAI-specific lenses
+(generation-capture, retrieval, realtime-multimodal) to one concrete non-LLM
+domain, without touching S1–S2, S5–S11, or the DTO/schema-as-truth mechanics.
+Candidate domain and lens replacements are not chosen yet — picking one now would
+be designing the abstraction before a second real instance tests it, the same
+mistake SP10 already avoids for languages by requiring two. *DoD:* the second
+domain pack reaches the M2-equivalent gate (design passes S5/S6 on a corpus repo
+in that domain) while changing zero pipeline-core files outside the
+`event-model.md`-equivalent and the swapped S4 lenses — if pipeline-core needs
+edits to fit the second domain, that itself is the finding, not a failure.
+*Depends on:* M4 (GenAI domain pack proven end-to-end first).
+
 ## Spikes
 
 | ID | Question | Timebox | Blocks | Output |
@@ -173,7 +187,8 @@ M1:  E1 ─┬─ E2 ── E7(start)
 M2:      └─ E3 ── E4          E8(start, continuous)
 M3:  E5
 M4:  E6 ── E9 ── E10
-post-M4: managed-backend targets, Go/.NET (if SP10's abstraction earns it)
+post-M4: managed-backend targets, Go/.NET (if SP10's abstraction earns it),
+         E12 (second domain pack, if pursued)
 ```
 
 ## Explicit non-goals (for now)
@@ -187,4 +202,5 @@ post-M4: managed-backend targets, Go/.NET (if SP10's abstraction earns it)
   and DTO/schema-as-truth mechanics are domain-agnostic by construction (see
   README's "Why") — what's LLM-specific is concentrated in `event-model.md` and
   three of S4's eight lenses — but that portability isn't being exercised or
-  promised until one domain (GenAI) is dogfooded end-to-end through M4.
+  promised until one domain (GenAI) is dogfooded end-to-end through M4. Stubbed
+  as E12, not scheduled.
