@@ -116,3 +116,8 @@ def design_ops(points, repo_git_sha, context=None, model=None, _completion_fn=No
 def design_retrieval(points, repo_git_sha, context=None, model=None, _completion_fn=None):
     retrieval_points = [p for p in points if p.get("kind") == "retrieval"]
     return design_lens("s4-retrieval", retrieval_points, repo_git_sha, context, model, _completion_fn)
+
+
+def design_feedback(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+    feedback_points = [p for p in points if p.get("kind") == "feedback_ingest"]
+    return design_lens("s4-feedback", feedback_points, repo_git_sha, context, model, _completion_fn)

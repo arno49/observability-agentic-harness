@@ -174,3 +174,13 @@ def test_gap_omits_workflow_field_when_unresolved():
                          "detection": "signature", "confidence": 0.95}])
     gm = build_gap_model(sm, _telemetry())
     assert "workflow" not in gm["gaps"][0]
+
+
+def test_feedback_ingest_kind_produces_a_gap():
+    sm = _surface_map([{"id": "sp-0001", "kind": "feedback_ingest", "file": "app.py", "line": 10,
+                         "detection": "signature", "confidence": 0.95}])
+    gm = build_gap_model(sm, _telemetry())
+    validate("gap_model", gm)
+    assert len(gm["gaps"]) == 1
+    assert gm["gaps"][0]["dimension"] == "feedback"
+    assert gm["gaps"][0]["status"] == "dark"

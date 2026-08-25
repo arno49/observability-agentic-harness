@@ -18,12 +18,14 @@ PROXIMITY_LINES = 15  # a logger call site within this many lines of a
                        # heuristic, not a claim the log line actually
                        # captures anything about that specific call.
 
-# S1 currently detects two surface_map point kinds (llm_generation,
-# retrieval) -- the dimension mapping below has two entries for that
-# reason, not an oversight; extend as S1/S4's kind vocabulary grows.
+# S1 currently detects three surface_map point kinds (llm_generation,
+# retrieval, feedback_ingest) -- the dimension mapping below has three
+# entries for that reason, not an oversight; extend as S1/S4's kind
+# vocabulary grows.
 KIND_TO_DIMENSION = {
     "llm_generation": "generation_capture",
     "retrieval": "retrieval",
+    "feedback_ingest": "feedback",
 }
 
 # status -> criticality -> priority. p0 reserved for the most severe case

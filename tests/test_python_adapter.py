@@ -295,3 +295,53 @@ result = client.query(vector=[0.1])
 """)
     assert resolved == []
     assert ambiguous == []
+
+
+# --- Third registry (langsmith -> feedback_ingest) --------------------------
+
+def test_langsmith_direct_call_resolved_as_feedback_ingest(tmp_path):
+    resolved, ambiguous = _detect(tmp_path, """
+from langsmith import Client
+client = Client()
+client.create_feedback(run_id="abc123", key="user_score", score=1)
+""")
+    assert len(resolved) == 1
+    assert ambiguous == []
+    assert resolved[0]["kind"] == "feedback_ingest"
+    assert resolved[0]["framework"] == "langsmith-sdk"
+
+
+def test_three_registries_in_one_file_all_resolved_independently(tmp_path):
+    resolved, ambiguous = _detect(tmp_path, """
+import anthropic
+import pinecone
+from langsmith import Client
+
+client = anthropic.Anthropic()
+pinecone.init(api_key="x", environment="y")
+index = pinecone.Index("my-index")
+ls_client = Client()
+
+message = client.messages.create(model="x")
+results = index.query(vector=[0.1, 0.2], top_k=5)
+ls_client.create_feedback(run_id="abc123", key="user_score", score=1)
+""")
+    assert ambiguous == []
+    kinds = {r["kind"] for r in resolved}
+    assert kinds == {"llm_generation", "retrieval", "feedback_ingest"}
+
+
+def test_langsmith_self_attr_class_prescan(tmp_path):
+    resolved, _ = _detect(tmp_path, """
+from langsmith import Client
+
+class FeedbackCollector:
+    def __init__(self):
+        self._ls = Client()
+
+    def record(self, run_id, score):
+        return self._ls.create_feedback(run_id=run_id, key="user_score", score=score)
+""")
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "feedback_ingest"
+    assert resolved[0]["symbol"] == "FeedbackCollector.record"

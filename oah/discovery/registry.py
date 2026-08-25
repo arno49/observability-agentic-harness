@@ -5,7 +5,7 @@ method-suffix shapes (the last N attribute-chain segments of a call, e.g.
 `("messages", "create")` for `client.messages.create(...)`) that count as
 a real call to that SDK — wired to one `surface_map.json` `kind`.
 
-Two registries so far:
+Three registries so far:
 
 - **anthropic-sdk -> llm_generation** — S1's first target stack per
   ROADMAP.md E2 ("Python + raw Anthropic SDK"), carried over verbatim from
@@ -27,6 +27,14 @@ Two registries so far:
   this codebase. Suffix length 1 (`index.query`) since Pinecone calls
   methods directly on the index object, unlike Anthropic's nested
   resources.
+- **langsmith -> feedback_ingest** — `from langsmith import Client; client
+  = Client(); client.create_feedback(run_id=..., key="...", score=...)`.
+  A direct, single-hop constructor exactly like pinecone's, and
+  `create_feedback` is LangSmith's own real method name for binding user
+  feedback/reviewer verdicts to a trace/run ID — architecture.md's feedback
+  lens description verbatim. Suffix length 1, and unlike pinecone's
+  `query`, `create_feedback` is specific enough that it shouldn't meaningfully
+  raise the ambiguous-candidate rate the way a generic verb would.
 
 `_walk_calls` in python_adapter.py tries the longest declared suffix
 length first when matching a call site's attribute chain, so a registry
@@ -65,7 +73,15 @@ PINECONE = {
     "framework": "pinecone-sdk",
 }
 
-REGISTRIES = [ANTHROPIC, PINECONE]
+LANGSMITH = {
+    "constructor_names": frozenset({"Client"}),
+    "sdk_module": "langsmith",
+    "method_suffixes": frozenset({("create_feedback",)}),
+    "surface_kind": "feedback_ingest",
+    "framework": "langsmith-sdk",
+}
+
+REGISTRIES = [ANTHROPIC, PINECONE, LANGSMITH]
 
 # Union across registries -- the resolver only needs to know "is this call
 # constructing SOME tracked SDK client", the specific registry is looked

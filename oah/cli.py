@@ -47,6 +47,7 @@ LENS_TO_POINT_KIND = {
     "cost": "llm_generation",
     "ops": "llm_generation",
     "retrieval": "retrieval",
+    "feedback": "feedback_ingest",
 }
 
 
@@ -234,8 +235,8 @@ def cmd_gaps(args):
 
 
 def cmd_design(args):
-    """S4 (partial: generation-capture + pii-governance + cost + ops + retrieval,
-    five of nine listed lenses) + S5's deterministic gates + S6 (all
+    """S4 (partial: generation-capture + pii-governance + cost + ops + retrieval
+    + feedback, six of nine listed lenses) + S5's deterministic gates + S6 (all
     three personas: cost_skeptic, sre, security). Not `oah design`'s full
     scope per architecture.md -- runs what exists and says so explicitly,
     rather than silently producing an incomplete design as if it were
@@ -250,7 +251,7 @@ def cmd_design(args):
     from oah.discovery.python_adapter import build_surface_map
     from oah.design.lens import (
         design_generation_capture, design_pii_governance, design_cost, design_ops,
-        design_retrieval, LensDesignError,
+        design_retrieval, design_feedback, LensDesignError,
     )
     from oah.design.gates import run_gates, gates_passed
     from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
@@ -279,6 +280,7 @@ def cmd_design(args):
         ("cost", design_cost),
         ("ops", design_ops),
         ("retrieval", design_retrieval),
+        ("feedback", design_feedback),
     ):
         try:
             fragment = design_fn(surface_map["points"], git_sha, context=context)
@@ -337,8 +339,8 @@ def cmd_design(args):
             print(f"[{marker}] S6 {verdict['persona']} {f['gate']}: {f['summary']}", file=sys.stderr)
         print(f"S6 {verdict['persona']}: {verdict['overall'].upper()}", file=sys.stderr)
 
-    print("\nnote: only the generation-capture, pii-governance, cost, ops, and retrieval "
-          "lenses (of nine) are built — this is a partial design/review, not the full S4 "
+    print("\nnote: only the generation-capture, pii-governance, cost, ops, retrieval, and "
+          "feedback lenses (of nine) are built — this is a partial design/review, not the full S4 "
           "output; all three S6 personas (cost_skeptic, sre, security) are built and run.",
           file=sys.stderr)
     return 0 if (s5_passed and s6_passed) else 1
@@ -356,7 +358,7 @@ def cmd_event_schema(args):
     from oah.discovery.python_adapter import build_surface_map
     from oah.design.lens import (
         design_generation_capture, design_pii_governance, design_cost, design_ops,
-        design_retrieval, LensDesignError,
+        design_retrieval, design_feedback, LensDesignError,
     )
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
 
@@ -377,6 +379,7 @@ def cmd_event_schema(args):
         ("cost", design_cost),
         ("ops", design_ops),
         ("retrieval", design_retrieval),
+        ("feedback", design_feedback),
     ):
         try:
             fragment = design_fn(surface_map["points"], git_sha)
@@ -402,9 +405,9 @@ def cmd_event_schema(args):
     else:
         print(json.dumps(schema, indent=2))
 
-    print(f"\nnote: only generation-capture's, pii-governance's, cost's, ops's, and "
-          f"retrieval's attributes are included (5 of 9 S4 lenses built) — this is a "
-          f"partial event schema.", file=sys.stderr)
+    print(f"\nnote: only generation-capture's, pii-governance's, cost's, ops's, "
+          f"retrieval's, and feedback's attributes are included (6 of 9 S4 lenses built) "
+          f"— this is a partial event schema.", file=sys.stderr)
     return 0
 
 
@@ -421,7 +424,7 @@ def cmd_dtos(args):
     from oah.discovery.gap_model import build_gap_model
     from oah.design.lens import (
         design_generation_capture, design_pii_governance, design_cost, design_ops,
-        design_retrieval, LensDesignError,
+        design_retrieval, design_feedback, LensDesignError,
     )
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
     from oah.design.dto_generator import generate_dtos, DtoGenerationError
@@ -450,6 +453,7 @@ def cmd_dtos(args):
         ("cost", design_cost),
         ("ops", design_ops),
         ("retrieval", design_retrieval),
+        ("feedback", design_feedback),
     ):
         try:
             fragment = design_fn(surface_map["points"], git_sha, context=context)
@@ -502,7 +506,8 @@ def cmd_dtos(args):
         "workflow-criticality ordering (architecture.md S7)"
     )
     print(f"\nnote: {rollout_note}. Only generation-capture's, pii-governance's, cost's, "
-          f"ops's, and retrieval's attributes are covered (5 of 9 S4 lenses).", file=sys.stderr)
+          f"ops's, retrieval's, and feedback's attributes are covered (6 of 9 S4 lenses).",
+          file=sys.stderr)
     return 0
 
 
@@ -517,7 +522,7 @@ def cmd_readiness(args):
     from oah.discovery.gap_model import build_gap_model
     from oah.design.lens import (
         design_generation_capture, design_pii_governance, design_cost, design_ops,
-        design_retrieval, LensDesignError,
+        design_retrieval, design_feedback, LensDesignError,
     )
     from oah.design.gates import run_gates
     from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
@@ -555,6 +560,7 @@ def cmd_readiness(args):
             ("cost", design_cost),
             ("ops", design_ops),
             ("retrieval", design_retrieval),
+            ("feedback", design_feedback),
         ):
             try:
                 fragment = design_fn(surface_map["points"], git_sha, context=context)
