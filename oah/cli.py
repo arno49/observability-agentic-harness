@@ -60,12 +60,14 @@ def cmd_estimate(args):
 
 
 def cmd_map(args):
-    """S1 deterministic pass only — no LLM disambiguation wired yet
-    (tracked separately; this command doesn't pretend that stage exists).
-    Real run tracking: creates a run_id, writes run_manifest.json, and
-    checkpoints S1 as completed in the state DB — the actual E1/E2
-    integration point, not just two commands that happen to coexist."""
+    """S1: deterministic pass, then real LLM disambiguation for whatever it
+    couldn't resolve (oah.discovery.disambiguate — SP8's frontier-tier
+    default, not a spike stand-in). Real run tracking: creates a run_id,
+    writes run_manifest.json, and checkpoints both s1_scan and
+    s1_disambiguate independently in the state DB — a crash between the two
+    resumes from whichever finished, not from zero."""
     from oah.discovery.python_adapter import build_surface_map
+    from oah.discovery.disambiguate import disambiguate, DisambiguationError, missing_credentials
 
     git_sha = _git_sha(args.target)
     if git_sha is None:
@@ -85,18 +87,44 @@ def cmd_map(args):
 
     with open_state_db(args.target) as db:
         db.create_run(run_id, args.target, git_sha, manifest["started_at"])
-        if db.is_checkpointed(run_id, "s1", "full_scan"):
-            print(f"s1 already checkpointed for {run_id} — resuming from stored result.", file=sys.stderr)
-            surface_map = db.get_checkpoint_result(run_id, "s1", "full_scan")
-            still_ambiguous = []
+
+        if db.is_checkpointed(run_id, "s1", "scan"):
+            print(f"s1 scan already checkpointed for {run_id} — resuming from stored result.", file=sys.stderr)
+            scan_result = db.get_checkpoint_result(run_id, "s1", "scan")
         else:
             surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
-            db.checkpoint(run_id, "s1", "full_scan", surface_map, _now())
+            scan_result = {"surface_map": surface_map, "still_ambiguous": still_ambiguous}
+            db.checkpoint(run_id, "s1", "scan", scan_result, _now())
+
+        still_ambiguous = scan_result["still_ambiguous"]
+        disambiguated = None
+        disambiguation_error = None
+
+        if still_ambiguous and not args.no_disambiguate:
+            if db.is_checkpointed(run_id, "s1", "disambiguate"):
+                disambiguated = db.get_checkpoint_result(run_id, "s1", "disambiguate")
+            else:
+                reason = missing_credentials()
+                if reason:
+                    disambiguation_error = reason
+                else:
+                    try:
+                        disambiguated = disambiguate(still_ambiguous)
+                        db.checkpoint(run_id, "s1", "disambiguate", disambiguated, _now())
+                    except DisambiguationError as e:
+                        disambiguation_error = str(e)
+
+        if disambiguated is not None:
+            surface_map, still_ambiguous = build_surface_map(
+                args.target, git_sha=git_sha, disambiguated=disambiguated
+            )
+
         rm.mark_stage_completed(manifest, "s1")
         manifest["completed_at"] = _now()
         db.mark_run_status(run_id, "completed", manifest["completed_at"])
 
     rm.save(manifest)
+    surface_map = scan_result["surface_map"] if disambiguated is None else surface_map
 
     if args.output:
         Path(args.output).write_text(json.dumps(surface_map, indent=2) + "\n")
@@ -106,9 +134,11 @@ def cmd_map(args):
 
     print(f"\nrun_id: {run_id}  (manifest: {rm.manifest_path(run_id)})", file=sys.stderr)
 
+    if disambiguation_error:
+        print(f"\nS1 disambiguation did not run: {disambiguation_error}", file=sys.stderr)
     if still_ambiguous:
-        print(f"{len(still_ambiguous)} candidate(s) need LLM disambiguation "
-              f"(not yet wired into this command) — see the batch below.", file=sys.stderr)
+        print(f"{len(still_ambiguous)} candidate(s) still need LLM disambiguation "
+              f"— see the batch below.", file=sys.stderr)
         if args.output:
             ambiguous_path = Path(args.output).with_suffix(".ambiguous.json")
             ambiguous_path.write_text(
@@ -189,6 +219,8 @@ def build_parser():
     p_map.add_argument("target", help="Path to the target repository")
     p_map.add_argument("-o", "--output", default=None, help="Write surface_map.json here instead of stdout")
     p_map.add_argument("--run-id", default=None, help="Resume this run_id if already checkpointed, else start it")
+    p_map.add_argument("--no-disambiguate", action="store_true",
+                        help="Skip the LLM disambiguation pass; leave ambiguous candidates unresolved")
     p_map.set_defaults(func=cmd_map)
 
     p_inventory = sub.add_parser("inventory", help="S2 existing telemetry inventory")

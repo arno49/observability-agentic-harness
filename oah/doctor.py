@@ -6,6 +6,7 @@ not the target repo's fault) and target-repo reality (not retriable). This
 command exists to surface the first category *before* a run starts, not
 discover it mid-run the way SP3's own beacon test did.
 """
+import os
 import shutil
 import subprocess
 import sys
@@ -48,6 +49,27 @@ def _check_jsonschema():
         return Check("jsonschema", False, str(e))
 
 
+def _check_litellm():
+    try:
+        import litellm  # noqa: F401
+        return Check("litellm", True, "importable")
+    except ImportError as e:
+        return Check("litellm", False, str(e))
+
+
+def _check_llm_credentials():
+    """Informational, not blocking — oah map --no-disambiguate, oah
+    estimate, oah inventory, and oah gaps all work without it; only S1's
+    LLM disambiguation pass needs it. Reported as ok=True either way so it
+    never fails `oah doctor` on its own; the detail text is what matters."""
+    from oah.discovery.disambiguate import missing_credentials
+    reason = missing_credentials()
+    if reason:
+        return Check("llm_credentials", True,
+                      f"optional, not configured (needed only for S1 LLM disambiguation): {reason}")
+    return Check("llm_credentials", True, "configured — ANTHROPIC_API_KEY is set")
+
+
 def _check_schemas_dir():
     from oah.schemas import SCHEMAS_DIR
     required = ["surface_map", "gap_model", "implementation_dto", "readiness_report", "run_manifest"]
@@ -80,6 +102,8 @@ def run(target_path=None):
         _check_git(),
         _check_tree_sitter(),
         _check_jsonschema(),
+        _check_litellm(),
+        _check_llm_credentials(),
         _check_schemas_dir(),
     ]
     if target_path is not None:
