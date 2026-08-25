@@ -150,6 +150,8 @@ docs/          architecture, event model, skills system, validation ladder, secu
 schemas/       JSON Schemas for inter-stage artifacts (the contract backbone)
 skills/        skill drafts (SKILL.md per stage lens)
 corpus/        reference repositories & eval fixtures for skill testing (planned)
+.github/       CI, incl. a skills-bundling Action — debug tooling, not the
+               pipeline itself; see docs/skills-bundle.md
 ROADMAP.md     milestones, epics, spikes
 ```
 

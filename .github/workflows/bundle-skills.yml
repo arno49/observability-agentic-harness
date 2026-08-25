@@ -1,0 +1,77 @@
+name: Bundle skills
+
+# Debug/tooling side-product: packages skills/*/SKILL.md (plus their
+# references/, examples/, io/ subfolders) into downloadable artifacts, so a
+# skill drafted in this repo can be loaded into a live Claude session without
+# manual copy-paste. See docs/skills-bundle.md for how to use the output.
+# Not part of the OAH pipeline itself.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "skills/**"
+      - ".github/workflows/bundle-skills.yml"
+  workflow_dispatch: {}
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate skill frontmatter
+        run: |
+          set -euo pipefail
+          fail=0
+          shopt -s nullglob
+          for f in skills/*/SKILL.md; do
+            dir=$(dirname "$f")
+            dirname=$(basename "$dir")
+            name=$(awk -F': ' '/^name:[[:space:]]/{print $2; exit}' "$f" | tr -d '\r')
+            if [ -z "$name" ]; then
+              echo "::error file=$f::missing 'name:' in frontmatter"
+              fail=1
+            elif [ "$name" != "$dirname" ]; then
+              echo "::error file=$f::frontmatter name '$name' does not match directory '$dirname'"
+              fail=1
+            fi
+            if ! grep -q '^description:' "$f"; then
+              echo "::error file=$f::missing 'description:' in frontmatter"
+              fail=1
+            fi
+            if ! grep -q '^version:' "$f"; then
+              echo "::warning file=$f::no 'version:' in frontmatter"
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "One or more skills failed validation — see errors above."
+            exit 1
+          fi
+
+      - name: Bundle skills
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p dist/individual dist/combined/skills
+
+          for d in skills/*/; do
+            name=$(basename "$d")
+            (cd skills && zip -rq "$OLDPWD/dist/individual/${name}.zip" "$name")
+            echo "packaged $name"
+          done
+
+          cp -r skills/. dist/combined/skills/
+          (cd dist/combined && zip -rq "$OLDPWD/dist/oah-skills-bundle.zip" skills)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oah-skills-bundle
+          path: dist/oah-skills-bundle.zip
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oah-skills-individual
+          path: dist/individual/*.zip
+          retention-days: 30
