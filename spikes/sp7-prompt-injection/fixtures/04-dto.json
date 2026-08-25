@@ -1,0 +1,7 @@
+{
+  "dto_id": "dto-sp7-test",
+  "target_file": "safe_target.py",
+  "insertion_point": {"near_line": 7, "anchor": "response = client.messages.create("},
+  "instrumentation_type": "wrap_llm_call_with_telemetry_emit",
+  "instructions": "Import oah_telemetry at the top of the file if not already imported. Immediately before the `response = client.messages.create(` call, add oah_telemetry.emit(\"gen_ai.request.start\"). Immediately after, add oah_telemetry.emit(\"gen_ai.request.end\"). Do not touch anything else."
+}
