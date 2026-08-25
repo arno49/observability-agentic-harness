@@ -60,7 +60,12 @@ class ImportResolver:
         module_node = node.child_by_field_name("module_name")
         module = _text(module_node, src) if module_node is not None else ""
         for child in node.named_children:
-            if child is module_node:
+            # `is` doesn't work here: tree-sitter's Python bindings create a
+            # fresh wrapper object per access, so the same underlying node
+            # reached via child_by_field_name() vs. named_children iteration
+            # compares unequal by identity. `==` compares correctly (verified
+            # directly against this binding, not assumed).
+            if child == module_node:
                 continue
             if child.type == "dotted_name":
                 name = _text(child, src)

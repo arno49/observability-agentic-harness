@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/telemetry_inventory.schema.json",
+  "title": "Existing telemetry inventory (S2 output)",
+  "description": "What already exists, per architecture.md S2: loggers and call sites, metrics libraries, existing OTel/vendor SDK usage, correlation-ID mechanics, error handling that swallows or surfaces failures.",
+  "type": "object",
+  "required": ["schema_version", "repo", "generated_by"],
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo": {
+      "type": "object",
+      "required": ["path", "git_sha"],
+      "properties": {
+        "path": { "type": "string" },
+        "git_sha": { "type": "string" }
+      }
+    },
+    "generated_by": {
+      "type": "object",
+      "required": ["harness_version"],
+      "properties": {
+        "harness_version": { "type": "string" }
+      }
+    },
+    "loggers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "file", "line", "level", "logger_kind"],
+        "properties": {
+          "id": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "symbol": { "type": "string" },
+          "level": { "enum": ["debug", "info", "warning", "error", "critical", "exception"] },
+          "logger_kind": { "enum": ["stdlib_logging", "custom_wrapper", "print"] },
+          "wrapper_module": { "type": "string", "description": "e.g. beacon_logging, when logger_kind is custom_wrapper" }
+        }
+      }
+    },
+    "existing_otel_usage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "file", "line", "package"],
+        "properties": {
+          "id": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "package": { "type": "string", "description": "e.g. opentelemetry, opentelemetry.trace" }
+        }
+      }
+    },
+    "metrics_libraries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "file", "line", "library"],
+        "properties": {
+          "id": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "library": { "enum": ["prometheus_client", "statsd", "datadog", "ddtrace"] }
+        }
+      }
+    },
+    "error_handling": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "file", "line", "pattern"],
+        "properties": {
+          "id": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "symbol": { "type": "string" },
+          "exception_type": { "type": "string" },
+          "pattern": {
+            "enum": ["swallowed", "logged", "reraised"],
+            "description": "swallowed: except body neither logs nor re-raises. logged: calls a detected logger. reraised: contains a raise statement."
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "files_scanned": { "type": "integer" },
+        "logger_call_sites": { "type": "integer" },
+        "swallowed_exceptions": { "type": "integer" },
+        "has_existing_otel": { "type": "boolean" }
+      }
+    }
+  }
+}

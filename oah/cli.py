@@ -118,6 +118,25 @@ def cmd_map(args):
     return 0
 
 
+def cmd_inventory(args):
+    """S2 deterministic pass: existing telemetry inventory."""
+    from oah.discovery.telemetry_scanner import build_telemetry_inventory
+
+    git_sha = _git_sha(args.target)
+    if git_sha is None:
+        print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
+        return 1
+
+    inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
+
+    if args.output:
+        Path(args.output).write_text(json.dumps(inventory, indent=2) + "\n")
+        print(f"Wrote {args.output}")
+    else:
+        print(json.dumps(inventory, indent=2))
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog="oah", description="Observability Agentic Harness")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -138,6 +157,11 @@ def build_parser():
     p_map.add_argument("-o", "--output", default=None, help="Write surface_map.json here instead of stdout")
     p_map.add_argument("--run-id", default=None, help="Resume this run_id if already checkpointed, else start it")
     p_map.set_defaults(func=cmd_map)
+
+    p_inventory = sub.add_parser("inventory", help="S2 existing telemetry inventory")
+    p_inventory.add_argument("target", help="Path to the target repository")
+    p_inventory.add_argument("-o", "--output", default=None, help="Write telemetry_inventory.json here instead of stdout")
+    p_inventory.set_defaults(func=cmd_inventory)
 
     return parser
 
