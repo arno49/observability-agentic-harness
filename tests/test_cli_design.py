@@ -237,6 +237,66 @@ def test_design_checks_each_fragment_against_its_own_point_kind(tmp_path):
     assert result["gates_passed"] is True
     lenses = {f["lens"] for f in result["design_fragments"]}
     assert lenses == {"generation-capture", "retrieval", "feedback"}
+
+
+def test_design_tracing_fragment_checked_against_every_point_regardless_of_kind(tmp_path):
+    """tracing is cross-cutting (LENS_TO_POINT_KIND["tracing"] is None) --
+    _point_ids_for_fragment must check a tracing fragment against every
+    point in the surface_map, not one kind. A fragment covering both an
+    llm_generation and a retrieval point must pass; one that only covers
+    the llm_generation point must fail (a real, meaningful negative
+    control, not just a happy-path check)."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text(
+        "import anthropic\nimport pinecone\n"
+        "client = anthropic.Anthropic()\n"
+        "pinecone.init(api_key='x', environment='y')\n"
+        "index = pinecone.Index('my-index')\n"
+        "results = index.query(vector=[0.1, 0.2], top_k=5)\n"
+        "message = client.messages.create(model='x')\n"
+    )
+    _init_git_repo(target)
+
+    def fake_tracing_covers_all(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+        return {
+            "schema_version": "0.1.0", "lens": "tracing", "repo_git_sha": repo_git_sha,
+            "failure_mode": "fail_open",
+            "signals": [{
+                "name": "oah.tracing.propagation_risk",
+                "surface_point_ids": [p["id"] for p in points],
+                "maps_to": {"kind": "oah_extension", "attribute": "oah.tracing.propagation_risk"},
+                "sensitivity_tier": "internal", "pii_masked": False,
+                "supports_decision": "whether a presence check is needed before trusting trace context",
+                "acting_role": "tracing owner", "latency_overhead_budget_ms": 1,
+            }],
+        }
+
+    args = argparse.Namespace(target=str(target), output=str(tmp_path / "design.json"), context=None)
+    with patch("oah.design.lens.design_tracing", side_effect=fake_tracing_covers_all):
+        rc = cmd_design(args)
+    result = json.loads((tmp_path / "design.json").read_text())
+    assert result["gates_passed"] is True
+
+    def fake_tracing_covers_only_one(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+        gen_point = next(p for p in points if p["kind"] == "llm_generation")
+        return {
+            "schema_version": "0.1.0", "lens": "tracing", "repo_git_sha": repo_git_sha,
+            "failure_mode": "fail_open",
+            "signals": [{
+                "name": "oah.tracing.propagation_risk", "surface_point_ids": [gen_point["id"]],
+                "maps_to": {"kind": "oah_extension", "attribute": "oah.tracing.propagation_risk"},
+                "sensitivity_tier": "internal", "pii_masked": False,
+                "supports_decision": "whether a presence check is needed before trusting trace context",
+                "acting_role": "tracing owner", "latency_overhead_budget_ms": 1,
+            }],
+        }
+
+    with patch("oah.design.lens.design_tracing", side_effect=fake_tracing_covers_only_one):
+        rc2 = cmd_design(args)
+    assert rc2 == 1
+    result2 = json.loads((tmp_path / "design.json").read_text())
+    assert result2["gates_passed"] is False
     assert rc == 0
 
 

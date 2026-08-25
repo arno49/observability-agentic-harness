@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s4-tracing/input.schema.json",
+  "title": "S4 tracing lens — input",
+  "description": "Unlike every other S4 lens's input.schema.json, `points` here is NOT filtered to one kind -- tracing is cross-cutting per architecture.md, so it receives points of every kind S1 has detected.",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "points"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "points": {
+      "type": "array",
+      "minItems": 1,
+      "description": "surface_map.json points of any kind -- the lens designs a propagation-risk signal for each, regardless of which SDK it calls.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "file", "line"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": {
+            "enum": ["llm_generation", "retrieval", "tool_call", "agent_loop", "queue_producer",
+                     "queue_consumer", "guardrail", "human_review_hook", "feedback_ingest", "realtime_session"]
+          },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "symbol": { "type": "string" },
+          "framework": { "type": "string" },
+          "sync_nature": {
+            "enum": ["sync", "async", "queued", "streamed"],
+            "description": "S1-determined: whether the call site sits inside an async def (real AST fact) -- absent means S1 has not determined it."
+          },
+          "gap_status": { "enum": ["dark", "partial", "covered"], "description": "from gap_model.json, if available" },
+          "gap_priority": { "enum": ["p0", "p1", "p2", "p3"] }
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "context.yaml, if an interview has run -- optional; the lens must produce valid, complete signals for every point with or without it.",
+      "properties": {
+        "workflows": { "type": "array" }
+      }
+    }
+  }
+}

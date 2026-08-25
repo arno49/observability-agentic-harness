@@ -126,3 +126,10 @@ def design_feedback(points, repo_git_sha, context=None, model=None, _completion_
 def design_realtime_multimodal(points, repo_git_sha, context=None, model=None, _completion_fn=None):
     realtime_points = [p for p in points if p.get("kind") == "realtime_session"]
     return design_lens("s4-realtime-multimodal", realtime_points, repo_git_sha, context, model, _completion_fn)
+
+
+def design_tracing(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+    """Unlike every other lens's wrapper, this does not filter by kind --
+    tracing is cross-cutting (architecture.md), so it designs a
+    propagation-risk signal for points of any kind S1 has detected."""
+    return design_lens("s4-tracing", points, repo_git_sha, context, model, _completion_fn)

@@ -218,7 +218,7 @@ def _excerpt(src_lines, line, before=3, after=3):
 
 
 def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local_scope,
-                 resolved_points, ambiguous, rel_path, next_id, imports):
+                 resolved_points, ambiguous, rel_path, next_id, imports, is_async=False):
     """Depth-first walk accumulating into two separate lists — no generators,
     so there is no `yield from` to forget (see module docstring).
 
@@ -230,6 +230,15 @@ def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local
     answer ("genuinely none of these"). Conflating the two would either
     violate the schema or silently smuggle an unresolved candidate into the
     pipeline's source-of-truth artifact as if S1 were done with it.
+
+    `is_async` tracks whether the *immediately enclosing* function is
+    `async def` — SP2's decision record (docs/trace-propagation-patterns.md):
+    same-process asyncio needs zero instrumentation for trace-context
+    propagation (CPython's own contextvars.Context copy-on-task-creation
+    guarantee), which is a real, gradable fact the tracing lens (S4) can
+    act on. It reflects the innermost function only, not an OR across
+    nesting -- a plain `def` nested inside an `async def` runs in whatever
+    context calls it, not automatically inside the outer coroutine's task.
     """
     for child in node.children:
         if child.type == "class_definition":
@@ -244,6 +253,9 @@ def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local
             name_node = child.child_by_field_name("name")
             fn_name = _text(name_node, src) if name_node is not None else "<anonymous>"
             new_symbol = f"{class_name}.{fn_name}" if class_name else fn_name
+            # tree-sitter-python: `async def` puts an anonymous "async"
+            # token as this node's first raw child; `def` alone does not.
+            new_is_async = bool(child.children) and child.children[0].type == "async"
             params = child.child_by_field_name("parameters")
             if params is not None:
                 for p in params.named_children:
@@ -254,7 +266,7 @@ def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local
                         if sdk and name_node is not None:
                             fn_scope[_text(name_node, src)] = sdk
             _walk_calls(child, src, src_lines, resolver, known, class_name, new_symbol, fn_scope,
-                        resolved_points, ambiguous, rel_path, next_id, imports)
+                        resolved_points, ambiguous, rel_path, next_id, imports, is_async=new_is_async)
             continue
 
         if child.type == "assignment":
@@ -292,6 +304,7 @@ def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local
                             "line": line,
                             "symbol": symbol,
                             "framework": registry["framework"],
+                            "sync_nature": "async" if is_async else "sync",
                             "detection": "signature",
                             "confidence": 0.95,
                             "notes": f"receiver '{receiver_desc}' resolved via import/assignment/annotation tracking",
@@ -315,7 +328,7 @@ def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local
                     # declare this suffix -> true negative, not reported.
 
         _walk_calls(child, src, src_lines, resolver, known, class_name, symbol, local_scope,
-                    resolved_points, ambiguous, rel_path, next_id, imports)
+                    resolved_points, ambiguous, rel_path, next_id, imports, is_async=is_async)
 
 
 def detect_file(path, repo_root, next_id):

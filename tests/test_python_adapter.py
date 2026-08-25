@@ -435,3 +435,82 @@ room.connect("wss://example", "token")
     assert ambiguous == []
     kinds = {r["kind"] for r in resolved}
     assert kinds == {"llm_generation", "retrieval", "feedback_ingest", "realtime_session"}
+
+
+# --- sync_nature detection (async/sync), for S4's tracing lens --------------
+# SP2's decision record (docs/trace-propagation-patterns.md): same-process
+# asyncio needs zero instrumentation for trace-context propagation -- a real,
+# gradable fact the tracing lens can act on if S1 actually determines it.
+
+def test_call_inside_async_def_marked_async(tmp_path):
+    resolved, _ = _detect(tmp_path, """
+import anthropic
+client = anthropic.Anthropic()
+
+async def run():
+    return client.messages.create(model="x")
+""")
+    assert resolved[0]["sync_nature"] == "async"
+
+
+def test_call_inside_plain_def_marked_sync(tmp_path):
+    resolved, _ = _detect(tmp_path, """
+import anthropic
+client = anthropic.Anthropic()
+
+def run():
+    return client.messages.create(model="x")
+""")
+    assert resolved[0]["sync_nature"] == "sync"
+
+
+def test_call_at_module_scope_marked_sync(tmp_path):
+    resolved, _ = _detect(tmp_path, """
+import anthropic
+client = anthropic.Anthropic()
+message = client.messages.create(model="x")
+""")
+    assert resolved[0]["sync_nature"] == "sync"
+
+
+def test_plain_def_nested_inside_async_def_marked_sync_not_inherited(tmp_path):
+    """sync_nature reflects the immediate enclosing function only -- a
+    plain `def` nested inside an `async def` does not automatically run
+    inside the outer coroutine's task, so it must not inherit "async"."""
+    resolved, _ = _detect(tmp_path, """
+import anthropic
+client = anthropic.Anthropic()
+
+async def outer():
+    def inner():
+        return client.messages.create(model="x")
+    return inner()
+""")
+    assert resolved[0]["sync_nature"] == "sync"
+
+
+def test_async_def_nested_inside_plain_def_marked_async(tmp_path):
+    resolved, _ = _detect(tmp_path, """
+import anthropic
+client = anthropic.Anthropic()
+
+def outer():
+    async def inner():
+        return client.messages.create(model="x")
+    return inner()
+""")
+    assert resolved[0]["sync_nature"] == "async"
+
+
+def test_async_method_on_class_marked_async(tmp_path):
+    resolved, _ = _detect(tmp_path, """
+import anthropic
+
+class Provider:
+    def __init__(self):
+        self._client = anthropic.Anthropic()
+
+    async def complete(self):
+        return self._client.messages.create(model="x")
+""")
+    assert resolved[0]["sync_nature"] == "async"
