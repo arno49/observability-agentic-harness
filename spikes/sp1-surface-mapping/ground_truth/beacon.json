@@ -1,0 +1,22 @@
+{
+  "repo_id": "beacon",
+  "sites": [
+    {"file": "llm.py", "line": 60, "method": "messages.stream", "note": "self._client, set in AnthropicProvider.__init__; the ONE real SDK-touching site behind an LLMProvider ABC — application code elsewhere calls provider.complete(), which is not itself a surface point"},
+    {"file": "agents/intake.py", "line": 56, "method": "messages.create", "note": "typed parameter client: anthropic.Anthropic"},
+    {"file": "agents/intake.py", "line": 133, "method": "messages.create", "note": "typed parameter, different function (intake_greeting) in the same file — missed in the first manual read of this file, caught only by cross-checking the detector's own output against the source; kept as a note that hand-labeling isn't perfectly reliable either"},
+    {"file": "agents/intake.py", "line": 164, "method": "messages.stream", "note": "typed parameter, inside a `with` block"},
+    {"file": "agents/eligibility.py", "line": 148, "method": "messages.create", "note": "typed parameter"},
+    {"file": "agents/eligibility.py", "line": 217, "method": "messages.create", "note": "typed parameter"},
+    {"file": "agents/eligibility.py", "line": 351, "method": "messages.create", "note": "typed parameter"},
+    {"file": "agents/research.py", "line": 89, "method": "messages.create", "note": "typed parameter"},
+    {"file": "agents/research.py", "line": 171, "method": "messages.stream", "note": "typed parameter, inside a `with` block"}
+  ],
+  "excluded_not_call_sites": [
+    {"file": "tools.py", "reason": "anthropic.types.ToolParam type annotations — tool schema definitions, not inference calls"},
+    {"file": "clinical_trials_guru.py", "line": 53, "reason": "client construction only; the function never calls .messages.* itself, hands the client to a LangGraph builder instead"},
+    {"file": "app.py", "lines": [39, 58], "reason": "client construction only, passed elsewhere"}
+  ],
+  "notable_but_not_anthropic": [
+    {"file": "llm.py", "class": "OpenAIProvider", "reason": "same LLMProvider ABC, self._client = openai.OpenAI() — correctly out of scope for an Anthropic-only registry; real evidence that a per-provider registry entry is what production S1 needs, not a reason this prototype is wrong to exclude it"}
+  ]
+}

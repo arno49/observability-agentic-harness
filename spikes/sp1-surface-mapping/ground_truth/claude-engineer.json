@@ -1,0 +1,25 @@
+{
+  "repo_id": "claude-engineer",
+  "sites": [
+    {"file": "ce3.py", "line": 338, "method": "messages.create", "note": "self.client, set in Assistant.__init__"},
+    {"file": "tools/toolcreator.py", "line": 90, "method": "messages.create", "note": "self.client, separate class, same pattern"},
+    {"file": "Claude-Eng-v2/main.py", "line": 664, "method": "beta.prompt_caching.messages.create", "note": "module-level client (from anthropic import Anthropic, api-alias import form), beta namespace variant"},
+    {"file": "Claude-Eng-v2/main.py", "line": 1227, "method": "beta.prompt_caching.messages.create", "note": "same, second call site"},
+    {"file": "Claude-Eng-v2/main.py", "line": 1503, "method": "messages.create", "note": "same module-level client, non-beta path"},
+    {"file": "Claude-Eng-v2/main.py", "line": 1755, "method": "beta.prompt_caching.messages.create", "note": "same, third beta call site"},
+    {"file": "Claude-Eng-v2/main.py", "line": 1886, "method": "messages.create", "note": "inside a tool-use response loop"}
+  ],
+  "excluded_not_call_sites": [
+    {"file": "ce3.py", "line": 44, "reason": "client construction"},
+    {"file": "tools/toolcreator.py", "line": 32, "reason": "client construction"},
+    {"file": "Claude-Eng-v2/main.py", "line": 268, "reason": "client construction, from-import form: from anthropic import Anthropic"}
+  ],
+  "false_positive_trap": [
+    {
+      "file": "Claude-Eng-v2/ollama-eng.py",
+      "line": 322,
+      "method": "messages.create",
+      "reason": "receiver `client` is provably ollama.AsyncClient() (line 33 of the same file), not an Anthropic client, despite the call syntax and an anthropic-beta header matching Anthropic's shape almost exactly — looks like copy-pasted/dead code from a prior Anthropic-only version of this file. Ground truth: NOT a real Anthropic call site. The detector must not report this at high confidence; low-confidence-flagged-for-disambiguation is the correct outcome, not a clean exclude, since a narrowly-scoped registry has no positive evidence either way without tracing the ollama import."
+    }
+  ]
+}

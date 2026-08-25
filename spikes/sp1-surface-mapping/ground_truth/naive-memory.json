@@ -1,0 +1,14 @@
+{
+  "repo_id": "naive-memory",
+  "sites": [
+    {
+      "file": "chat.py",
+      "line": 16,
+      "method": "messages.create",
+      "note": "direct sync call, client constructed 3 lines above in the same module scope"
+    }
+  ],
+  "excluded_not_call_sites": [
+    {"file": "chat.py", "line": 3, "reason": "client construction (anthropic.Anthropic()), not an inference call"}
+  ]
+}
