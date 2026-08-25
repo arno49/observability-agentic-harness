@@ -1,0 +1,45 @@
+{
+  "schema_version": "0.1.0",
+  "candidates": [
+    {
+      "candidate_id": "c1-ollama-trap",
+      "file": "Claude-Eng-v2/ollama-eng.py",
+      "line": 322,
+      "symbol": "generate_edit_instructions",
+      "code_excerpt": "# Initialize the Ollama client (line 33)\nclient = ollama.AsyncClient()\n\n# ... 280 lines later, inside generate_edit_instructions ...\n# Make the API call to CODEEDITORMODEL (context is not maintained except for code_editor_memory)\nresponse = client.messages.create(\n    model=CODEEDITORMODEL,\n    max_tokens=8000,\n    system=system_prompt,\n    extra_headers={\"anthropic-beta\": \"max-tokens-3-5-sonnet-2024-07-15\"},\n    messages=[\n        {\"role\": \"user\", \"content\": \"Generate SEARCH/REPLACE blocks for the necessary changes.\"}\n    ]\n)",
+      "scanner_kind": null,
+      "scanner_confidence": 0.3,
+      "imports": ["os", "json", "ollama", "asyncio", "aiohttp"]
+    },
+    {
+      "candidate_id": "c2-subscript-dict",
+      "file": "app.py",
+      "line": 34,
+      "symbol": "case_subscript_receiver",
+      "code_excerpt": "clients = {\"primary\": anthropic.Anthropic()}\nreturn clients[\"primary\"].messages.create(model=\"x\", max_tokens=1, messages=[])",
+      "scanner_kind": null,
+      "scanner_confidence": 0.4,
+      "imports": ["anthropic"]
+    },
+    {
+      "candidate_id": "c3-getattr-dynamic",
+      "file": "app.py",
+      "line": 26,
+      "symbol": "case_getattr_dynamic_method",
+      "code_excerpt": "client = anthropic.Anthropic()\n\ndef case_getattr_dynamic_method():\n    method_name = os.environ.get(\"LLM_METHOD\", \"create\")\n    return getattr(client.messages, method_name)(model=\"x\", max_tokens=1, messages=[])",
+      "scanner_kind": null,
+      "scanner_confidence": 0.2,
+      "imports": ["anthropic", "os"]
+    },
+    {
+      "candidate_id": "c4-branch-two-sdks",
+      "file": "app.py",
+      "line": 57,
+      "symbol": "case_branch_assigns_two_sdks",
+      "code_excerpt": "import openai\nif use_anthropic:\n    api_client = anthropic.Anthropic()\nelse:\n    api_client = openai.OpenAI()\nreturn api_client.messages.create(model=\"x\", max_tokens=1, messages=[])",
+      "scanner_kind": "llm_generation",
+      "scanner_confidence": 0.5,
+      "imports": ["anthropic", "openai"]
+    }
+  ]
+}
