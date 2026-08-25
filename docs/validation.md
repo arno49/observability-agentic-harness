@@ -27,9 +27,11 @@ performed.
    with reason, clarification, escalation, restricted-attempt handling — and
    sliceable by region/role); p50/p95 latency overhead vs. declared budget,
    **and time-to-first-token separately for streaming call paths** — a budget
-   met on total latency while TTFT stalls is not a passing result; telemetry
-   fail-open check (kill the collector mid-traffic → product must not
-   degrade).
+   met on total latency while TTFT stalls is not a passing result. Every
+   percentile is computed from the run's own raw distribution, never by averaging
+   percentile values pulled from other runs or call sites — an average of a p99 is
+   not a p99. Telemetry fail-open check (kill the collector mid-traffic → product
+   must not degrade).
 
 ## Agentic panel (runs on R1–R3 evidence)
 
@@ -44,7 +46,10 @@ performed.
 - **cross-service-analyzer** *(optional)* — for multi-repo products, verifies trace
   continuity across service boundaries.
 - **tabletop walkthrough** *(when corpus fixtures exist)* — the panel replays an
-  incident scenario against the installed signals and runbook; passing means the
+  incident scenario against the installed signals and runbook, progressing through
+  the same checkpoints a live incident does — acknowledge, mitigate, triage,
+  resolve — so a walkthrough that only ever proves *acknowledge* is reachable
+  isn't mistaken for one that proves the whole response path is; passing means the
   correct response path (per the fixture's labeled stronger response) is reachable
   from telemetry alone.
 
@@ -87,9 +92,14 @@ produces a new verdict, both just flag:
    gate) — orphaned instrumentation is that same gate's overdue enforcement,
    applied after the fact instead of only at design time.
 3. **Alert-plan decay** — pulled from the alert-delivery system itself, not repo
-   state: unactionable-alert rate, off-hours share, and silence duration (including
-   effectively-permanent silences) per alert in the S7 alert plan. Flags the alert
-   plan for review in the next runbook update, the same way stale evidence flags a
-   DTO. An alert nobody acts on, or one that's been silenced indefinitely, is the
-   same low-value alert the S4 anti-metric-hoarding gate was meant to keep from
-   ever being created — caught here after the fact instead.
+   state: each alert in the S7 alert plan tracked against the four axes that
+   define alert quality — precision (false-positive rate), recall (incidents that
+   fired no alert), detection time, and reset time (how long an alert keeps firing
+   after the condition clears) — the four trade off against each other, so decay
+   is a shift in the balance, not just one number crossing a line. Includes
+   silence duration (including effectively-permanent silences) as an operational
+   proxy for reset time. Flags the alert plan for review in the next runbook
+   update, the same way stale evidence flags a DTO. An alert with degraded
+   precision or recall, or one silenced indefinitely, is the same low-value alert
+   the S4 anti-metric-hoarding gate was meant to keep from ever being created —
+   caught here after the fact instead.

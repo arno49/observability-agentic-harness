@@ -63,7 +63,11 @@ Specialized skills each design their slice for this specific stack:
   retrieval visibility**: per-source governance status against the inventory from
   `context.yaml`, region-conditional handling, restricted-source exclusion or
   gating made observable;
-- **tools** — tool/agent invocations: arguments, results, durations, cascade shape;
+- **tools** — tool/agent invocations: arguments, results, durations, and cascade
+  shape captured **per branch**, not only as a cascade-level aggregate — a fan-out
+  of parallel calls compounds a small per-call tail-latency chance fast (a 1%
+  per-call tail at 100-way fan-out puts most requests through at least one slow
+  call), so an aggregate duration alone hides exactly the risk fan-out creates;
 - **feedback** — user feedback and reviewer verdicts bound to trace IDs; verdict
   taxonomy (categorized, not free-text);
 - **pii-governance** — masking at ingestion, role-scoped content access, retention
@@ -97,9 +101,12 @@ Specialized skills each design their slice for this specific stack:
   attribute on every workflow's telemetry, alert routing to named first responders,
   escalation events recorded with outcome; **alert plan** — the standard catalog
   (availability, latency, error-rate, quota, cost/consumption, dependency,
-  safety/quality), each category a user-facing symptom rather than an enumerated
-  internal cause — alerting on every possible failure mode individually is exactly
-  the noise the anti-metric-hoarding gate below exists to keep out — where every
+  safety/quality), each category either a user-facing symptom or one of the narrow
+  legitimate exceptions — a resource approaching exhaustion (quota, cost/consumption)
+  before any symptom is visible yet — never an enumerated internal failure cause
+  with no symptom and no exhaustion story behind it; alerting on every possible
+  failure mode individually is exactly the noise the anti-metric-hoarding gate
+  below exists to keep out — where every
   alert declares a trigger condition stated as a target and measurement window per
   critical workflow (a reliability budget, not a bare threshold pulled from
   nowhere), so "pause expansion" or "roll back" in the S7 decision menu fires when
@@ -118,8 +125,11 @@ above its declared tier; declared cross-field consistency assertions (e.g. a
 restricted-access response cannot carry `needs_review: false`) are present wherever
 a structured output has more than one field whose values can contradict each other;
 latency-overhead budget is declared per call path; telemetry failure mode is
-declared fail-open (telemetry loss must never break the product); **every designed
-signal names at least one decision it supports and the role that acts**
+declared fail-open (telemetry loss must never break the product); **a decision-menu
+step that pauses, freezes, or throttles (S7) never ships without a paired
+resumption condition** — a freeze with no stated way back is rejected the same way
+an alert with no owner is; **every designed signal names at least one decision it
+supports and the role that acts**
 (anti-metric-hoarding gate — see the signals→decisions matrix in
 [event-model.md](event-model.md)). A failed gate blocks progression with a machine-readable reason.
 
@@ -131,7 +141,13 @@ Personas score the design against weighted gates, VVAH-style:
   context trusted without verification, retrieval reachable beyond the approved
   inventory, tool actions beyond the declared boundary, and staging success
   presented as evidence of production-ready secrets/configuration;
-- **cost skeptic** — storage & egress economics at target traffic, sampling policy.
+- **cost skeptic** — storage & egress economics at target traffic, sampling policy
+  sized from measured trace-duration percentiles (a collector's decision-wait set
+  above the traffic's actual p99 trace duration, not a default copied from a
+  different service's traffic shape) — and flagged if the design assumes per-span
+  sampling decisions when the backend requires whole-trace tail sampling, which
+  forces every span of a trace onto the same collector instance and adds a
+  load-balancing tier, not just a config knob.
 
 Findings are categorized verdicts, not prose. Design iterates S4→S6 until pass.
 
@@ -142,14 +158,29 @@ Emit `architecture.md` (target design incl. backend selection justified against
 `context.yaml` constraints — OTel-only / self-hosted Langfuse / managed),
 `event_schema.json` (versioned; OTel GenAI + extensions), and `rollout_plan.md`
 ordered by workflow criticality: first workflow = most critical one, tracing +
-generation capture first, feedback loop second, auto-scoring third. Also emit
+generation capture first, feedback loop second, auto-scoring third. Schema
+versioning follows OTel's own discipline rather than an invented one: an `oah.*`
+extension attribute is Development or Stable (nothing in between), a breaking
+rename ships alongside the old name for a stated dual-emission window before the
+old name is dropped, and consumers pin to a schema version instead of assuming
+latest. One gap this inherits, not solves: `gen_ai.*` itself publishes no
+schema-version marker to pin to (SP6 tracks this upstream gap) — so `oah.*`
+extensions carry the version discipline the GenAI layer doesn't yet provide for
+itself. Also emit
 `runbook.md` — the incident-response route for the installed observability: per
 workflow, an **ownership matrix** (service owner, first responder, escalation
 owner, release owner, rollback owner, documentation owner), issue-review cadence,
 documentation location, evidence to pull per alert (which dashboards/queries), and
 the decision menu (continue / pause expansion / cap or throttle / remediate /
 degrade / roll back / escalate) with rollback targets identified by release
-identifiers. Each ownership row binds to evidence ("if cost exceeds pilot range,
+identifiers. When the trigger is budget exhaustion specifically, the ladder
+follows one of two shapes, chosen per workflow rather than invented per DTO:
+**burn-rate** (how fast the budget is being spent — e.g. page when 10% of a
+week's budget burns in an hour) or **cumulative-consumption** (how much of the
+window's budget is gone — e.g. warn at 75%, freeze at 90% over 30 days). Either
+shape, a freeze/pause step is never emitted without a paired resumption condition
+(budget back under a stated floor and alerts clear) — see S5's matching gate.
+Each ownership row binds to evidence ("if cost exceeds pilot range,
 X reviews spend evidence and decides on limits") — the aim is a clear decision
 path for the most important signals, not an ownership matrix for every possible
 issue. Dashboards and alerts are specified as one roll-up per critical workflow,

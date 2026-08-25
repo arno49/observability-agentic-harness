@@ -108,7 +108,14 @@ confirmed escalation with a named preventative action is a candidate for
 promotion into the eval dataset (a new case class, per the Dataset item entity
 below) and, where it points at a genuine design gap, a new `gap_model.json`
 entry for the next S3 run. An escalation resolved with no retrospective is an
-incomplete record, not just a closed ticket.
+incomplete record, not just a closed ticket. `contributing_factors` is
+deliberately plural and structured, not a single free-text `root_cause` field:
+postmortem practice is split between templates that keep one root-cause field for
+cross-incident searchability and facilitation guidance that treats single-cause
+framing as actively misleading for how incidents in complex systems actually
+unfold. Recording multiple categorized factors keeps the record searchable
+without forcing a live incident review to converge on a single cause it may not
+have.
 
 **Dataset item** — a trace promoted into an eval set, tagged with a **case
 class**: common / ambiguous (expected: clarification) / restricted (expected:
