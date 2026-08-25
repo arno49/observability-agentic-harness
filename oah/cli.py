@@ -413,6 +413,98 @@ def cmd_dtos(args):
     return 0
 
 
+def cmd_readiness(args):
+    """S9: production readiness report, deterministic assembly (no model
+    call -- architecture.md marks S9 explicitly '(deterministic assembly)',
+    unlike every other stage in this chain). Runs the full S1-S8 chain
+    built so far and assembles what's mechanically derivable; everything
+    else is stated as genuinely unknown, not fabricated."""
+    from oah.discovery.python_adapter import build_surface_map
+    from oah.discovery.telemetry_scanner import build_telemetry_inventory
+    from oah.discovery.gap_model import build_gap_model
+    from oah.design.lens import design_generation_capture, LensDesignError
+    from oah.design.gates import run_gates
+    from oah.design.panel import run_cost_skeptic, PanelReviewError
+    from oah.design.event_schema import build_event_schema, EventSchemaConflictError
+    from oah.design.dto_generator import generate_dtos, DtoGenerationError
+    from oah.design.readiness_report import build_readiness_report
+    from oah.schemas import validate
+
+    git_sha = _git_sha(args.target)
+    if git_sha is None:
+        print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
+        return 1
+
+    context = None
+    if args.context:
+        context_data = yaml.safe_load(Path(args.context).read_text())
+        validate("context", context_data)
+        context = context_data
+
+    surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
+    inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
+    gap_model = build_gap_model(surface_map, inventory, context=context)
+
+    gate_findings = []
+    panel_verdicts = []
+    event_schema = {"schema_version": "0.1.0", "repo_git_sha": git_sha, "attributes": [],
+                     "summary": {"attribute_count": 0, "otel_genai_count": 0, "oah_extension_count": 0, "lenses_included": []}}
+    dtos = {"schema_version": "0.1.0", "dtos": []}
+
+    if surface_map["points"]:
+        try:
+            fragment = design_generation_capture(surface_map["points"], git_sha, context=context)
+        except LensDesignError as e:
+            print(f"warning: generation-capture lens design failed, continuing with no design fragment: {e}",
+                  file=sys.stderr)
+            fragment = None
+
+        if fragment:
+            point_ids = [p["id"] for p in surface_map["points"] if p["kind"] == "llm_generation"]
+            gate_findings = [f.__dict__ for f in run_gates(fragment, surface_map_point_ids=point_ids)]
+
+            try:
+                verdict = run_cost_skeptic([fragment], git_sha, context=context)
+                if verdict:
+                    panel_verdicts = [verdict]
+            except PanelReviewError as e:
+                print(f"warning: S6 cost-skeptic panel did not run: {e}", file=sys.stderr)
+
+            try:
+                event_schema = build_event_schema([fragment], git_sha)
+            except EventSchemaConflictError as e:
+                print(f"warning: event schema build failed: {e}", file=sys.stderr)
+
+            covered_point_ids = {pid for a in event_schema["attributes"] for pid in a["surface_point_ids"]}
+            points = [p for p in surface_map["points"] if p["id"] in covered_point_ids]
+            relevant_gap_ids = {g["id"] for g in gap_model["gaps"]
+                                 if any(pid in covered_point_ids for pid in g["surface_point_ids"])}
+            gaps_for_dtos = [g for g in gap_model["gaps"] if g["id"] in relevant_gap_ids]
+            if points:
+                try:
+                    generated = generate_dtos(event_schema, points, gaps_for_dtos, git_sha)
+                    if generated:
+                        dtos = generated
+                except DtoGenerationError as e:
+                    print(f"warning: S8 DTO generation did not run: {e}", file=sys.stderr)
+
+    report = build_readiness_report(
+        gap_model, gate_findings, panel_verdicts, event_schema, dtos,
+        context=context, repo_git_sha=git_sha,
+    )
+    validate("readiness_report", report)
+
+    if args.output:
+        Path(args.output).write_text(json.dumps(report, indent=2) + "\n")
+        print(f"Wrote {args.output}")
+    else:
+        print(json.dumps(report, indent=2))
+
+    print(f"\nrecommendation: {report['recommendation']['decision']}", file=sys.stderr)
+    print(f"rationale: {report['recommendation']['rationale']}", file=sys.stderr)
+    return 0
+
+
 def cmd_interview(args):
     """S3's owner interview — real stdin prompts, not stub data. See
     oah/interview.py's module docstring for why this is genuinely
@@ -495,6 +587,12 @@ def build_parser():
     p_dtos.add_argument("target", help="Path to the target repository")
     p_dtos.add_argument("-o", "--output", default=None, help="Write implementation_dto.json here instead of stdout")
     p_dtos.set_defaults(func=cmd_dtos)
+
+    p_readiness = sub.add_parser("readiness", help="S9: production readiness report (deterministic assembly)")
+    p_readiness.add_argument("target", help="Path to the target repository")
+    p_readiness.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
+    p_readiness.add_argument("-o", "--output", default=None, help="Write readiness_report.json here instead of stdout")
+    p_readiness.set_defaults(func=cmd_readiness)
 
     return parser
 

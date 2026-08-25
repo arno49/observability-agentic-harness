@@ -1,0 +1,154 @@
+"""S9 — production readiness report, deterministic assembly (architecture.md
+S9: *(deterministic assembly)*, unlike every LLM-driven stage before it).
+
+readiness_report.schema.json is deep — many fields (intended_users,
+eval_coverage, health_and_smoke_evidence, known-limitations narrative)
+genuinely need either an LLM synthesis pass this module doesn't attempt, or
+real runtime evidence from S10/S11, neither of which exist yet at this
+pipeline stage. Rather than fabricate them, this assembler populates only
+what's mechanically derivable from S1-S8's actual outputs and leaves the
+rest genuinely absent — surfaced honestly through the schema's own
+`evidence_position` (confirmed/assumed/unknown) and `known_limitations`
+fields, which exist precisely for this: "confidence, urgency, or a
+successful demo alone never move an item into 'confirmed'" is the schema's
+own rule, and it applies to this assembler's own output as much as to a
+human reviewer's judgment.
+"""
+
+
+def _decide(gate_findings, panel_verdicts, gap_model):
+    """Deterministic recommendation rule. No S10/S11 evidence exists yet at
+    this pipeline stage (design-only) -- 'ready' outright would overclaim
+    real, applied, validated instrumentation that hasn't happened. The
+    ceiling here is ready_with_conditions, not ready, regardless of how
+    clean S5/S6 come back, unless there's an actual blocking gate/panel
+    failure or an unaddressed critical gap, in which case it's worse than
+    that ceiling, not better."""
+    failed_gates = [f for f in gate_findings if not f["passed"] and f["severity"] == "error"]
+    if failed_gates:
+        return (
+            "remediate_before_release",
+            f"S5 deterministic gate(s) failed: {[f['gate'] for f in failed_gates]}",
+            failed_gates[0]["gate"],
+        )
+
+    failed_personas = [v for v in panel_verdicts if v["overall"] == "fail"]
+    if failed_personas:
+        error_findings = [f for v in failed_personas for f in v["findings"] if f["severity"] == "error"]
+        return (
+            "remediate_before_release",
+            f"S6 panel persona(s) failed: {[v['persona'] for v in failed_personas]}",
+            error_findings[0]["gate"] if error_findings else "panel failure",
+        )
+
+    critical_dark_gaps = [g for g in gap_model.get("gaps", []) if g["status"] == "dark" and g["priority"] in ("p0", "p1")]
+    if critical_dark_gaps:
+        return (
+            "remediate_before_release",
+            f"{len(critical_dark_gaps)} unaddressed p0/p1 dark gap(s): {[g['id'] for g in critical_dark_gaps]}",
+            critical_dark_gaps[0]["id"],
+        )
+
+    return (
+        "ready_with_conditions",
+        "S5 gates and S6 review pass on the design produced so far, but no instrumentation has "
+        "been applied (S10) and no runtime evidence exists (S11) -- design-clean is not "
+        "release-ready on its own.",
+        None,
+    )
+
+
+def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schema, dtos,
+                            context=None, repo_git_sha=None, run_manifest_ref=None):
+    decision, rationale, top_blocker = _decide(gate_findings, panel_verdicts, gap_model)
+
+    workflows = (context or {}).get("workflows", [])
+    workflow_names = [w["name"] for w in workflows]
+
+    key_signals = [a["name"] for a in event_schema.get("attributes", [])]
+
+    source_inventory = []
+    for s in (context or {}).get("source_inventory", []):
+        source_inventory.append({
+            "source": s["source"],
+            "status": s["approval_status"],
+            "pilot_handling": s.get("approved_handling_path", "not specified"),
+        })
+
+    trust_boundaries = (context or {}).get("trust_boundaries", [])
+    trust_boundary_verification = (
+        "; ".join(f"{tb['context_field']}: {'verified server-side' if tb['verified_server_side'] else 'trusted only'}"
+                  for tb in trust_boundaries)
+        if trust_boundaries else None
+    )
+
+    confirmed = []
+    if not any(not f["passed"] and f["severity"] == "error" for f in gate_findings):
+        confirmed.append("S5 deterministic invariant gates pass on the current design")
+    if all(v["overall"] != "fail" for v in panel_verdicts):
+        confirmed.append("S6 reviewed personas (cost_skeptic only, 1 of 3) found no error-severity issues")
+
+    unknown = [
+        "S10 instrumentation has not been applied to the target repo",
+        "S11 dynamic validation has not run -- no real Trace Completeness Rate or overhead measurement exists",
+        "8 of 9 S4 lenses are not built (only generation-capture) -- coverage claims are scoped to that lens only",
+        "2 of 3 S6 personas are not built (only cost_skeptic) -- SRE and security review have not happened",
+    ]
+    if not workflow_names:
+        unknown.append("no context.yaml interview has run -- workflow criticality, PII presence, and governance answers are all unknown")
+
+    known_limitations = [
+        "Only the generation-capture S4 lens is built; tracing, retrieval, tools, feedback, "
+        "pii-governance, cost, realtime-multimodal, and ops lenses are not designed for this repo yet.",
+        "Only the cost_skeptic S6 persona has reviewed this design; SRE and security personas have not run.",
+        "rollout_step ordering is gap-priority-only, not real workflow-criticality-ordered rollout_plan.md.",
+    ]
+
+    report = {
+        "schema_version": "0.1.0",
+        "repo_git_sha": repo_git_sha,
+        "deployment_context": {
+            "workflow": "; ".join(workflow_names) if workflow_names else "unknown -- no context.yaml interview has run",
+            "intended_users": "unknown -- not derivable from S1-S8 outputs, needs owner input",
+            "environment": "unknown",
+            "environment_provenance": "unknown",
+        },
+        "release_evidence": {
+            "release_identifiers": {},
+            "owners": {},
+            "evidence_missing": [
+                "S10 application evidence", "S11 validation evidence", "eval coverage by case class",
+            ],
+        },
+        "observability_plan": {
+            "key_signals": key_signals,
+        },
+        "failure_response": {
+            "failure_modes": ["telemetry loss (declared fail_open in every S4 fragment reviewed)"],
+            "incident_route": "unknown -- not derivable without context.yaml",
+        },
+        "recommendation": {
+            "decision": decision,
+            "rationale": rationale,
+            "top_blocker": top_blocker,
+            "next_action_owner": "unknown -- not derivable without context.yaml",
+            "evidence_position": {
+                "confirmed": confirmed,
+                "assumed": [],
+                "unknown": unknown,
+            },
+        },
+        "known_limitations": known_limitations,
+    }
+    if run_manifest_ref:
+        report["run_manifest_ref"] = run_manifest_ref
+    if source_inventory or trust_boundary_verification or (context or {}).get("tool_action_boundary"):
+        report["data_and_governance"] = {}
+        if source_inventory:
+            report["data_and_governance"]["source_inventory"] = source_inventory
+        if trust_boundary_verification:
+            report["data_and_governance"]["trust_boundary_verification"] = trust_boundary_verification
+        if (context or {}).get("tool_action_boundary"):
+            report["data_and_governance"]["tool_action_boundary"] = context["tool_action_boundary"]
+
+    return report
