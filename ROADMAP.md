@@ -7,13 +7,13 @@ milestones are scope gates, not dates.
 
 ## Milestones
 
-| Milestone | Outcome | Gate criterion |
-|---|---|---|
-| **M0 — De-risked** | All blocking spikes answered | Decision records for SP1–SP4, SP10 merged |
-| **M1 — Auditor** | `oah map` produces a surface map + gap report on real repos | TCR-relevant call-site recall ≥ 90% on reference corpus (Python) |
-| **M2 — Architect** | `oah design` emits architecture, event schema, rollout plan, DTOs | Two pilot products accept an S9 gate report with ≤ minor edits |
-| **M3 — Implementer** | `oah instrument --mode fix` lands reviewable instrumentation | Instrumented reference repo passes its own test suite; events validate against schema |
-| **M4 — Validator** | `oah validate` computes real TCR & overhead; adversarial panel runs | End-to-end run on a pilot product reaches `validated` verdict |
+| Milestone | Outcome | Gate criterion | Status |
+|---|---|---|---|
+| **M0 — De-risked** | All blocking spikes answered | Decision records for SP1–SP4, SP10 merged | **Met** 2026-08-25 — [SP1](docs/decisions/003-sp1-ast-recall.md), [SP2](docs/decisions/006-sp2-trace-propagation-patterns.md), [SP3](docs/decisions/007-sp3-dynamic-validation-feasibility.md), [SP4](docs/decisions/005-sp4-agent-mutation.md), [SP10](docs/decisions/004-sp10-multilang-architecture.md). SP5/SP6 also resolved (not gate-required); SP7–SP9 still open. |
+| **M1 — Auditor** | `oah map` produces a surface map + gap report on real repos | TCR-relevant call-site recall ≥ 90% on reference corpus (Python) | Not started — no `oah` pipeline code exists yet (E1/E2) |
+| **M2 — Architect** | `oah design` emits architecture, event schema, rollout plan, DTOs | Two pilot products accept an S9 gate report with ≤ minor edits | Not started |
+| **M3 — Implementer** | `oah instrument --mode fix` lands reviewable instrumentation | Instrumented reference repo passes its own test suite; events validate against schema | Not started |
+| **M4 — Validator** | `oah validate` computes real TCR & overhead; adversarial panel runs | End-to-end run on a pilot product reaches `validated` verdict | Not started |
 
 ## Epics
 
