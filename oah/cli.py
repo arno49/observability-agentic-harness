@@ -296,6 +296,54 @@ def cmd_design(args):
     return 0 if (s5_passed and s6_passed) else 1
 
 
+def cmd_event_schema(args):
+    """S7 (partial): event_schema.json only, deterministic merge of
+    whatever S4 design fragments exist -- architecture.md's other S7
+    outputs (architecture.md prose, rollout_plan.md, runbook.md) need an
+    LLM and aren't built yet. Currently runs generation-capture only,
+    matching S4's own current scope."""
+    from oah.discovery.python_adapter import build_surface_map
+    from oah.design.lens import design_generation_capture, LensDesignError
+    from oah.design.event_schema import build_event_schema, EventSchemaConflictError
+
+    git_sha = _git_sha(args.target)
+    if git_sha is None:
+        print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
+        return 1
+
+    surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
+    if not surface_map["points"]:
+        print("No surface points found — nothing to build an event schema from.", file=sys.stderr)
+        return 0
+
+    try:
+        fragment = design_generation_capture(surface_map["points"], git_sha)
+    except LensDesignError as e:
+        print(f"error: generation-capture lens design failed: {e}", file=sys.stderr)
+        return 1
+
+    fragments = [fragment] if fragment else []
+    if not fragments:
+        print("No llm_generation points to build an event schema from.", file=sys.stderr)
+        return 0
+
+    try:
+        schema = build_event_schema(fragments, git_sha)
+    except EventSchemaConflictError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    if args.output:
+        Path(args.output).write_text(json.dumps(schema, indent=2) + "\n")
+        print(f"Wrote {args.output}")
+    else:
+        print(json.dumps(schema, indent=2))
+
+    print(f"\nnote: only generation-capture's attributes are included (1 of 9 S4 lenses built) — "
+          f"this is a partial event schema.", file=sys.stderr)
+    return 0
+
+
 def cmd_interview(args):
     """S3's owner interview — real stdin prompts, not stub data. See
     oah/interview.py's module docstring for why this is genuinely
@@ -368,6 +416,11 @@ def build_parser():
     p_design.add_argument("-o", "--output", default=None, help="Write the design fragment + gate findings here instead of stdout")
     p_design.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_design.set_defaults(func=cmd_design)
+
+    p_event_schema = sub.add_parser("event-schema", help="S7 (partial): deterministic event_schema.json merge")
+    p_event_schema.add_argument("target", help="Path to the target repository")
+    p_event_schema.add_argument("-o", "--output", default=None, help="Write event_schema.json here instead of stdout")
+    p_event_schema.set_defaults(func=cmd_event_schema)
 
     return parser
 

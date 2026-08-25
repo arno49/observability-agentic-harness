@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/event_schema.schema.json",
+  "title": "event_schema.json (S7 output)",
+  "description": "architecture.md S7: 'event_schema.json (versioned; OTel GenAI + extensions)'. Versioning follows OTel's own discipline (S7 prose): an oah.* extension attribute is Development or Stable (nothing in between), a breaking rename ships alongside the old name for a stated dual-emission window, consumers pin to a schema version. gen_ai.* attributes are all Development stability as of the live check in docs/decisions/001-sp6-otel-genai-semconv-maturity.md -- stamped per attribute, not assumed to stay that way forever.",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "attributes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "semconv_pin": {
+      "type": "string",
+      "description": "The open-telemetry/semantic-conventions-genai commit/tag this schema's otel_genai attributes were designed against -- run_manifest.json's own semconv_pin field, echoed here for a standalone reader of event_schema.json who doesn't have the manifest."
+    },
+    "attributes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "kind", "stability", "sensitivity_tier", "source_lenses", "surface_point_ids"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "kind": { "enum": ["otel_genai", "oah_extension"] },
+          "stability": {
+            "enum": ["development", "stable", "deprecated"],
+            "description": "oah_extension attributes start development and are promoted deliberately, never automatically. otel_genai attributes inherit upstream stability -- currently always development per SP6's live check, stamped here rather than looked up fresh every time a schema is read."
+          },
+          "deprecated_by": {
+            "type": ["string", "null"],
+            "description": "Set when stability is deprecated -- the replacement attribute name, per the dual-emission-window discipline. Both names must appear in attributes[] during the window."
+          },
+          "sensitivity_tier": { "enum": ["public", "internal", "confidential", "restricted"] },
+          "source_lenses": {
+            "type": "array", "minItems": 1, "items": { "type": "string" },
+            "description": "Which S4 lens(es) designed this attribute -- more than one lens can independently produce the same attribute name."
+          },
+          "surface_point_ids": {
+            "type": "array", "minItems": 1, "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "attribute_count": { "type": "integer" },
+        "otel_genai_count": { "type": "integer" },
+        "oah_extension_count": { "type": "integer" },
+        "lenses_included": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}
