@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/run_manifest.schema.json",
+  "title": "Run manifest (E1)",
+  "description": "One per pipeline run. Fields beyond the base set (tool_version, model_roles, config_hash, target, timing) trace back to spike decision records, not invented here: cost to SP5 (docs/decisions/002), semconv_pin to SP6 (001), environment to SP9 (010).",
+  "type": "object",
+  "required": ["schema_version", "run_id", "tool_version", "target", "started_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "run_id": { "type": "string" },
+    "tool_version": { "type": "string", "description": "oah's own version" },
+    "model_roles": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "role name -> model identifier, e.g. s1_disambiguation -> claude-sonnet-5"
+    },
+    "config_hash": { "type": "string" },
+    "target": {
+      "type": "object",
+      "required": ["path", "git_sha"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "git_sha": { "type": "string" },
+        "primary_language": { "type": "string" }
+      }
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "completed_at": { "type": ["string", "null"], "format": "date-time" },
+    "stages_completed": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Stage IDs (s1, s2, ...) completed so far — checkpoint/resume reads this"
+    },
+    "cost": {
+      "type": "object",
+      "description": "Per SP5 (docs/decisions/002-sp5-cost-model.md) — predicted vs. actual, per stage, for recalibration.",
+      "additionalProperties": false,
+      "properties": {
+        "estimated_usd": { "type": "number", "minimum": 0 },
+        "actual_usd": { "type": ["number", "null"], "minimum": 0 },
+        "per_stage": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "estimated_usd": { "type": "number" },
+              "actual_usd": { "type": ["number", "null"] },
+              "input_tokens": { "type": ["integer", "null"] },
+              "output_tokens": { "type": ["integer", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "semconv_pin": {
+      "type": "object",
+      "description": "Per SP6 (docs/decisions/001-sp6-otel-genai-semconv-maturity.md) — gen_ai.* publishes no schema-version marker upstream, so oah pins its own reference.",
+      "additionalProperties": false,
+      "properties": {
+        "repo": { "const": "open-telemetry/semantic-conventions-genai" },
+        "ref": { "type": "string", "description": "commit SHA or tag this run's schema/attribute mapping was designed against" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "description": "Per SP9 (docs/decisions/010-sp9-environment-provenance.md).",
+      "required": ["claimed", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "claimed": { "enum": ["sandbox", "staging", "production_shadow", "production", "unknown"] },
+        "provenance": { "enum": ["self_reported", "corroborated", "contradicted"] },
+        "corroboration_source": { "type": ["string", "null"], "enum": ["iac_config", "ci_config", null] },
+        "corroboration_detail": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

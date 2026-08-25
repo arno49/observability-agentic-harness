@@ -1,0 +1,30 @@
+[project]
+name = "oah"
+version = "0.1.0"
+description = "Observability Agentic Harness — LLM/GenAI observability instrumentation pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    "jsonschema>=4.20",
+    "tree-sitter>=0.23",
+    "tree-sitter-python>=0.23",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+oah = "oah.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["oah*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
