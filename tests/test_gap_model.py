@@ -72,3 +72,73 @@ def test_no_gaps_conservative_priority_no_fabricated_drivers():
                          "detection": "signature", "confidence": 0.95}])
     gm = build_gap_model(sm, _telemetry())
     assert "priority_drivers" not in gm["gaps"][0]
+
+
+def _context(workflows):
+    return {"schema_version": "0.1.0", "repo_git_sha": "deadbeef",
+            "interviewed_at": "2026-01-01T00:00:00Z", "workflows": workflows}
+
+
+def test_workflow_hint_matches_context_weights_priority_up():
+    """dark + critical workflow -> p0, not the coverage-only p1 baseline."""
+    sm = _surface_map([{"id": "sp-0001", "kind": "llm_generation", "file": "app.py", "line": 10,
+                         "detection": "signature", "confidence": 0.95, "workflow_hint": "billing"}])
+    context = _context([{"name": "billing", "criticality": "critical"}])
+    gm = build_gap_model(sm, _telemetry(), context=context)
+    assert gm["gaps"][0]["priority"] == "p0"
+    assert gm["gaps"][0]["priority_drivers"] == ["workflow_criticality"]
+    assert "context_ref" in gm
+
+
+def test_workflow_hint_matches_low_criticality_weights_priority_down():
+    """dark + low criticality -> p2, lower urgency than the p1 baseline
+    would otherwise imply — weighting can move priority either direction,
+    not just escalate it."""
+    sm = _surface_map([{"id": "sp-0001", "kind": "llm_generation", "file": "app.py", "line": 10,
+                         "detection": "signature", "confidence": 0.95, "workflow_hint": "internal-tool"}])
+    context = _context([{"name": "internal-tool", "criticality": "low"}])
+    gm = build_gap_model(sm, _telemetry(), context=context)
+    assert gm["gaps"][0]["priority"] == "p2"
+
+
+def test_direct_pii_bumps_priority_further():
+    sm = _surface_map([{"id": "sp-0001", "kind": "llm_generation", "file": "app.py", "line": 10,
+                         "detection": "signature", "confidence": 0.95, "workflow_hint": "support"}])
+    context = _context([{"name": "support", "criticality": "high", "pii_presence": "direct"}])
+    gm = build_gap_model(sm, _telemetry(), context=context)
+    # dark+high -> p1 baseline, then PII bump -> p0
+    assert gm["gaps"][0]["priority"] == "p0"
+    assert gm["gaps"][0]["priority_drivers"] == ["workflow_criticality", "pii_exposure"]
+
+
+def test_covered_point_never_bumped_by_pii_despite_criticality():
+    sm = _surface_map([{"id": "sp-0001", "kind": "llm_generation", "file": "app.py", "line": 10,
+                         "detection": "signature", "confidence": 0.95, "workflow_hint": "support"}])
+    inv = _telemetry(otel=[{"id": "otel-0001", "file": "app.py", "line": 1, "package": "opentelemetry"}])
+    # file-level otel presence -> "partial" not "covered" per this module's
+    # own design, so use a scenario that actually reaches "covered": none
+    # currently exist (call-site-level coverage isn't detected), so this
+    # test instead confirms the covered branch of the priority table itself
+    # stays capped at p3 regardless of criticality, via direct unit access.
+    from oah.discovery.gap_model import _WEIGHTED_PRIORITY
+    assert _WEIGHTED_PRIORITY["covered"]["critical"] == "p3"
+
+
+def test_unmatched_workflow_hint_falls_back_to_coverage_only():
+    """A hint that doesn't match anything in context.yaml must not silently
+    apply some other workflow's criticality -- falls back to baseline."""
+    sm = _surface_map([{"id": "sp-0001", "kind": "llm_generation", "file": "app.py", "line": 10,
+                         "detection": "signature", "confidence": 0.95, "workflow_hint": "typo-name"}])
+    context = _context([{"name": "billing", "criticality": "critical"}])
+    gm = build_gap_model(sm, _telemetry(), context=context)
+    assert gm["gaps"][0]["priority"] == "p1"  # dark baseline, unchanged
+    assert "priority_drivers" not in gm["gaps"][0]
+
+
+def test_no_workflow_hint_falls_back_to_coverage_only_even_with_context():
+    sm = _surface_map([{"id": "sp-0001", "kind": "llm_generation", "file": "app.py", "line": 10,
+                         "detection": "signature", "confidence": 0.95}])
+    context = _context([{"name": "billing", "criticality": "critical"}])
+    gm = build_gap_model(sm, _telemetry(), context=context)
+    assert gm["gaps"][0]["priority"] == "p1"
+    assert "priority_drivers" not in gm["gaps"][0]

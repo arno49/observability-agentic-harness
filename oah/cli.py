@@ -170,10 +170,9 @@ def cmd_inventory(args):
 
 
 def cmd_gaps(args):
-    """S3, deterministic half only: join S1 x S2, classify coverage.
-    Does NOT run the owner interview / emit context.yaml — genuinely not
-    built yet (see oah/discovery/gap_model.py's module docstring), not
-    faked as if it were."""
+    """S3: join S1 x S2, classify coverage, and — if --context points at a
+    context.yaml from `oah interview` — weight priority by the interviewed
+    workflow criticality for any point whose workflow_hint matches."""
     from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
@@ -183,9 +182,16 @@ def cmd_gaps(args):
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
         return 1
 
+    context = None
+    if args.context:
+        context_data = yaml.safe_load(Path(args.context).read_text())
+        from oah.schemas import validate
+        validate("context", context_data)
+        context = context_data
+
     surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
     inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
-    gaps = build_gap_model(surface_map, inventory)
+    gaps = build_gap_model(surface_map, inventory, context=context)
 
     if args.output:
         Path(args.output).write_text(json.dumps(gaps, indent=2) + "\n")
@@ -197,8 +203,10 @@ def cmd_gaps(args):
         print(f"\nnote: {len(still_ambiguous)} S1 candidate(s) still need LLM disambiguation "
               f"and are excluded from this gap model — resolve them first for a complete picture.",
               file=sys.stderr)
-    print("\nnote: workflow criticality is unknown (context.yaml / owner interview not yet built) "
-          "— priority reflects coverage status only, not business impact.", file=sys.stderr)
+    if context is None:
+        print("\nnote: no --context given — priority reflects coverage status only, not business "
+              "impact. Run `oah interview` and pass its output with --context to weight by "
+              "workflow criticality.", file=sys.stderr)
     return 0
 
 
@@ -256,9 +264,11 @@ def build_parser():
     p_inventory.add_argument("-o", "--output", default=None, help="Write telemetry_inventory.json here instead of stdout")
     p_inventory.set_defaults(func=cmd_inventory)
 
-    p_gaps = sub.add_parser("gaps", help="S3 (deterministic half): join S1 x S2, classify coverage")
+    p_gaps = sub.add_parser("gaps", help="S3: join S1 x S2, classify coverage, weight priority by --context")
     p_gaps.add_argument("target", help="Path to the target repository")
     p_gaps.add_argument("-o", "--output", default=None, help="Write gap_model.json here instead of stdout")
+    p_gaps.add_argument("--context", default=None,
+                         help="Path to a context.yaml from `oah interview` — weights priority by workflow criticality")
     p_gaps.set_defaults(func=cmd_gaps)
 
     p_interview = sub.add_parser("interview", help="S3 owner interview (interactive) -> context.yaml")
