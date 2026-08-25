@@ -1,0 +1,15 @@
+{
+  "schema_note": "Each entry validates against schemas/surface_map.schema.json's points[] item schema (corpus/README.md's stated convention) -- these are what oah.discovery.python_adapter.detect_repo should find, not a looser ad hoc shape.",
+  "points": [
+    {
+      "id": "gt-0001",
+      "kind": "llm_generation",
+      "file": "chat.py",
+      "line": 16,
+      "framework": "anthropic-sdk",
+      "detection": "signature",
+      "confidence": 1.0,
+      "notes": "direct sync call, client constructed 3 lines above in the same module scope"
+    }
+  ]
+}

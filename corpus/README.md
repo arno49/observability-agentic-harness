@@ -1,9 +1,21 @@
 # Reference corpus (Epic E7)
 
-Planned home for eval fixtures: open-source LLM applications across architectures
-(simple RAG chat, multi-agent system, queue-based pipeline) with hand-labeled
-ground truth — call sites, expected spans, known gaps, injection-seeded files for
-security red-teaming (SP7).
+Eval fixtures: open-source LLM applications across architectures, with
+hand-labeled ground truth. Scored by `oah/eval_corpus.py`, asserted in CI by
+`tests/test_corpus_eval.py` against M1's own gate metric (≥90% deterministic
+recall) — see `manifest.json` for provenance (repo URL, pinned commit,
+license) per fixture.
+
+| Fixture | Architecture | Ground truth points |
+|---|---|---|
+| `naive-memory` | simple sync chat loop | 1 |
+| `beacon` | multi-agent, multi-provider abstraction | 9 |
+| `examcopilot` | queue-based (Celery tasks) — filled the gap [SP1's decision record](../docs/decisions/003-sp1-ast-recall.md) named explicitly: no queue-based/async-heavy target in the original 3-repo sample | 2 |
+
+Still planned: a retrieval-heavy fixture, injection-seeded files for
+security red-teaming (SP7 already has its own separate fixtures in
+`spikes/sp7-prompt-injection/` — not duplicated here), and known-gap
+annotations beyond call-site recall (expected spans, dimension coverage).
 
 Also planned: **incident tabletop fixtures** — synthetic incident scenarios (e.g.
 "field-service troubleshooting API: latency rising, retrieval failing

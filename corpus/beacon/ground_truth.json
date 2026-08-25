@@ -1,0 +1,14 @@
+{
+  "schema_note": "Each entry validates against schemas/surface_map.schema.json's points[] item schema. Reused from the SP1 spike's hand-labeled ground truth (spikes/sp1-surface-mapping/ground_truth/beacon.json), reshaped into surface_map point form per this corpus's own convention.",
+  "points": [
+    {"id": "gt-0001", "kind": "llm_generation", "file": "llm.py", "line": 60, "symbol": "AnthropicProvider.complete", "framework": "anthropic-sdk", "detection": "signature", "confidence": 1.0, "notes": "self._client, set in AnthropicProvider.__init__; the one real SDK-touching site behind an LLMProvider ABC"},
+    {"id": "gt-0002", "kind": "llm_generation", "file": "agents/intake.py", "line": 56, "symbol": "run_intake_agent", "framework": "anthropic-sdk", "detection": "signature", "confidence": 1.0, "notes": "typed parameter client: anthropic.Anthropic"},
+    {"id": "gt-0003", "kind": "llm_generation", "file": "agents/intake.py", "line": 133, "symbol": "intake_greeting", "framework": "anthropic-sdk", "detection": "signature", "confidence": 1.0, "notes": "typed parameter, different function in the same file"},
+    {"id": "gt-0004", "kind": "llm_generation", "file": "agents/intake.py", "line": 164, "framework": "anthropic-sdk", "detection": "signature", "confidence": 1.0, "notes": "typed parameter, inside a with block (streaming)"},
+    {"id": "gt-0005", "kind": "llm_generation", "file": "agents/eligibility.py", "line": 148, "symbol": "_parse_criteria", "framework": "anthropic-sdk", "detection": "signature", "confidence": 1.0, "notes": "typed parameter"},
+    {"id": "gt-0006", "kind": "llm_generation", "file": "agents/eligibility.py", "line": 217, "framework": "anthropic-sdk", "detection": "signature", "confidence": 1.0, "notes": "typed parameter"},
+    {"id": "gt-0007", "kind": "llm_generation", "file": "agents/eligibility.py", "line": 351, "framework": "anthropic-sdk", "detection": "signature", "confidence": 1.0, "notes": "typed parameter"},
+    {"id": "gt-0008", "kind": "llm_generation", "file": "agents/research.py", "line": 89, "symbol": "run_research_agent", "framework": "anthropic-sdk", "detection": "signature", "confidence": 1.0, "notes": "typed parameter"},
+    {"id": "gt-0009", "kind": "llm_generation", "file": "agents/research.py", "line": 171, "framework": "anthropic-sdk", "detection": "signature", "confidence": 1.0, "notes": "typed parameter, inside a with block (streaming)"}
+  ]
+}

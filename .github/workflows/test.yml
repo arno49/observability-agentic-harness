@@ -1,0 +1,30 @@
+name: Test
+
+# The oah package's own regression suite -- unlike bundle-skills.yml (which
+# packages skills/*/SKILL.md, unrelated to whether oah's pipeline code
+# works), this is what E7's DoD calls "regression suite in CI": every push
+# runs the full pytest suite, including tests/test_corpus_eval.py, which
+# asserts M1's own gate metric (>=90% deterministic recall) against the
+# real vendored corpus/ fixtures -- not a proxy check, the actual claim.
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install oah with dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run test suite
+        run: python -m pytest tests/ -v

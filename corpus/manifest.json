@@ -1,0 +1,32 @@
+{
+  "schema_note": "E7 reference corpus (ROADMAP.md) -- permissively licensed real repos, vendored (not pinned-clone-only like the SP1/SP10 spike corpora) per corpus/README.md's own rule: license only matters if you actually distribute the code. Each fixture's own LICENSE file is included alongside its source.",
+  "fixtures": [
+    {
+      "id": "naive-memory",
+      "repo_url": "https://github.com/prettywiredlabs/naive-memory",
+      "commit": "7601fa21f3f4d24d81c0d7261a9b839926a749d0",
+      "license": "MIT",
+      "vendored": "full repository (1 file)",
+      "architecture_category": "simple sync chat loop",
+      "reused_from": "SP1 spike corpus (docs/decisions/003-sp1-ast-recall.md)"
+    },
+    {
+      "id": "beacon",
+      "repo_url": "https://github.com/KevinIsInCoding/beacon",
+      "commit": "276f805010e1c3094ef4774f67b624046b8af4e5",
+      "license": "MIT",
+      "vendored": "all non-test .py source files (16 files) -- tests/, .github/, lock files excluded as not relevant to S1/S2/S3 detection",
+      "architecture_category": "multi-agent conversational assistant, multi-provider (Anthropic+OpenAI) abstraction",
+      "reused_from": "SP1 spike corpus (docs/decisions/003-sp1-ast-recall.md)"
+    },
+    {
+      "id": "examcopilot",
+      "repo_url": "https://github.com/nobleqbit/examcopilot",
+      "commit": "0875c7157c779924dd0bd06a93e18c1f1b94ebd5",
+      "license": "MIT",
+      "vendored": "curated 2-file slice (backend/apps/ai_service/tasks.py, views.py) out of a 155-file Django+Flutter monorepo -- only the files with real Anthropic/Celery call sites; the rest of the app has no observability-surface relevance and would bloat the fixture without adding eval value",
+      "architecture_category": "queue-based pipeline (Celery tasks) -- the gap SP1's decision record flagged explicitly: 'no queue-based/async-heavy target' in the original 3-repo sample",
+      "reused_from": null
+    }
+  ]
+}

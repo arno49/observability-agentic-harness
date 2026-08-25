@@ -1,0 +1,27 @@
+{
+  "schema_note": "Each entry validates against schemas/surface_map.schema.json's points[] item schema. New ground truth (not reused from a spike) -- the first real queue-based fixture in the corpus, filling the gap docs/decisions/003-sp1-ast-recall.md's Consequences named explicitly: SP1's original 3-repo sample had no queue-based/async-heavy target.",
+  "points": [
+    {
+      "id": "gt-0001",
+      "kind": "llm_generation",
+      "file": "backend/apps/ai_service/tasks.py",
+      "line": 48,
+      "symbol": "_call_claude",
+      "framework": "anthropic-sdk",
+      "detection": "signature",
+      "confidence": 1.0,
+      "notes": "client is a local parameter constructed 7 lines above in the same function scope; a homegrown-wrapper function (SKILL.md's own eval criteria: 'names the wrapper symbol on wrapper fixtures') called from two @shared_task-decorated Celery tasks, neither of which is itself a direct SDK call site"
+    },
+    {
+      "id": "gt-0002",
+      "kind": "llm_generation",
+      "file": "backend/apps/ai_service/views.py",
+      "line": 298,
+      "symbol": null,
+      "framework": "anthropic-sdk",
+      "detection": "llm_disambiguation",
+      "confidence": 0.7,
+      "notes": "A genuinely new hard case, not present in SP1's original corpus or its synthetic fixtures: `client = _get_anthropic_client()` -- a module-level lazy-singleton getter FUNCTION, not a direct `anthropic.Anthropic(...)` constructor call. oah's deterministic pass (oah/discovery/python_adapter.py) only tracks direct constructor assignments, so this correctly lands in the ambiguous/needs-disambiguation bucket, not resolved directly -- the LLM disambiguation pass must read _get_anthropic_client's own body (which does contain the real anthropic.Anthropic(...) call) to resolve it. This is expected, not a detector bug: see the eval runner's two-tier recall reporting."
+    }
+  ]
+}
