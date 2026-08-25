@@ -46,7 +46,7 @@ def test_design_end_to_end_with_mocked_lens_call(tmp_path):
     assert rc == 0
     result = json.loads((tmp_path / "design.json").read_text())
     assert result["gates_passed"] is True
-    assert result["design_fragment"]["lens"] == "generation-capture"
+    assert result["design_fragments"][0]["lens"] == "generation-capture"
     assert all(f["passed"] for f in result["gate_findings"] if f["severity"] == "error")
 
 

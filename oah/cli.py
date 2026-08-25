@@ -211,16 +211,20 @@ def cmd_gaps(args):
 
 
 def cmd_design(args):
-    """S4 (partial: generation-capture only, one of nine listed lenses) +
-    S5's deterministic gates + S6 (partial: cost-skeptic persona only, one
-    of three). Not `oah design`'s full scope per architecture.md -- runs
-    what exists and says so explicitly, rather than silently producing an
-    incomplete design as if it were complete. architecture.md: 'Design
-    iterates S4->S6 until pass' -- S6 runs on whatever fragment S4 produced
-    regardless of S5's own verdict, since both are real signal for that
-    iteration, not a strict pipeline where S6 only runs after S5 is clean."""
+    """S4 (partial: generation-capture + pii-governance, two of nine listed
+    lenses) + S5's deterministic gates + S6 (partial: cost-skeptic persona
+    only, one of three). Not `oah design`'s full scope per architecture.md
+    -- runs what exists and says so explicitly, rather than silently
+    producing an incomplete design as if it were complete. A lens that
+    fails to produce a fragment (e.g. missing credentials) is a warning,
+    not fatal -- the command proceeds with whichever lenses did produce
+    one, matching `oah readiness`'s existing graceful-degradation posture.
+    architecture.md: 'Design iterates S4->S6 until pass' -- S6 runs on
+    whatever fragments S4 produced regardless of S5's own verdict, since
+    both are real signal for that iteration, not a strict pipeline where
+    S6 only runs after S5 is clean."""
     from oah.discovery.python_adapter import build_surface_map
-    from oah.design.lens import design_generation_capture, LensDesignError
+    from oah.design.lens import design_generation_capture, design_pii_governance, LensDesignError
     from oah.design.gates import run_gates, gates_passed
     from oah.design.panel import run_cost_skeptic, PanelReviewError
     from oah.schemas import validate
@@ -241,31 +245,40 @@ def cmd_design(args):
         print("No surface points found (or all still ambiguous) — nothing to design for.", file=sys.stderr)
         return 0
 
-    try:
-        fragment = design_generation_capture(surface_map["points"], git_sha, context=context)
-    except LensDesignError as e:
-        print(f"error: generation-capture lens design failed: {e}", file=sys.stderr)
-        return 1
+    fragments = []
+    for lens_name, design_fn in (
+        ("generation-capture", design_generation_capture),
+        ("pii-governance", design_pii_governance),
+    ):
+        try:
+            fragment = design_fn(surface_map["points"], git_sha, context=context)
+        except LensDesignError as e:
+            print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
+            continue
+        if fragment:
+            fragments.append(fragment)
 
-    if fragment is None:
+    if not fragments:
         print("No llm_generation points to design for.", file=sys.stderr)
         return 0
 
     point_ids = [p["id"] for p in surface_map["points"] if p["kind"] == "llm_generation"]
-    findings = run_gates(fragment, surface_map_point_ids=point_ids)
+    findings = []
+    for fragment in fragments:
+        findings.extend(run_gates(fragment, surface_map_point_ids=point_ids))
     s5_passed = gates_passed(findings)
 
     panel_error = None
     verdict = None
     try:
-        verdict = run_cost_skeptic([fragment], git_sha, context=context)
+        verdict = run_cost_skeptic(fragments, git_sha, context=context)
     except PanelReviewError as e:
         panel_error = str(e)
 
     s6_passed = verdict is None or verdict["overall"] != "fail"
 
     output = {
-        "design_fragment": fragment,
+        "design_fragments": fragments,
         "gate_findings": [f.__dict__ for f in findings],
         "gates_passed": s5_passed,
         "panel_verdicts": [verdict] if verdict else [],
@@ -290,9 +303,9 @@ def cmd_design(args):
             print(f"[{marker}] S6 cost_skeptic {f['gate']}: {f['summary']}", file=sys.stderr)
         print(f"S6 cost_skeptic: {verdict['overall'].upper()}", file=sys.stderr)
 
-    print("\nnote: only the generation-capture lens (of nine) and the cost_skeptic persona "
-          "(of three) are built — this is a partial design/review, not the full S4/S6 output.",
-          file=sys.stderr)
+    print("\nnote: only the generation-capture and pii-governance lenses (of nine) and the "
+          "cost_skeptic persona (of three) are built — this is a partial design/review, not "
+          "the full S4/S6 output.", file=sys.stderr)
     return 0 if (s5_passed and s6_passed) else 1
 
 
@@ -300,10 +313,12 @@ def cmd_event_schema(args):
     """S7 (partial): event_schema.json only, deterministic merge of
     whatever S4 design fragments exist -- architecture.md's other S7
     outputs (architecture.md prose, rollout_plan.md, runbook.md) need an
-    LLM and aren't built yet. Currently runs generation-capture only,
-    matching S4's own current scope."""
+    LLM and aren't built yet. Currently runs generation-capture and
+    pii-governance, matching S4's own current scope. A lens that fails to
+    produce a fragment (e.g. missing credentials) is a warning, not fatal
+    -- the schema is built from whichever lenses did produce one."""
     from oah.discovery.python_adapter import build_surface_map
-    from oah.design.lens import design_generation_capture, LensDesignError
+    from oah.design.lens import design_generation_capture, design_pii_governance, LensDesignError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
 
     git_sha = _git_sha(args.target)
@@ -316,13 +331,19 @@ def cmd_event_schema(args):
         print("No surface points found — nothing to build an event schema from.", file=sys.stderr)
         return 0
 
-    try:
-        fragment = design_generation_capture(surface_map["points"], git_sha)
-    except LensDesignError as e:
-        print(f"error: generation-capture lens design failed: {e}", file=sys.stderr)
-        return 1
+    fragments = []
+    for lens_name, design_fn in (
+        ("generation-capture", design_generation_capture),
+        ("pii-governance", design_pii_governance),
+    ):
+        try:
+            fragment = design_fn(surface_map["points"], git_sha)
+        except LensDesignError as e:
+            print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
+            continue
+        if fragment:
+            fragments.append(fragment)
 
-    fragments = [fragment] if fragment else []
     if not fragments:
         print("No llm_generation points to build an event schema from.", file=sys.stderr)
         return 0
@@ -339,8 +360,8 @@ def cmd_event_schema(args):
     else:
         print(json.dumps(schema, indent=2))
 
-    print(f"\nnote: only generation-capture's attributes are included (1 of 9 S4 lenses built) — "
-          f"this is a partial event schema.", file=sys.stderr)
+    print(f"\nnote: only generation-capture's and pii-governance's attributes are included "
+          f"(2 of 9 S4 lenses built) — this is a partial event schema.", file=sys.stderr)
     return 0
 
 
@@ -353,7 +374,7 @@ def cmd_dtos(args):
     from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
-    from oah.design.lens import design_generation_capture, LensDesignError
+    from oah.design.lens import design_generation_capture, design_pii_governance, LensDesignError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
     from oah.design.dto_generator import generate_dtos, DtoGenerationError
 
@@ -367,17 +388,25 @@ def cmd_dtos(args):
         print("No surface points found — nothing to generate DTOs for.", file=sys.stderr)
         return 0
 
-    try:
-        fragment = design_generation_capture(surface_map["points"], git_sha)
-    except LensDesignError as e:
-        print(f"error: generation-capture lens design failed: {e}", file=sys.stderr)
-        return 1
-    if fragment is None:
+    fragments = []
+    for lens_name, design_fn in (
+        ("generation-capture", design_generation_capture),
+        ("pii-governance", design_pii_governance),
+    ):
+        try:
+            fragment = design_fn(surface_map["points"], git_sha)
+        except LensDesignError as e:
+            print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
+            continue
+        if fragment:
+            fragments.append(fragment)
+
+    if not fragments:
         print("No llm_generation points to generate DTOs for.", file=sys.stderr)
         return 0
 
     try:
-        event_schema = build_event_schema([fragment], git_sha)
+        event_schema = build_event_schema(fragments, git_sha)
     except EventSchemaConflictError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
@@ -409,7 +438,8 @@ def cmd_dtos(args):
 
     print(f"\nnote: rollout_step is ordered by gap priority only (p0 first) — a stand-in for "
           f"real rollout_plan.md workflow-criticality ordering, not built yet. Only "
-          f"generation-capture's attributes are covered (1 of 9 S4 lenses).", file=sys.stderr)
+          f"generation-capture's and pii-governance's attributes are covered (2 of 9 S4 lenses).",
+          file=sys.stderr)
     return 0
 
 
@@ -422,7 +452,7 @@ def cmd_readiness(args):
     from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
-    from oah.design.lens import design_generation_capture, LensDesignError
+    from oah.design.lens import design_generation_capture, design_pii_governance, LensDesignError
     from oah.design.gates import run_gates
     from oah.design.panel import run_cost_skeptic, PanelReviewError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
@@ -452,26 +482,35 @@ def cmd_readiness(args):
     dtos = {"schema_version": "0.1.0", "dtos": []}
 
     if surface_map["points"]:
-        try:
-            fragment = design_generation_capture(surface_map["points"], git_sha, context=context)
-        except LensDesignError as e:
-            print(f"warning: generation-capture lens design failed, continuing with no design fragment: {e}",
-                  file=sys.stderr)
-            fragment = None
+        fragments = []
+        for lens_name, design_fn in (
+            ("generation-capture", design_generation_capture),
+            ("pii-governance", design_pii_governance),
+        ):
+            try:
+                fragment = design_fn(surface_map["points"], git_sha, context=context)
+            except LensDesignError as e:
+                print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
+                continue
+            if fragment:
+                fragments.append(fragment)
 
-        if fragment:
+        if fragments:
             point_ids = [p["id"] for p in surface_map["points"] if p["kind"] == "llm_generation"]
-            gate_findings = [f.__dict__ for f in run_gates(fragment, surface_map_point_ids=point_ids)]
+            gate_findings = [
+                f.__dict__ for fragment in fragments
+                for f in run_gates(fragment, surface_map_point_ids=point_ids)
+            ]
 
             try:
-                verdict = run_cost_skeptic([fragment], git_sha, context=context)
+                verdict = run_cost_skeptic(fragments, git_sha, context=context)
                 if verdict:
                     panel_verdicts = [verdict]
             except PanelReviewError as e:
                 print(f"warning: S6 cost-skeptic panel did not run: {e}", file=sys.stderr)
 
             try:
-                event_schema = build_event_schema([fragment], git_sha)
+                event_schema = build_event_schema(fragments, git_sha)
             except EventSchemaConflictError as e:
                 print(f"warning: event schema build failed: {e}", file=sys.stderr)
 
