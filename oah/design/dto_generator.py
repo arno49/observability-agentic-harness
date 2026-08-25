@@ -32,8 +32,9 @@ _UNKNOWN_WORKFLOW_RANK = 4
 # auto_scoring member yet (no lens/point-kind produces one), so rank 2
 # ("auto-scoring third") is never actually reachable today -- stated here,
 # not silently assumed. Every other real dimension (retrieval, tools,
-# pii_governance, cost, operations, error_taxonomy, self_telemetry) gets
-# the stated default rank between the two named tiers, not a fabricated
+# pii_governance, cost, operations, error_taxonomy, self_telemetry,
+# realtime_multimodal) gets the stated default rank between the two
+# named tiers, not a fabricated
 # more-specific one architecture.md never assigned it.
 _DIMENSION_ROLLOUT_RANK = {
     "tracing": 0,

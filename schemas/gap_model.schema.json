@@ -22,7 +22,7 @@
             "description": "IDs from surface_map.json this gap concerns"
           },
           "dimension": {
-            "enum": ["tracing", "generation_capture", "retrieval", "tools", "feedback", "error_taxonomy", "pii_governance", "cost", "operations", "self_telemetry"]
+            "enum": ["tracing", "generation_capture", "retrieval", "tools", "feedback", "error_taxonomy", "pii_governance", "cost", "operations", "self_telemetry", "realtime_multimodal"]
           },
           "status": { "enum": ["dark", "partial", "covered"] },
           "existing_telemetry_refs": {

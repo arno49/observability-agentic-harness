@@ -5,7 +5,7 @@ method-suffix shapes (the last N attribute-chain segments of a call, e.g.
 `("messages", "create")` for `client.messages.create(...)`) that count as
 a real call to that SDK — wired to one `surface_map.json` `kind`.
 
-Three registries so far:
+Four registries so far:
 
 - **anthropic-sdk -> llm_generation** — S1's first target stack per
   ROADMAP.md E2 ("Python + raw Anthropic SDK"), carried over verbatim from
@@ -35,6 +35,30 @@ Three registries so far:
   lens description verbatim. Suffix length 1, and unlike pinecone's
   `query`, `create_feedback` is specific enough that it shouldn't meaningfully
   raise the ambiguous-candidate rate the way a generic verb would.
+- **livekit -> realtime_session** — `from livekit import rtc; room =
+  rtc.Room(); await room.connect(url, token)`. This is the first registry
+  whose SDK module lives one level under its top-level package
+  (`livekit.rtc`, not bare `livekit`) -- `from livekit import rtc` is an
+  import of the *submodule*, not a class, a shape
+  oah/discovery/python_adapter.py's `ImportResolver` didn't track before
+  this registry needed it (only `from X import ClassName` and `import
+  X.Y` were tracked; `visit_import_from_statement` now also records a
+  from-imported name as a possible submodule alias when it isn't a known
+  constructor name, the from-import counterpart to `import X.Y`'s
+  existing dotted-path tracking). `rtc.Room()` is then a direct,
+  single-hop constructor call exactly like the other three registries,
+  and `.connect(...)` is called directly on the room object. Confidence
+  note, stated not hidden: this registry is grounded in LiveKit's public
+  SDK docs/quickstart shape as of this codebase's own knowledge, not
+  independently verified against a live corpus the way SP1's anthropic
+  registry was -- if real-world LiveKit code more commonly uses `from
+  livekit.rtc import Room` instead, that form already resolves correctly
+  too (same mechanism as `from anthropic import Anthropic`), so this
+  registry works either way. Suffix length 1 (`connect`) -- an even more
+  generic verb than pinecone's `query` (any socket/DB/API client can have
+  a `.connect()` method), so this registry raises the ambiguous-candidate
+  rate the most of the four; accepted for the same reason pinecone's
+  tradeoff was accepted, not because it's free.
 
 `_walk_calls` in python_adapter.py tries the longest declared suffix
 length first when matching a call site's attribute chain, so a registry
@@ -81,7 +105,15 @@ LANGSMITH = {
     "framework": "langsmith-sdk",
 }
 
-REGISTRIES = [ANTHROPIC, PINECONE, LANGSMITH]
+LIVEKIT = {
+    "constructor_names": frozenset({"Room"}),
+    "sdk_module": "livekit.rtc",
+    "method_suffixes": frozenset({("connect",)}),
+    "surface_kind": "realtime_session",
+    "framework": "livekit-sdk",
+}
+
+REGISTRIES = [ANTHROPIC, PINECONE, LANGSMITH, LIVEKIT]
 
 # Union across registries -- the resolver only needs to know "is this call
 # constructing SOME tracked SDK client", the specific registry is looked

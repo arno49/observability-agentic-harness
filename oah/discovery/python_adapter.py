@@ -71,14 +71,28 @@ class ImportResolver:
                 name = _text(child, src)
                 if name in CONSTRUCTOR_NAMES:
                     self.name_alias[name] = (module, name)
+                else:
+                    # Not a known constructor name -- track it as a
+                    # possible submodule alias too, the from-import
+                    # counterpart to visit_import_statement's `import X.Y`
+                    # dotted-path tracking above. Needed for a registry
+                    # whose real client sits one level under its top
+                    # package (e.g. `from livekit import rtc; rtc.Room()`
+                    # resolves `rtc` -> "livekit.rtc") -- harmless if
+                    # `name` never appears as a receiver in an
+                    # attribute-chain constructor call.
+                    self.module_alias[name] = f"{module}.{name}" if module else name
             elif child.type == "aliased_import":
                 name_node = child.child_by_field_name("name")
                 alias_node = child.child_by_field_name("alias")
                 if name_node is None or alias_node is None:
                     continue
                 original = _text(name_node, src)
+                alias = _text(alias_node, src)
                 if original in CONSTRUCTOR_NAMES:
-                    self.name_alias[_text(alias_node, src)] = (module, original)
+                    self.name_alias[alias] = (module, original)
+                else:
+                    self.module_alias[alias] = f"{module}.{original}" if module else original
 
     def resolve_constructor_call(self, call_node, src):
         """Return (module, ctor_name) if call_node constructs a known SDK

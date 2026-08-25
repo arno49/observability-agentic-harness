@@ -345,3 +345,93 @@ class FeedbackCollector:
     assert len(resolved) == 1
     assert resolved[0]["kind"] == "feedback_ingest"
     assert resolved[0]["symbol"] == "FeedbackCollector.record"
+
+
+# --- Fourth registry (livekit -> realtime_session) --------------------------
+# First registry whose sdk_module lives one level under its top-level
+# package -- exercises the new submodule-import tracking in
+# ImportResolver.visit_import_from_statement, not just a new registry entry.
+
+def test_livekit_submodule_import_form_resolved(tmp_path):
+    """`from livekit import rtc; rtc.Room()` -- rtc is a submodule import,
+    not a class import; this is the shape that needed
+    visit_import_from_statement's new submodule-alias tracking."""
+    resolved, ambiguous = _detect(tmp_path, """
+from livekit import rtc
+
+async def join(url, token):
+    room = rtc.Room()
+    await room.connect(url, token)
+""")
+    assert len(resolved) == 1
+    assert ambiguous == []
+    assert resolved[0]["kind"] == "realtime_session"
+    assert resolved[0]["framework"] == "livekit-sdk"
+
+
+def test_livekit_direct_class_import_form_also_resolved(tmp_path):
+    """`from livekit.rtc import Room; Room()` -- the alternate, direct
+    form must also work, same mechanism as `from anthropic import
+    Anthropic`."""
+    resolved, ambiguous = _detect(tmp_path, """
+from livekit.rtc import Room
+
+async def join(url, token):
+    room = Room()
+    await room.connect(url, token)
+""")
+    assert len(resolved) == 1
+    assert ambiguous == []
+    assert resolved[0]["kind"] == "realtime_session"
+
+
+def test_livekit_aliased_submodule_import_resolved(tmp_path):
+    """`from livekit import rtc as livekit_rtc` -- the aliased-import
+    branch's new submodule-alias tracking, not just the plain dotted_name
+    branch."""
+    resolved, ambiguous = _detect(tmp_path, """
+from livekit import rtc as livekit_rtc
+
+async def join(url, token):
+    room = livekit_rtc.Room()
+    await room.connect(url, token)
+""")
+    assert len(resolved) == 1
+    assert ambiguous == []
+    assert resolved[0]["kind"] == "realtime_session"
+
+
+def test_submodule_alias_tracking_does_not_misresolve_unrelated_from_imports(tmp_path):
+    """A from-import of something that is neither a known constructor name
+    nor ever used as a receiver in a constructor call must not produce a
+    false positive -- the new submodule-alias tracking only matters if
+    the aliased name is later used as `name.Ctor()`."""
+    resolved, ambiguous = _detect(tmp_path, """
+from os import path
+x = path.join("a", "b")
+""")
+    assert resolved == []
+    assert ambiguous == []
+
+
+def test_four_registries_in_one_file_all_resolved_independently(tmp_path):
+    resolved, ambiguous = _detect(tmp_path, """
+import anthropic
+import pinecone
+from langsmith import Client
+from livekit import rtc
+
+client = anthropic.Anthropic()
+pinecone.init(api_key="x", environment="y")
+index = pinecone.Index("my-index")
+ls_client = Client()
+room = rtc.Room()
+
+message = client.messages.create(model="x")
+results = index.query(vector=[0.1, 0.2], top_k=5)
+ls_client.create_feedback(run_id="abc123", key="user_score", score=1)
+room.connect("wss://example", "token")
+""")
+    assert ambiguous == []
+    kinds = {r["kind"] for r in resolved}
+    assert kinds == {"llm_generation", "retrieval", "feedback_ingest", "realtime_session"}

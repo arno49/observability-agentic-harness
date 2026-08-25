@@ -104,15 +104,15 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
     unknown += [
         "S10 instrumentation has not been applied to the target repo",
         "S11 dynamic validation has not run -- no real Trace Completeness Rate or overhead measurement exists",
-        "3 of 9 S4 lenses are not built (only generation-capture, pii-governance, cost, ops, retrieval, feedback) -- coverage claims are scoped to those lenses only",
+        "2 of 9 S4 lenses are not built (only generation-capture, pii-governance, cost, ops, retrieval, feedback, realtime-multimodal) -- coverage claims are scoped to those lenses only",
     ]
     if not workflow_names:
         unknown.append("no context.yaml interview has run -- workflow criticality, PII presence, and governance answers are all unknown")
 
     known_limitations = [
-        "Only the generation-capture, pii-governance, cost, ops, retrieval, and feedback S4 "
-        "lenses are built; tracing, tools, and realtime-multimodal lenses are not designed for "
-        "this repo yet.",
+        "Only the generation-capture, pii-governance, cost, ops, retrieval, feedback, and "
+        "realtime-multimodal S4 lenses are built; tracing and tools lenses are not designed "
+        "for this repo yet.",
         "rollout_step ordering is gap-priority-only, not real workflow-criticality-ordered rollout_plan.md.",
     ]
 

@@ -121,3 +121,8 @@ def design_retrieval(points, repo_git_sha, context=None, model=None, _completion
 def design_feedback(points, repo_git_sha, context=None, model=None, _completion_fn=None):
     feedback_points = [p for p in points if p.get("kind") == "feedback_ingest"]
     return design_lens("s4-feedback", feedback_points, repo_git_sha, context, model, _completion_fn)
+
+
+def design_realtime_multimodal(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+    realtime_points = [p for p in points if p.get("kind") == "realtime_session"]
+    return design_lens("s4-realtime-multimodal", realtime_points, repo_git_sha, context, model, _completion_fn)
