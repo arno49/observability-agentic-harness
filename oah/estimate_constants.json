@@ -1,0 +1,47 @@
+{
+  "_comment": "Per docs/decisions/002-sp5-cost-model.md's Decision: 'The per-unit constants table above ships as a versioned config, not hardcoded, specifically so it can be overwritten by real measurements once they exist.' Every number here is a first-pass assumption, not a calibrated one -- unverified until real run_manifest.json cost data accumulates (see that record's Consequences / recalibration protocol).",
+  "constants_version": "0.1.0",
+  "pricing": {
+    "_comment": "Sonnet 5, per token, from platform.claude.com/docs as of 2026-08-25.",
+    "model": "claude-sonnet-5",
+    "base_input_per_token": 0.000002,
+    "output_per_token": 0.00001,
+    "cache_write_1h_per_token": 0.000004,
+    "cache_read_per_token": 0.0000002
+  },
+  "batching": {
+    "s1_batch_size": 20,
+    "s8_batch_size": 15
+  },
+  "per_unit_tokens": {
+    "s1_batch_overhead_in": 1500,
+    "s1_per_candidate_in": 300,
+    "s1_per_candidate_out": 120,
+    "s3_reference_material_in": 4000,
+    "s3_per_point_in": 150,
+    "s3_per_point_out": 150,
+    "s4_shared_context_tokens": 10000,
+    "s4_lens_specific_in": 1500,
+    "s4_lens_specific_out": 2500,
+    "s6_persona_specific_in": 1000,
+    "s6_persona_specific_out": 1500,
+    "s7_in": 12000,
+    "s7_out": 18000,
+    "s8_batch_overhead_in": 1200,
+    "s8_per_dto_in": 250,
+    "s8_per_dto_out": 200,
+    "s10_per_dto_in": 3000,
+    "s10_per_dto_out": 2000,
+    "s11_per_scenario_in": 2000,
+    "s11_per_scenario_out": 1500
+  },
+  "fixed_counts": {
+    "n_lens": 8,
+    "n_persona": 3,
+    "default_workflows_if_unknown": 3
+  },
+  "derived_ratios": {
+    "_comment": "D (DTOs) ~= P (surface points) * this ratio -- some points need more than one DTO (e.g. SDK call site + collector config). Midpoint of SP5's stated 1.2-2x range.",
+    "dtos_per_surface_point": 1.4
+  }
+}

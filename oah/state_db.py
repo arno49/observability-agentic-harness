@@ -57,8 +57,11 @@ class StateDB:
         self.close()
 
     def create_run(self, run_id, target_path, target_git_sha, started_at):
+        """Idempotent: resuming an existing run_id must not fail — a run
+        being resumed is the normal case checkpoint/resume exists for, not
+        an error."""
         self._conn.execute(
-            "INSERT INTO runs (run_id, target_path, target_git_sha, started_at) VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO runs (run_id, target_path, target_git_sha, started_at) VALUES (?, ?, ?, ?)",
             (run_id, str(target_path), target_git_sha, started_at),
         )
         self._conn.commit()
