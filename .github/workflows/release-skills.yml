@@ -1,0 +1,84 @@
+name: Release skills bundle
+
+# Durable, versioned publish of the skills bundle as a GitHub Release asset —
+# unlike bundle-skills.yml's run-scoped artifacts (30-day expiry), a release
+# asset is a stable download link. See docs/skills-bundle.md.
+#
+# Two ways to cut a release:
+#   1. Push a tag matching skills-* yourself (e.g. `git tag skills-manual-fix
+#      && git push origin skills-manual-fix`).
+#   2. Actions tab → Release skills bundle → Run workflow — auto-generates a
+#      skills-<UTC YYYYMMDDHHMM> tag off the current default-branch commit.
+#
+# The bundle itself has no single meaningful semver (it's a snapshot of N
+# independently-versioned skills — each skill's own version lives in its
+# SKILL.md frontmatter, per docs/SKILLS.md, and is what a real pipeline run
+# actually pins to). The tag is only a monotonic pointer to a snapshot; the
+# release notes list every bundled skill's own name + version so the two
+# stay distinguishable.
+
+on:
+  push:
+    tags:
+      - "skills-*"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    uses: ./.github/workflows/_skills-build.yml
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Determine tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            tag="${{ github.ref_name }}"
+          else
+            tag="skills-$(date -u +%Y%m%d%H%M)"
+            if gh api "repos/${{ github.repository }}/git/refs/tags/${tag}" >/dev/null 2>&1; then
+              tag="${tag}-$(date -u +%S)"
+            fi
+            gh api "repos/${{ github.repository }}/git/refs" \
+              -f ref="refs/tags/${tag}" -f sha="${{ github.sha }}"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release notes
+        id: notes
+        run: |
+          set -euo pipefail
+          {
+            echo "Skills bundle snapshot. Per-skill versions (source of truth: each SKILL.md's own frontmatter):"
+            echo
+            while read -r name version; do
+              echo "- \`${name}\` — v${version}"
+            done < dist/MANIFEST.txt
+            echo
+            echo "Debug tooling, not a pipeline release — see docs/skills-bundle.md."
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            dist/*.zip dist/MANIFEST.txt \
+            --title "${{ steps.tag.outputs.tag }}" \
+            --notes-file release-notes.md

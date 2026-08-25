@@ -36,6 +36,37 @@ gh run download <run-id> -n oah-skills-individual
 ```
 
 Artifacts expire after 30 days — re-run the workflow if you need a fresh copy.
+For a link that doesn't expire, use a release instead (below).
+
+## Durable, versioned publish (releases)
+
+`bundle-skills.yml`'s artifacts are workflow-run-scoped and expire in 30 days —
+fine for iterating, not for pointing someone at a stable link. **Release skills
+bundle** (`.github/workflows/release-skills.yml`) builds the same bundle and
+attaches it to a [GitHub Release](https://github.com/arno49/observability-agentic-harness/releases)
+instead, which doesn't expire.
+
+Two ways to cut one:
+
+1. Push a tag matching `skills-*` yourself: `git tag skills-my-label && git push
+   origin skills-my-label`.
+2. Actions tab → **Release skills bundle** → Run workflow. Auto-generates a
+   `skills-<UTC YYYYMMDDHHMM>` tag off the current commit and releases under it
+   — no local tagging needed.
+
+The bundle itself has no single meaningful semver — it's a snapshot of however
+many independently-versioned skills exist (right now, one). Each skill's own
+`version:` in its `SKILL.md` frontmatter stays the real, authoritative version
+(what a real pipeline run would pin to, per [SKILLS.md](SKILLS.md)); the release
+tag is only a monotonic pointer to a snapshot in time. Every release's notes and
+its `MANIFEST.txt` asset list every bundled skill's name and version explicitly,
+so the two never get conflated.
+
+This intentionally does **not** use GitHub Packages: Packages is built for
+package-manager artifacts (npm, container images, Maven, NuGet) and a
+markdown+JSON bundle doesn't natively fit any of those short of wrapping it as
+an OCI artifact pushed to ghcr.io — heavier tooling for less discoverability
+than a release asset a human can just click.
 
 ## Loading a skill into Claude
 

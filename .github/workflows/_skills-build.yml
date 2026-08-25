@@ -1,0 +1,113 @@
+name: (reusable) Build skills bundle
+
+# Shared build steps for bundle-skills.yml (debug CI) and release-skills.yml
+# (durable publish). Not meant to be run directly — invoked via `uses:`.
+#
+# skills/_shared/ is build-time tooling (validate.py, check_schema.py), not a
+# skill: it has no SKILL.md, is skipped by the frontmatter check, and is never
+# zipped as its own "skill". check_schema.py stays CI-only; validate.py is
+# copied into every real skill's scripts/ folder instead.
+
+on:
+  workflow_call: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate skill frontmatter
+        run: |
+          set -euo pipefail
+          fail=0
+          shopt -s nullglob
+          for f in skills/*/SKILL.md; do
+            dir=$(dirname "$f")
+            dirname=$(basename "$dir")
+            name=$(awk -F': ' '/^name:[[:space:]]/{print $2; exit}' "$f" | tr -d '\r')
+            if [ -z "$name" ]; then
+              echo "::error file=$f::missing 'name:' in frontmatter"
+              fail=1
+            elif [ "$name" != "$dirname" ]; then
+              echo "::error file=$f::frontmatter name '$name' does not match directory '$dirname'"
+              fail=1
+            fi
+            if ! grep -q '^description:' "$f"; then
+              echo "::error file=$f::missing 'description:' in frontmatter"
+              fail=1
+            fi
+            if ! grep -q '^version:' "$f"; then
+              echo "::warning file=$f::no 'version:' in frontmatter"
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "One or more skills failed validation — see errors above."
+            exit 1
+          fi
+
+      - name: Validate io/ schemas
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet jsonschema
+          shopt -s nullglob
+          schemas=(skills/*/io/*.schema.json)
+          if [ ${#schemas[@]} -eq 0 ]; then
+            echo "no io/ schemas yet — nothing to check"
+          else
+            python3 skills/_shared/check_schema.py "${schemas[@]}"
+          fi
+
+      - name: Bundle skills
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p dist/individual dist/combined/skills
+
+          for d in skills/*/; do
+            name=$(basename "$d")
+            if [ "$name" = "_shared" ]; then
+              continue
+            fi
+            dest="dist/combined/skills/${name}"
+            mkdir -p "${dest}/scripts"
+            cp -r "skills/${name}/." "${dest}/"
+            if [ -f "skills/_shared/validate.py" ]; then
+              cp "skills/_shared/validate.py" "${dest}/scripts/validate.py"
+            fi
+            (cd dist/combined/skills && zip -rq "$OLDPWD/dist/individual/${name}.zip" "$name")
+            echo "packaged $name"
+          done
+
+          (cd dist/combined && zip -rq "$OLDPWD/dist/oah-skills-bundle.zip" skills)
+
+      - name: Write skill manifest
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          {
+            for f in skills/*/SKILL.md; do
+              name=$(awk -F': ' '/^name:[[:space:]]/{print $2; exit}' "$f" | tr -d '\r')
+              version=$(awk -F': ' '/^version:[[:space:]]/{print $2; exit}' "$f" | tr -d '\r')
+              echo "${name} ${version:-unversioned}"
+            done
+          } | sort > dist/MANIFEST.txt
+          cat dist/MANIFEST.txt
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oah-skills-bundle
+          path: dist/oah-skills-bundle.zip
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oah-skills-individual
+          path: dist/individual/*.zip
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oah-skills-manifest
+          path: dist/MANIFEST.txt
+          retention-days: 30
