@@ -111,3 +111,8 @@ def design_cost(points, repo_git_sha, context=None, model=None, _completion_fn=N
 def design_ops(points, repo_git_sha, context=None, model=None, _completion_fn=None):
     llm_gen_points = [p for p in points if p.get("kind") == "llm_generation"]
     return design_lens("s4-ops", llm_gen_points, repo_git_sha, context, model, _completion_fn)
+
+
+def design_retrieval(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+    retrieval_points = [p for p in points if p.get("kind") == "retrieval"]
+    return design_lens("s4-retrieval", retrieval_points, repo_git_sha, context, model, _completion_fn)

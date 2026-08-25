@@ -162,6 +162,62 @@ def test_design_s6_panel_pass_with_findings_does_not_fail_command(tmp_path):
     assert result["panel_verdicts"][0]["overall"] == "pass_with_findings"
 
 
+def test_design_checks_each_fragment_against_its_own_point_kind(tmp_path):
+    """A repo with both llm_generation (anthropic) and retrieval (pinecone)
+    points -- LENS_TO_POINT_KIND/_point_ids_for_fragment must check each
+    fragment's S5 gates against the point kind that lens actually targets,
+    not a single hardcoded kind. Before that fix, the retrieval fragment
+    would have been checked against llm_generation point IDs -- its own
+    signals cover a different point entirely, so
+    check_every_surface_point_has_decision would report the llm_generation
+    point 'missing' from the retrieval fragment and s5_passed would be
+    False even though both fragments are individually complete and
+    correct. Asserting gates_passed is True here is the regression check."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text(
+        "import anthropic\nimport pinecone\n"
+        "client = anthropic.Anthropic()\n"
+        "pinecone.init(api_key='x', environment='y')\n"
+        "index = pinecone.Index('my-index')\n"
+        "results = index.query(vector=[0.1, 0.2], top_k=5)\n"
+        "message = client.messages.create(model='x')\n"
+    )
+    _init_git_repo(target)
+
+    def fake_generation_capture(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+        gen_points = [p for p in points if p["kind"] == "llm_generation"]
+        assert len(gen_points) == 1
+        return _valid_fragment(repo_git_sha, gen_points[0]["id"])
+
+    def fake_retrieval(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+        retrieval_points = [p for p in points if p["kind"] == "retrieval"]
+        assert len(retrieval_points) == 1
+        point_id = retrieval_points[0]["id"]
+        return {
+            "schema_version": "0.1.0", "lens": "retrieval", "repo_git_sha": repo_git_sha,
+            "failure_mode": "fail_open",
+            "signals": [{
+                "name": "oah.retrieval.sources", "surface_point_ids": [point_id],
+                "maps_to": {"kind": "oah_extension", "attribute": "oah.retrieval.sources"},
+                "sensitivity_tier": "internal", "pii_masked": False,
+                "supports_decision": "judging retrieval relevance quality",
+                "acting_role": "retrieval owner", "latency_overhead_budget_ms": 2,
+            }],
+        }
+
+    args = argparse.Namespace(target=str(target), output=str(tmp_path / "design.json"), context=None)
+    with patch("oah.design.lens.design_generation_capture", side_effect=fake_generation_capture), \
+         patch("oah.design.lens.design_retrieval", side_effect=fake_retrieval):
+        rc = cmd_design(args)
+
+    result = json.loads((tmp_path / "design.json").read_text())
+    assert result["gates_passed"] is True
+    lenses = {f["lens"] for f in result["design_fragments"]}
+    assert lenses == {"generation-capture", "retrieval"}
+    assert rc == 0
+
+
 def test_design_no_llm_generation_points_skips_gracefully(tmp_path, capsys):
     target = tmp_path / "target_repo"
     target.mkdir()

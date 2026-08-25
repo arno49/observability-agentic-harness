@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s4-retrieval/input.schema.json",
+  "title": "S4 retrieval lens — input",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "points"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "points": {
+      "type": "array",
+      "minItems": 1,
+      "description": "surface_map.json points of kind retrieval only -- the lens designs for these, no others.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "file", "line"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "retrieval" },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "symbol": { "type": "string" },
+          "framework": { "type": "string" },
+          "sync_nature": { "enum": ["sync", "async", "queued", "streamed"] },
+          "gap_status": { "enum": ["dark", "partial", "covered"], "description": "from gap_model.json, if available" },
+          "gap_priority": { "enum": ["p0", "p1", "p2", "p3"] }
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "context.yaml, if an interview has run -- optional; the lens must produce valid, complete signals for every point with or without it, but source_inventory/trust_boundaries (when present) ground the governance-status and region-handling signals in real approval data.",
+      "properties": {
+        "workflows": { "type": "array" },
+        "source_inventory": { "type": "array" },
+        "trust_boundaries": { "type": "array" }
+      }
+    }
+  }
+}
