@@ -9,6 +9,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 from oah.doctor import run as run_doctor, format_report
 from oah.estimate import estimate as run_estimate
 from oah.state_db import open_state_db
@@ -200,6 +202,32 @@ def cmd_gaps(args):
     return 0
 
 
+def cmd_interview(args):
+    """S3's owner interview — real stdin prompts, not stub data. See
+    oah/interview.py's module docstring for why this is genuinely
+    interactive rather than something an LLM or scanner answers."""
+    from oah.interview import run_interview
+
+    git_sha = _git_sha(args.target)
+    if git_sha is None:
+        print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
+        return 1
+
+    context = run_interview(git_sha)
+    yaml_text = yaml.safe_dump(context, sort_keys=False, allow_unicode=True)
+
+    # Never auto-written into the target repo (same convention as every
+    # other command here) -- context.yaml is OAH's own artifact, not the
+    # target's; only `oah instrument --mode fix` (E5, not this stage) has
+    # any business writing into a scanned repo's working tree.
+    if args.output:
+        Path(args.output).write_text(yaml_text)
+        print(f"\nWrote {args.output}")
+    else:
+        print(f"\n{yaml_text}", end="")
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog="oah", description="Observability Agentic Harness")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -232,6 +260,12 @@ def build_parser():
     p_gaps.add_argument("target", help="Path to the target repository")
     p_gaps.add_argument("-o", "--output", default=None, help="Write gap_model.json here instead of stdout")
     p_gaps.set_defaults(func=cmd_gaps)
+
+    p_interview = sub.add_parser("interview", help="S3 owner interview (interactive) -> context.yaml")
+    p_interview.add_argument("target", help="Path to the target repository")
+    p_interview.add_argument("-o", "--output", default=None,
+                              help="Write context.yaml here instead of stdout (never auto-written into the target repo)")
+    p_interview.set_defaults(func=cmd_interview)
 
     return parser
 

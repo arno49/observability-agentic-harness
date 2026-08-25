@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/context.schema.json",
+  "title": "Owner interview answers (S3 output, context.yaml)",
+  "description": "Per architecture.md S3: workflow criticality, PII presence, data-egress constraints, review workflows, data & governance map, source inventory, trust boundaries, declared tool/action boundary. Weights gap_model.json's prioritization once populated.",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "workflows"],
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "interviewed_at": { "type": "string", "format": "date-time" },
+    "workflows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "criticality"],
+        "properties": {
+          "name": { "type": "string" },
+          "criticality": { "enum": ["low", "medium", "high", "critical"] },
+          "pii_presence": { "enum": ["none", "indirect", "direct"] },
+          "data_egress_constraints": { "type": "string", "description": "e.g. region lock, no third-party LLM, contractual data residency" },
+          "review_workflow": { "type": "string", "description": "How releases/changes to this workflow get reviewed, if at all" },
+          "data_governance_map": {
+            "type": "object",
+            "description": "'internal-only' is not 'low-risk by default' — describe what actually happens to data in this workflow",
+            "properties": {
+              "receives": { "type": "string" },
+              "retrieves": { "type": "string" },
+              "returns": { "type": "string" },
+              "logs": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "source_inventory": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "approval_status"],
+        "properties": {
+          "source": { "type": "string" },
+          "approval_status": { "enum": ["approved", "restricted", "unapproved"] },
+          "region": { "type": "string" },
+          "use_case": { "type": "string" },
+          "approved_handling_path": { "type": "string", "description": "Required detail when approval_status is restricted" }
+        }
+      }
+    },
+    "trust_boundaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["context_field", "verified_server_side"],
+        "properties": {
+          "context_field": { "type": "string", "description": "e.g. role, region, tenant_id" },
+          "verified_server_side": { "type": "boolean" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "tool_action_boundary": {
+      "type": "string",
+      "description": "The declared tool/action boundary for the current release — what the product is allowed to do autonomously right now"
+    }
+  }
+}

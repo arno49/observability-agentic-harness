@@ -1,0 +1,116 @@
+"""Regression tests for oah.interview — driven with canned answers via the
+`ask` injection point, not real stdin."""
+import pytest
+
+from oah.interview import run_interview
+from oah.schemas import validate, SchemaValidationError
+
+
+def _scripted(answers):
+    """Returns an `ask` function that yields each canned answer in order,
+    ignoring the prompt text — mimics a user typing a fixed script."""
+    it = iter(answers)
+
+    def ask(prompt):
+        try:
+            return next(it)
+        except StopIteration:
+            raise AssertionError(f"interview asked more questions than the test scripted: {prompt!r}")
+    return ask
+
+
+def test_minimal_interview_one_workflow_no_optional_sections():
+    answers = [
+        "1",                    # how many workflows
+        "support-chat",         # name
+        "high",                 # criticality
+        "indirect",             # pii_presence
+        "",                     # egress constraints (blank)
+        "",                     # review workflow (blank)
+        "",                     # receives (blank)
+        "",                     # retrieves (blank)
+        "",                     # returns (blank)
+        "",                     # logs (blank)
+        "n",                    # add a source? no
+        "n",                    # add a trust boundary? no
+        "",                     # tool/action boundary (blank)
+    ]
+    context = run_interview("deadbeef", ask=_scripted(answers), print_fn=lambda *a: None)
+    validate("context", context)
+    assert context["repo_git_sha"] == "deadbeef"
+    assert len(context["workflows"]) == 1
+    assert context["workflows"][0] == {
+        "name": "support-chat", "criticality": "high", "pii_presence": "indirect",
+    }
+    assert "source_inventory" not in context
+    assert "trust_boundaries" not in context
+    assert "tool_action_boundary" not in context
+
+
+def test_full_interview_all_sections_populated():
+    answers = [
+        "1", "billing-agent", "critical", "direct",
+        "EU-only, no third-party LLM", "security team sign-off required",
+        "invoice PDFs", "customer records DB", "payment status", "request metadata only",
+        "y",  # add a source
+        "internal-crm", "restricted", "eu-west-1", "billing lookups", "via data-access-broker service",
+        "n",  # no more sources
+        "y",  # add a trust boundary
+        "tenant_id", "y", "verified via signed JWT claim",
+        "n",  # no more trust boundaries
+        "can send refund emails, cannot issue refunds without human approval",
+    ]
+    context = run_interview("cafebabe", ask=_scripted(answers), print_fn=lambda *a: None)
+    validate("context", context)
+
+    wf = context["workflows"][0]
+    assert wf["data_egress_constraints"] == "EU-only, no third-party LLM"
+    assert wf["data_governance_map"]["receives"] == "invoice PDFs"
+
+    assert context["source_inventory"][0]["approval_status"] == "restricted"
+    assert context["source_inventory"][0]["approved_handling_path"] == "via data-access-broker service"
+
+    assert context["trust_boundaries"][0]["context_field"] == "tenant_id"
+    assert context["trust_boundaries"][0]["verified_server_side"] is True
+
+    assert "refund" in context["tool_action_boundary"]
+
+
+def test_invalid_criticality_reprompts_not_crashes():
+    answers = [
+        "1", "wf-1",
+        "urgent",   # invalid -- not in CRITICALITY_LEVELS, interview must re-prompt for this one
+        "high",     # corrected
+        "none",
+        "", "", "", "", "", "",  # egress, review, receives, retrieves, returns, logs
+        "n", "n", "",
+    ]
+    context = run_interview("sha1", ask=_scripted(answers), print_fn=lambda *a: None)
+    assert context["workflows"][0]["criticality"] == "high"
+
+
+def test_invalid_criticality_actually_reprompts_same_question():
+    """Distinguishes 're-prompts correctly' from 'silently accepted the
+    invalid value' -- the previous test alone wouldn't catch the latter if
+    the code coincidentally used the last-seen value regardless."""
+    calls = []
+    script = ["1", "wf-1", "urgent", "high", "none", "", "", "", "", "", "", "n", "n", ""]
+
+    def ask(prompt):
+        calls.append(prompt)
+        return script[len(calls) - 1]
+
+    run_interview("sha1", ask=ask, print_fn=lambda *a: None)
+    criticality_prompts = [p for p in calls if p.startswith("Business criticality")]
+    assert len(criticality_prompts) == 2  # asked once, rejected, asked again
+
+
+def test_multiple_workflows():
+    answers = [
+        "2",
+        "wf-a", "low", "none", "", "", "", "", "", "",
+        "wf-b", "critical", "direct", "", "", "", "", "", "",
+        "n", "n", "",
+    ]
+    context = run_interview("sha2", ask=_scripted(answers), print_fn=lambda *a: None)
+    assert [w["name"] for w in context["workflows"]] == ["wf-a", "wf-b"]
