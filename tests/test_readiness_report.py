@@ -97,14 +97,37 @@ def test_no_context_omits_data_and_governance_section_rather_than_fabricating():
 
 
 def test_known_limitations_and_unknown_evidence_always_present():
-    """The honest scoping (5-of-9 lens, no S10/S11) must always be stated,
-    not just when something fails."""
+    """The honest scoping (each lens's own narrower-than-architecture.md
+    scope, no S10/S11) must always be stated, not just when something
+    fails."""
     report = build_readiness_report(
         EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS, repo_git_sha="deadbeef",
     )
     assert len(report["known_limitations"]) >= 2
     assert any("S10" in u for u in report["recommendation"]["evidence_position"]["unknown"])
     assert any("S11" in u for u in report["recommendation"]["evidence_position"]["unknown"])
+
+
+def test_rollout_ordering_limitation_reflects_whether_context_was_supplied():
+    """This claim was stale before: it unconditionally said gap-priority-
+    only even after S8 started using real workflow-criticality ordering
+    whenever --context is supplied. Must reflect which one actually
+    happened this run."""
+    no_context_report = build_readiness_report(
+        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS, repo_git_sha="deadbeef",
+    )
+    assert any("gap-priority-only" in lim for lim in no_context_report["known_limitations"])
+
+    context = {
+        "schema_version": "0.1.0", "repo_git_sha": "deadbeef", "interviewed_at": "2026-01-01T00:00:00Z",
+        "workflows": [{"name": "billing", "criticality": "critical"}],
+    }
+    with_context_report = build_readiness_report(
+        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS,
+        context=context, repo_git_sha="deadbeef",
+    )
+    assert any("real workflow-criticality" in lim for lim in with_context_report["known_limitations"])
+    assert not any("gap-priority-only" in lim for lim in with_context_report["known_limitations"])
 
 
 def test_missing_persona_verdicts_surfaced_as_unknown():

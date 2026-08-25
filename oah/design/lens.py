@@ -133,3 +133,8 @@ def design_tracing(points, repo_git_sha, context=None, model=None, _completion_f
     tracing is cross-cutting (architecture.md), so it designs a
     propagation-risk signal for points of any kind S1 has detected."""
     return design_lens("s4-tracing", points, repo_git_sha, context, model, _completion_fn)
+
+
+def design_tools(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+    tool_points = [p for p in points if p.get("kind") == "tool_call"]
+    return design_lens("s4-tools", tool_points, repo_git_sha, context, model, _completion_fn)

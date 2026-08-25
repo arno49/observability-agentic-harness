@@ -55,6 +55,7 @@ LENS_TO_POINT_KIND = {
     "feedback": "feedback_ingest",
     "realtime-multimodal": "realtime_session",
     "tracing": None,
+    "tools": "tool_call",
 }
 
 
@@ -244,8 +245,8 @@ def cmd_gaps(args):
 
 
 def cmd_design(args):
-    """S4 (partial: generation-capture + pii-governance + cost + ops + retrieval
-    + feedback + realtime-multimodal + tracing, eight of nine listed lenses) + S5's
+    """S4 (all nine listed lenses now built: generation-capture, pii-governance,
+    cost, ops, retrieval, feedback, realtime-multimodal, tracing, tools) + S5's
     deterministic gates + S6 (all
     three personas: cost_skeptic, sre, security). Not `oah design`'s full
     scope per architecture.md -- runs what exists and says so explicitly,
@@ -262,7 +263,7 @@ def cmd_design(args):
     from oah.design.lens import (
         design_generation_capture, design_pii_governance, design_cost, design_ops,
         design_retrieval, design_feedback, design_realtime_multimodal, design_tracing,
-        LensDesignError,
+        design_tools, LensDesignError,
     )
     from oah.design.gates import run_gates, gates_passed
     from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
@@ -294,6 +295,7 @@ def cmd_design(args):
         ("feedback", design_feedback),
         ("realtime-multimodal", design_realtime_multimodal),
         ("tracing", design_tracing),
+        ("tools", design_tools),
     ):
         try:
             fragment = design_fn(surface_map["points"], git_sha, context=context)
@@ -352,10 +354,13 @@ def cmd_design(args):
             print(f"[{marker}] S6 {verdict['persona']} {f['gate']}: {f['summary']}", file=sys.stderr)
         print(f"S6 {verdict['persona']}: {verdict['overall'].upper()}", file=sys.stderr)
 
-    print("\nnote: only the generation-capture, pii-governance, cost, ops, retrieval, "
-          "feedback, realtime-multimodal, and tracing lenses (of nine) are built — this is "
-          "a partial design/review, not the full S4 "
-          "output; all three S6 personas (cost_skeptic, sre, security) are built and run.",
+    print("\nnote: all nine S4 lenses and all three S6 personas (cost_skeptic, sre, "
+          "security) are built and run — this is the full S4/S6 roster, though several "
+          "individual lenses (tracing, tools, pii-governance among them) are still "
+          "narrower than architecture.md's full per-lens ask; see each skill's own SKILL.md "
+          "for its stated scope boundary. S1's own detection is still partial: only 5 of the "
+          "surface_map kind vocabulary's kinds are detected (llm_generation, retrieval, "
+          "feedback_ingest, realtime_session, tool_call).",
           file=sys.stderr)
     return 0 if (s5_passed and s6_passed) else 1
 
@@ -364,16 +369,15 @@ def cmd_event_schema(args):
     """S7 (partial): event_schema.json only, deterministic merge of
     whatever S4 design fragments exist -- architecture.md's other S7
     outputs (architecture.md prose, rollout_plan.md, runbook.md) need an
-    LLM and aren't built yet. Currently runs generation-capture,
-    pii-governance, cost, ops, and retrieval, matching S4's own current
-    scope. A lens that fails to produce a fragment (e.g. missing
-    credentials) is a warning, not fatal -- the schema is built from
+    LLM and aren't built yet. Runs all nine S4 lenses. A lens that fails
+    to produce a fragment (e.g. missing credentials) is a warning, not
+    fatal -- the schema is built from
     whichever lenses did produce one."""
     from oah.discovery.python_adapter import build_surface_map
     from oah.design.lens import (
         design_generation_capture, design_pii_governance, design_cost, design_ops,
         design_retrieval, design_feedback, design_realtime_multimodal, design_tracing,
-        LensDesignError,
+        design_tools, LensDesignError,
     )
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
 
@@ -397,6 +401,7 @@ def cmd_event_schema(args):
         ("feedback", design_feedback),
         ("realtime-multimodal", design_realtime_multimodal),
         ("tracing", design_tracing),
+        ("tools", design_tools),
     ):
         try:
             fragment = design_fn(surface_map["points"], git_sha)
@@ -422,9 +427,9 @@ def cmd_event_schema(args):
     else:
         print(json.dumps(schema, indent=2))
 
-    print(f"\nnote: only generation-capture's, pii-governance's, cost's, ops's, "
-          f"retrieval's, feedback's, realtime-multimodal's, and tracing's attributes are "
-          f"included (8 of 9 S4 lenses built) — this is a partial event schema.", file=sys.stderr)
+    print(f"\nnote: all nine S4 lenses' attributes are included, but S7's other outputs "
+          f"(architecture.md prose, rollout_plan.md, runbook.md) aren't built -- this is "
+          f"event_schema.json only, not the full S7 output.", file=sys.stderr)
     return 0
 
 
@@ -442,7 +447,7 @@ def cmd_dtos(args):
     from oah.design.lens import (
         design_generation_capture, design_pii_governance, design_cost, design_ops,
         design_retrieval, design_feedback, design_realtime_multimodal, design_tracing,
-        LensDesignError,
+        design_tools, LensDesignError,
     )
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
     from oah.design.dto_generator import generate_dtos, DtoGenerationError
@@ -474,6 +479,7 @@ def cmd_dtos(args):
         ("feedback", design_feedback),
         ("realtime-multimodal", design_realtime_multimodal),
         ("tracing", design_tracing),
+        ("tools", design_tools),
     ):
         try:
             fragment = design_fn(surface_map["points"], git_sha, context=context)
@@ -525,9 +531,8 @@ def cmd_dtos(args):
         "rollout_step is ordered by gap priority only (p0 first) — pass --context for real "
         "workflow-criticality ordering (architecture.md S7)"
     )
-    print(f"\nnote: {rollout_note}. Only generation-capture's, pii-governance's, cost's, "
-          f"ops's, retrieval's, feedback's, realtime-multimodal's, and tracing's attributes "
-          f"are covered (8 of 9 S4 lenses).", file=sys.stderr)
+    print(f"\nnote: {rollout_note}. All nine S4 lenses' attributes are covered.",
+          file=sys.stderr)
     return 0
 
 
@@ -543,7 +548,7 @@ def cmd_readiness(args):
     from oah.design.lens import (
         design_generation_capture, design_pii_governance, design_cost, design_ops,
         design_retrieval, design_feedback, design_realtime_multimodal, design_tracing,
-        LensDesignError,
+        design_tools, LensDesignError,
     )
     from oah.design.gates import run_gates
     from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
@@ -584,6 +589,7 @@ def cmd_readiness(args):
             ("feedback", design_feedback),
             ("realtime-multimodal", design_realtime_multimodal),
             ("tracing", design_tracing),
+            ("tools", design_tools),
         ):
             try:
                 fragment = design_fn(surface_map["points"], git_sha, context=context)

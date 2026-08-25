@@ -194,3 +194,13 @@ def test_realtime_session_kind_produces_a_gap():
     assert len(gm["gaps"]) == 1
     assert gm["gaps"][0]["dimension"] == "realtime_multimodal"
     assert gm["gaps"][0]["status"] == "dark"
+
+
+def test_tool_call_kind_produces_a_gap():
+    sm = _surface_map([{"id": "sp-0001", "kind": "tool_call", "file": "app.py", "line": 10,
+                         "detection": "ast", "confidence": 0.8}])
+    gm = build_gap_model(sm, _telemetry())
+    validate("gap_model", gm)
+    assert len(gm["gaps"]) == 1
+    assert gm["gaps"][0]["dimension"] == "tools"
+    assert gm["gaps"][0]["status"] == "dark"

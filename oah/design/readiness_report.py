@@ -104,19 +104,25 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
     unknown += [
         "S10 instrumentation has not been applied to the target repo",
         "S11 dynamic validation has not run -- no real Trace Completeness Rate or overhead measurement exists",
-        "1 of 9 S4 lenses is not built (only tools is missing) -- coverage claims are scoped to the other eight",
     ]
     if not workflow_names:
         unknown.append("no context.yaml interview has run -- workflow criticality, PII presence, and governance answers are all unknown")
 
     known_limitations = [
-        "Only the tools S4 lens is not built; the other eight (generation-capture, "
-        "pii-governance, cost, ops, retrieval, feedback, realtime-multimodal, tracing) are. "
-        "The tracing lens itself is narrowly scoped -- it only distinguishes same-process "
+        "All nine S4 lenses are built, but several are still narrower than "
+        "architecture.md's full per-lens ask. tracing only distinguishes same-process "
         "asyncio (verified safe) from everything else (unverified: thread-pool/queue "
         "instrumentor presence isn't checked, and the long-running background-job pattern "
-        "isn't detected at all yet).",
-        "rollout_step ordering is gap-priority-only, not real workflow-criticality-ordered rollout_plan.md.",
+        "isn't detected at all yet). tools is detected via a structural pattern match "
+        "(`<expr>.type == \"tool_use\"`), not a resolved SDK call -- it locates dispatch "
+        "sites, not the specific handler/arguments/result at each one.",
+        (
+            "rollout_step ordering follows architecture.md S7's real workflow-criticality "
+            "rule (this run had --context)."
+            if workflow_names else
+            "rollout_step ordering is gap-priority-only, not real workflow-criticality-"
+            "ordered -- no context.yaml was supplied to this run."
+        ),
     ]
 
     report = {

@@ -167,6 +167,47 @@ def _match_suffix(chain):
     return None
 
 
+def _string_content(string_node, src):
+    for c in string_node.children:
+        if c.type == "string_content":
+            return _text(c, src)
+    return None
+
+
+def _is_dot_type_attribute(node, src):
+    """True for an attribute access ending in `.type` (e.g. `block.type`,
+    `chunk.type`) -- deliberately not receiver-resolved, since the "tool_use"
+    string literal itself is the signal, not which SDK the receiver came
+    from (see _is_tool_use_dispatch_check's own docstring)."""
+    if node.type != "attribute":
+        return False
+    attr = node.child_by_field_name("attribute")
+    return attr is not None and _text(attr, src) == "type"
+
+
+def _is_tool_use_dispatch_check(comparison_node, src):
+    """True if comparison_node is `<expr>.type == "tool_use"` in either
+    operand order. This is a structurally different detection strategy
+    from every registry-based `_match_suffix` check above: there is no
+    outbound SDK call to match a client-constructor-plus-method-suffix
+    against, because a tool_use dispatch site is application-defined
+    logic reacting to a response's own content, not a call into a
+    client. "tool_use" is Anthropic's own real content-block-type string
+    (per the Messages API's response shape), so a comparison against it
+    is the actual, real signal -- not receiver-resolved (no constructor
+    tracking possible here), so treated as a real but lower-confidence
+    detection than a resolved-receiver signature match."""
+    if comparison_node.type != "comparison_operator":
+        return False
+    operands = comparison_node.named_children
+    if len(operands) != 2:
+        return False
+    a, b = operands
+    is_string = lambda n: n.type == "string" and _string_content(n, src) == "tool_use"
+    return ((is_string(a) and _is_dot_type_attribute(b, src)) or
+            (is_string(b) and _is_dot_type_attribute(a, src)))
+
+
 class KnownNames:
     def __init__(self):
         self.module_scope = {}
@@ -268,6 +309,27 @@ def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local
             _walk_calls(child, src, src_lines, resolver, known, class_name, new_symbol, fn_scope,
                         resolved_points, ambiguous, rel_path, next_id, imports, is_async=new_is_async)
             continue
+
+        if child.type in ("if_statement", "elif_clause"):
+            comparison = next((c for c in child.children if c.type == "comparison_operator"), None)
+            if comparison is not None and _is_tool_use_dispatch_check(comparison, src):
+                line = _line(child)
+                candidate_id = f"sp-{next_id[0]:04d}"
+                resolved_points.append(_drop_none({
+                    "id": candidate_id,
+                    "kind": "tool_call",
+                    "file": rel_path,
+                    "line": line,
+                    "symbol": symbol,
+                    "framework": "anthropic-sdk",
+                    "sync_nature": "async" if is_async else "sync",
+                    "detection": "ast",
+                    "confidence": 0.8,
+                    "notes": "tool_use dispatch check ('<expr>.type == \"tool_use\"') -- structural "
+                             "pattern match, not a resolved SDK receiver; the actual handler "
+                             "invocation inside this block is not further resolved by this pass",
+                }))
+                next_id[0] += 1
 
         if child.type == "assignment":
             left = child.child_by_field_name("left")

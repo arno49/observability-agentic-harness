@@ -514,3 +514,82 @@ class Provider:
         return self._client.messages.create(model="x")
 """)
     assert resolved[0]["sync_nature"] == "async"
+
+
+# --- tool_use dispatch detection (kind: tool_call) ---------------------------
+# A structurally different detection strategy from every registry-based
+# _match_suffix check above: there's no outbound SDK call to match a
+# constructor-plus-method-suffix against -- a tool_use dispatch site is
+# application logic reacting to a response's own content shape, matched via
+# `<expr>.type == "tool_use"` (Anthropic's own real content-block-type
+# string), not a resolved receiver chain.
+
+def test_tool_use_comparison_detected(tmp_path):
+    resolved, ambiguous = _detect(tmp_path, """
+def handle(response):
+    for block in response.content:
+        if block.type == "tool_use":
+            result = call_tool(block)
+""")
+    assert len(resolved) == 1
+    assert ambiguous == []
+    assert resolved[0]["kind"] == "tool_call"
+    assert resolved[0]["detection"] == "ast"
+    assert resolved[0]["symbol"] == "handle"
+
+
+def test_tool_use_comparison_reversed_operand_order_detected(tmp_path):
+    resolved, _ = _detect(tmp_path, """
+def handle(block):
+    if "tool_use" == block.type:
+        pass
+""")
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "tool_call"
+
+
+def test_tool_use_comparison_in_elif_detected(tmp_path):
+    resolved, _ = _detect(tmp_path, """
+def handle(block):
+    if block.type == "text":
+        pass
+    elif block.type == "tool_use":
+        pass
+""")
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "tool_call"
+
+
+def test_unrelated_dot_type_comparison_not_misdetected(tmp_path):
+    """A comparison against `.type` with a DIFFERENT string literal must
+    not false-positive -- the string "tool_use" itself is the signal, not
+    merely the shape `X.type == "some string"`."""
+    resolved, ambiguous = _detect(tmp_path, """
+def handle(chunk):
+    if chunk.type == "text_delta":
+        pass
+""")
+    assert resolved == []
+    assert ambiguous == []
+
+
+def test_dot_type_comparison_against_non_type_attribute_not_misdetected(tmp_path):
+    """`.type` specifically, not any attribute -- `x.kind == "tool_use"`
+    is not the real Anthropic content-block shape and must not match."""
+    resolved, ambiguous = _detect(tmp_path, """
+def handle(block):
+    if block.kind == "tool_use":
+        pass
+""")
+    assert resolved == []
+    assert ambiguous == []
+
+
+def test_tool_use_dispatch_inside_async_def_marked_async(tmp_path):
+    resolved, _ = _detect(tmp_path, """
+async def handle(response):
+    for block in response.content:
+        if block.type == "tool_use":
+            pass
+""")
+    assert resolved[0]["sync_nature"] == "async"
