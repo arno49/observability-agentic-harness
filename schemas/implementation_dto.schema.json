@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/implementation_dto.schema.json",
+  "title": "Implementation DTO (S8 output, S10 input, S11 assertion source)",
+  "type": "object",
+  "required": ["schema_version", "dtos"],
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "dtos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "gap_id", "surface_point_ids", "change", "expected_events", "rollout_step"],
+        "properties": {
+          "id": { "type": "string", "description": "e.g. dto-0012; one commit per DTO in S10" },
+          "gap_id": { "type": "string", "description": "Traceability to gap_model.json" },
+          "surface_point_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "rollout_step": { "type": "integer", "minimum": 1, "description": "Order from rollout_plan.md" },
+          "change": {
+            "type": "object",
+            "required": ["type", "file"],
+            "properties": {
+              "type": {
+                "enum": ["wrap_call", "add_decorator", "insert_span", "propagate_context", "add_collector_config", "add_compose_service", "add_feedback_endpoint", "add_masking_middleware", "add_schema_file", "add_smoke_test", "add_release_id_stamping", "add_degradation_event", "add_alert_route"]
+              },
+              "file": { "type": "string" },
+              "anchor": { "type": "string", "description": "Symbol or code-shape anchor for insertion; line numbers are advisory only" },
+              "preconditions": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Code-shape assumptions that must hold; violation aborts this DTO, not the run"
+              },
+              "description": { "type": "string" }
+            }
+          },
+          "expected_events": {
+            "type": "array",
+            "minItems": 1,
+            "description": "What S11 must observe when this code path is exercised",
+            "items": {
+              "type": "object",
+              "required": ["event_type"],
+              "properties": {
+                "event_type": { "enum": ["trace", "span", "generation", "retrieval_span", "tool_span", "feedback_event", "degradation_event", "escalation_event"] },
+                "required_attributes": { "type": "array", "items": { "type": "string" } },
+                "parented_under": { "type": "string", "description": "Expected parent span relationship, if asserted" }
+              }
+            }
+          },
+          "risk": { "enum": ["low", "medium", "high"], "description": "High-risk DTOs (e.g. context propagation changes) get extra review flagging in S9" },
+          "estimated_overhead_ms": { "type": ["number", "null"] }
+        }
+      }
+    }
+  }
+}

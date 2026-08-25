@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.oah/
+state/
+*.sqlite
+runs/
+.DS_Store
+.idea/
+.vscode/
+
+# personal notes / source material not meant for the public repo
+private/

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/surface_map.schema.json",
+  "title": "Observability Surface Map (S1 output)",
+  "type": "object",
+  "required": ["schema_version", "repo", "generated_by", "points"],
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo": {
+      "type": "object",
+      "required": ["path", "git_sha"],
+      "properties": {
+        "path": { "type": "string" },
+        "git_sha": { "type": "string" },
+        "primary_language": { "type": "string" }
+      }
+    },
+    "generated_by": {
+      "type": "object",
+      "required": ["harness_version", "skill_versions"],
+      "properties": {
+        "harness_version": { "type": "string" },
+        "skill_versions": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "file", "line", "detection", "confidence"],
+        "properties": {
+          "id": { "type": "string", "description": "Stable ID, e.g. sp-0042; referenced by gap model and DTOs" },
+          "kind": {
+            "enum": ["llm_generation", "retrieval", "tool_call", "agent_loop", "queue_producer", "queue_consumer", "guardrail", "human_review_hook", "feedback_ingest"]
+          },
+          "file": { "type": "string" },
+          "line": { "type": "integer", "minimum": 1 },
+          "symbol": { "type": "string", "description": "Enclosing function/class" },
+          "framework": { "type": "string", "description": "e.g. anthropic-sdk, openai-sdk, langchain, llamaindex, raw-http, celery" },
+          "sync_nature": { "enum": ["sync", "async", "queued", "streamed"] },
+          "detection": { "enum": ["ast", "signature", "llm_disambiguation"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "notes": { "type": "string" },
+          "workflow_hint": { "type": "string", "description": "Best-effort mapping to a product workflow; confirmed in context.yaml" }
+        }
+      }
+    },
+    "coverage_stats": {
+      "type": "object",
+      "properties": {
+        "files_scanned": { "type": "integer" },
+        "points_total": { "type": "integer" },
+        "points_llm_disambiguated": { "type": "integer" }
+      }
+    }
+  }
+}

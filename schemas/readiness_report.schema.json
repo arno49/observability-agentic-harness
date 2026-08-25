@@ -1,0 +1,432 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/readiness_report.schema.json",
+  "title": "Production Readiness Report (S9 output, human gate artifact)",
+  "description": "Machine-readable half of the S9 gate report. Answers one question: can this move forward safely, and under what conditions? Short, specific, decision-ready — evidence a release reviewer, support owner, or customer team needs, not an inventory of every operational detail.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "repo_git_sha",
+    "deployment_context",
+    "release_evidence",
+    "observability_plan",
+    "failure_response",
+    "recommendation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "repo_git_sha": {
+      "type": "string"
+    },
+    "run_manifest_ref": {
+      "type": "string"
+    },
+    "deployment_context": {
+      "type": "object",
+      "description": "Q1: What are we deploying, and where will it run?",
+      "required": [
+        "workflow",
+        "intended_users",
+        "environment"
+      ],
+      "properties": {
+        "workflow": {
+          "type": "string"
+        },
+        "intended_users": {
+          "type": "string",
+          "description": "Who or what will call this (users, systems, service accounts)"
+        },
+        "environment": {
+          "type": "string",
+          "description": "Environment under review and exposure level; staging/production separation noted"
+        },
+        "runtime_and_secrets_approach": {
+          "type": "string"
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Data, access, dependency, rate/spend limit, notification-threshold, or reliability assumptions that affect readiness"
+        },
+        "open_blocker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "release_evidence": {
+      "type": "object",
+      "description": "Q2: What evidence shows the release is ready to move?",
+      "required": [
+        "release_identifiers",
+        "owners"
+      ],
+      "properties": {
+        "release_identifiers": {
+          "type": "object",
+          "description": "The full identifier set for what is being released",
+          "properties": {
+            "prompt_version": {
+              "type": "string"
+            },
+            "model_config": {
+              "type": "string"
+            },
+            "tool_setup_version": {
+              "type": "string"
+            },
+            "retrieval_config_version": {
+              "type": "string"
+            },
+            "deployment_package": {
+              "type": "string"
+            }
+          }
+        },
+        "health_and_smoke_evidence": {
+          "type": "string",
+          "description": "Health check, smoke test, controlled failure/retry evidence refs"
+        },
+        "owners": {
+          "type": "object",
+          "properties": {
+            "approval_owner": {
+              "type": "string"
+            },
+            "release_owner": {
+              "type": "string"
+            },
+            "rollback_owner": {
+              "type": "string"
+            }
+          }
+        },
+        "evidence_missing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "open_blocker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "eval_coverage": {
+          "type": "array",
+          "description": "Coverage by case class — the evidence unit is the class, not the test count",
+          "items": {
+            "type": "object",
+            "required": [
+              "case_class",
+              "status"
+            ],
+            "properties": {
+              "case_class": {
+                "enum": [
+                  "common",
+                  "ambiguous",
+                  "restricted",
+                  "regional",
+                  "role_specific",
+                  "missing_source",
+                  "outdated_source",
+                  "conflicting_source",
+                  "high_risk",
+                  "action_boundary"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "covered",
+                  "partial",
+                  "missing"
+                ]
+              },
+              "expected_behavior": {
+                "type": "string",
+                "description": "e.g. 'clarify', 'refuse', 'escalate', 'fallback' for non-happy-path classes"
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "observability_plan": {
+      "type": "object",
+      "description": "Q3: How will the team know what is happening after release?",
+      "required": [
+        "key_signals"
+      ],
+      "properties": {
+        "key_signals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Most important health/availability/error/latency/usage/cost/quota signals, each naming the decision it supports"
+        },
+        "correlation_ids": {
+          "type": "string",
+          "description": "Provider request IDs, client request IDs, rate-limit headers captured"
+        },
+        "alert_triggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sensitive_data_excluded": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Named data classes that must not be logged"
+        },
+        "open_blocker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "failure_response": {
+      "type": "object",
+      "description": "Q4: What happens if the API fails or degrades?",
+      "required": [
+        "failure_modes",
+        "incident_route"
+      ],
+      "properties": {
+        "failure_modes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Most important failure modes with their default response action"
+        },
+        "retry_degradation_fallback": {
+          "type": "string",
+          "description": "Bounded retry policy, graceful-degradation behavior, fallback paths"
+        },
+        "incident_route": {
+          "type": "string",
+          "description": "First responder, escalation owner"
+        },
+        "rollback_or_pause_criteria": {
+          "type": "string"
+        },
+        "open_blocker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "description": "Q5: The release recommendation — the decision itself.",
+      "required": [
+        "decision",
+        "rationale",
+        "next_action_owner"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "ready",
+            "ready_with_conditions",
+            "remediate_before_release",
+            "pause_and_redesign",
+            "escalate_for_review",
+            "rollback_or_pause_expansion"
+          ],
+          "description": "ready: evidence present, no blocking gaps. ready_with_conditions: forward in a limited/controlled way under named, owned conditions tied to validation steps. remediate_before_release: blocking but fixable gaps must close before exposure. pause_and_redesign: the design itself is not fit for the workflow and needs substantial rework. escalate_for_review: risk exceeds the working team's authority — needs security/governance/platform/policy/customer decision. rollback_or_pause_expansion: post-release evidence says stop, pause, or return to a safer version."
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Required when decision is ready_with_conditions"
+        },
+        "top_blocker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_action_owner": {
+          "type": "string"
+        },
+        "evidence_that_would_change_decision": {
+          "type": "object",
+          "description": "Directional falsifiability of the gate decision.",
+          "properties": {
+            "to_upgrade": {
+              "type": "string",
+              "description": "What evidence would move the decision toward ready_with_conditions or ready (e.g. named source ownership, restricted-source exclusion, verified role/region path, expanded eval coverage, observability signals live, named support owner for a limited pilot)"
+            },
+            "to_escalate_or_downgrade": {
+              "type": "string",
+              "description": "What would move it toward escalate_for_review or rollback (e.g. restricted-source, logging, privacy, or regional policy questions unresolvable at the working team's level)"
+            }
+          }
+        },
+        "s11_verdict_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Link to the technical validation verdict when S11 has run; the release recommendation is the decision layer above the technical verdict"
+        },
+        "evidence_position": {
+          "type": "object",
+          "description": "Epistemic position of the recommendation — what is confirmed by evidence, what is assumed, and what remains unknown. Confidence, urgency, or a successful demo alone never move an item into 'confirmed'.",
+          "properties": {
+            "confirmed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "assumed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "unknown": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "scope": {
+          "type": "object",
+          "description": "Anti-scope-creep boundary: evidence-led, not ambition-led. Unsupported complexity added to a release is itself a risk that solves no blocker.",
+          "properties": {
+            "in_scope": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "What the first release covers"
+            },
+            "out_of_scope_unless_approved": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Patterns that must not be silently added without separate workflow evidence and approvals (e.g. realtime/voice, multimodal, automated ticket creation, record updates, research-style synthesis)"
+            }
+          }
+        }
+      }
+    },
+    "data_and_governance": {
+      "type": "object",
+      "description": "Security, data, and governance review — the release controls that make 'internal-only' insufficient as a risk argument.",
+      "properties": {
+        "data_map": {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "string",
+              "description": "What the API receives, incl. caller-asserted context and its verification status"
+            },
+            "retrieved": {
+              "type": "string"
+            },
+            "output": {
+              "type": "string",
+              "description": "What responses expose, incl. whether source approval/regional applicability is indicated"
+            },
+            "logged": {
+              "type": "string"
+            }
+          }
+        },
+        "source_inventory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "source",
+              "status",
+              "pilot_handling"
+            ],
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "description": "Approval status incl. regional/use-case scope, e.g. 'approved US/CA; UK pending'"
+              },
+              "pilot_handling": {
+                "type": "string",
+                "description": "include / include for approved regions only / exclude / permission-gate and escalate"
+              },
+              "owner": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "restricted_source_handling": {
+          "type": "string"
+        },
+        "trust_boundary_verification": {
+          "type": "string",
+          "description": "Which caller-asserted fields are verified server-side vs. trusted"
+        },
+        "tool_action_boundary": {
+          "type": "string",
+          "description": "Declared external effects allowed in this release"
+        },
+        "governance_owners_unnamed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Decision areas (release approval, security signoff, source signoff, logging review, support) still lacking a named owner — each is a release blocker candidate"
+        },
+        "open_blocker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "known_limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Handoff statement of what the product should NOT answer or do, and which regions, sources, roles, and cases remain limited. A handoff gap is as release-blocking as a technical gap: if nobody owns support, nobody owns the consequences."
+    }
+  }
+}

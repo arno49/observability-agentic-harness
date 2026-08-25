@@ -1,0 +1,8 @@
+Observability Agentic Harness (OAH)
+Copyright 2026 Ivan Bogomazov
+
+This product's architecture is inspired by the Visa Vulnerability Agentic
+Harness (https://github.com/visa/visa-vulnerability-agentic-harness),
+Copyright Visa, Inc., licensed under the Apache License 2.0. OAH is an
+independent project, not affiliated with or endorsed by Visa, Inc., and
+contains no VVAH source code.

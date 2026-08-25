@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/gap_model.schema.json",
+  "title": "Observability Gap Model (S3 output)",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "gaps"],
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "context_ref": { "type": "string", "description": "Path/hash of context.yaml answers used for prioritization" },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "surface_point_ids", "dimension", "status", "priority", "rationale"],
+        "properties": {
+          "id": { "type": "string", "description": "e.g. gap-0007; referenced by implementation DTOs" },
+          "surface_point_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "description": "IDs from surface_map.json this gap concerns"
+          },
+          "dimension": {
+            "enum": ["tracing", "generation_capture", "retrieval", "tools", "feedback", "error_taxonomy", "pii_governance", "cost", "operations", "self_telemetry"]
+          },
+          "status": { "enum": ["dark", "partial", "covered"] },
+          "existing_telemetry_refs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "IDs from telemetry_inventory.json that partially cover this"
+          },
+          "priority": { "enum": ["p0", "p1", "p2", "p3"] },
+          "priority_drivers": {
+            "type": "array",
+            "items": { "enum": ["workflow_criticality", "pii_exposure", "incident_history", "cost_blindspot", "compliance"] }
+          },
+          "rationale": { "type": "string" },
+          "invariant_violated": {
+            "type": "string",
+            "description": "Which event-model invariant is unmet, if any (e.g. 'orphan generations')"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "dark_points": { "type": "integer" },
+        "partial_points": { "type": "integer" },
+        "covered_points": { "type": "integer" },
+        "estimated_tcr_current": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

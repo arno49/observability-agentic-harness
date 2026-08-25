@@ -1,0 +1,214 @@
+# Pipeline architecture
+
+Four phases, eleven stages. Deterministic stages are pure code; LLM stages are
+versioned skills (see [SKILLS.md](SKILLS.md)). Every stage consumes and produces
+artifacts validated against `schemas/` at the boundary — a stage never receives free
+text from a previous stage. Checkpoints live in a SQLite state DB outside the target
+repo; runs are resumable and idempotent.
+
+## Phase 1 — Discovery & Modeling
+
+### S1 — Observability surface mapping *(deterministic + LLM disambiguation)*
+Walk the target repo with AST parsing and a signature registry (Anthropic/OpenAI
+SDKs, LangChain, LlamaIndex, raw HTTP to known LLM endpoints, vector DB clients,
+tool/agent frameworks, queue producers/consumers on paths between them). Ambiguous
+sites (dynamic dispatch, homemade wrappers) go to an LLM disambiguation pass with the
+surrounding code as context. **Output:** `surface_map.json` — every LLM, retrieval,
+tool, and queue touchpoint with file/line, framework, sync/async nature, and
+confidence.
+
+### S2 — Existing telemetry inventory *(deterministic + LLM)*
+Find what already exists: loggers and their call sites, metrics libraries, existing
+OTel/vendor SDK usage, correlation-ID mechanics, error handling that swallows or
+surfaces failures. **Output:** `telemetry_inventory.json`.
+
+### S3 — Gap model & strategy *(skill: gap-modeler; interactive)*
+Join S1 × S2 against the reference domain model ([event-model.md](event-model.md)).
+For every surface point, decide: covered / partially covered / dark. The stage also
+generates an **owner interview** — questions about workflow criticality, PII
+presence, data-egress constraints, review workflows, plus a **data & governance
+map**: what data the product receives / retrieves / returns / logs across the full
+workflow ("internal-only" is not "low-risk by default"); the **source inventory**
+with approval status per region and use case, restricted sources and their
+approved handling path; **trust boundaries** — which caller-asserted context
+(role, region) is verified server-side vs. trusted; and the **declared tool/action
+boundary** for the current release. Answers are recorded as `context.yaml` and
+weight prioritization. **Output:** `gap_model.json` (prioritized),
+`context.yaml`.
+
+## Phase 2 — Design & Verification
+
+### S4 — Design by lens *(skills, one per lens)*
+Specialized skills each design their slice for this specific stack:
+
+- **tracing** — trace-ID propagation end-to-end, including async boundaries, queues,
+  and retries (the hardest lens; see SP2 pattern catalog);
+- **generation-capture** — prompt/completion capture, model+prompt versioning,
+  parameters, token & cost accounting, cache-hit flags;
+- **retrieval** — retrieved sources, scores, the critical "what actually made it
+  into the context window vs. was truncated" signal, and **permission-aware
+  retrieval visibility**: per-source governance status against the inventory from
+  `context.yaml`, region-conditional handling, restricted-source exclusion or
+  gating made observable;
+- **tools** — tool/agent invocations: arguments, results, durations, cascade shape;
+- **feedback** — user feedback and reviewer verdicts bound to trace IDs; verdict
+  taxonomy (categorized, not free-text);
+- **pii-governance** — masking at ingestion, role-scoped content access, retention
+  matrix, deletion-by-subject;
+- **cost** — per-call cost attribution, spend thresholds with a named acting role,
+  quota/rate-limit headroom capture (provider rate-limit headers on generation
+  spans), throttling/queueing hooks;
+- **ops (production readiness)** — release identifiers stamped on every event
+  (prompt, model config, tool setup, retrieval config, deployment package — "we see
+  a problem but don't know what changed" must be impossible); a **persistent
+  post-deploy smoke test** installed into the client product (alive, reachable,
+  one golden path per critical workflow) — distinct from S11's one-off validation;
+  **degradation visibility** — graceful-degradation responses (e.g. safe "cannot
+  answer from approved sources" instead of invention) emitted as first-class
+  events, so silent-failure and unsafe-fallback rates are measurable; **rollback
+  observability** — every rollback-capable surface (prompt version, model config,
+  retrieval index, deployment) is identifiable in telemetry, so "roll back to the
+  last known-good" has an evidence trail; a **disablement plan** distinct from
+  rollback — the ability to switch off or limit the workflow (kill switch, scope
+  narrowing to a region/role segment) even when there is nothing safe to roll
+  back to; **incident-response route** — ownership
+  attribute on every workflow's telemetry, alert routing to named first responders,
+  escalation events recorded with outcome; **alert plan** — the standard catalog
+  (availability, latency, error-rate, quota, cost/consumption, dependency,
+  safety/quality) where every alert declares trigger condition, priority, first
+  responder, escalation path, and decision owner. Rule mirroring the S5
+  signal-gate: an alert no one owns, or whose signal only matters in periodic
+  review, is not created — low-value alerts bury the ones that matter.
+
+**Output:** per-lens design fragments (structured), merged into a draft design.
+
+### S5 — Deterministic invariant gates *(pure code)*
+No LLM. Checks include: every S1 surface point has a design decision; event fields
+map to OTel GenAI semantic conventions or declared `oah.*` extensions; no field is
+allowed to carry plaintext PII; latency-overhead budget is declared per call path;
+telemetry failure mode is declared fail-open (telemetry loss must never break the
+product); **every designed signal names at least one decision it supports and the
+role that acts** (anti-metric-hoarding gate — see the signals→decisions matrix in
+[event-model.md](event-model.md)). A failed gate blocks progression with a machine-readable reason.
+
+### S6 — Adversarial design review *(agentic panel)*
+Personas score the design against weighted gates, VVAH-style:
+- **SRE** — collector failure modes, backpressure, cardinality, overhead;
+- **security reviewer** — prompts/outputs as sensitive data, access model, injection
+  surface of the telemetry path itself; **data-flow review**: caller-asserted
+  context trusted without verification, retrieval reachable beyond the approved
+  inventory, tool actions beyond the declared boundary, and staging success
+  presented as evidence of production-ready secrets/configuration;
+- **cost skeptic** — storage & egress economics at target traffic, sampling policy.
+
+Findings are categorized verdicts, not prose. Design iterates S4→S6 until pass.
+
+## Phase 3 — Synthesis & Planning
+
+### S7 — Architecture & schema emission *(skill: synthesizer)*
+Emit `architecture.md` (target design incl. backend selection justified against
+`context.yaml` constraints — OTel-only / self-hosted Langfuse / managed),
+`event_schema.json` (versioned; OTel GenAI + extensions), and `rollout_plan.md`
+ordered by workflow criticality: first workflow = most critical one, tracing +
+generation capture first, feedback loop second, auto-scoring third. Also emit
+`runbook.md` — the incident-response route for the installed observability: per
+workflow, an **ownership matrix** (service owner, first responder, escalation
+owner, release owner, rollback owner, documentation owner), issue-review cadence,
+documentation location, evidence to pull per alert (which dashboards/queries), and
+the decision menu (continue / pause expansion / cap or throttle / remediate /
+degrade / roll back / escalate) with rollback targets identified by release
+identifiers. Each ownership row binds to evidence ("if cost exceeds pilot range,
+X reviews spend evidence and decides on limits") — the aim is a clear decision
+path for the most important signals, not an ownership matrix for every possible
+issue.
+
+### S8 — Implementation DTOs *(skill: dto-generator)*
+Each rollout step decomposes into `implementation_dto.json` entries: target file and
+insertion point, instrumentation type, code-shape preconditions, and — crucially —
+**expected emitted events**, which is what makes S11 verification possible. Every DTO
+links back to a gap-model entry and a surface-map point.
+
+### S9 — Production readiness report *(deterministic assembly)*
+The human gate artifact, structured as a five-question readiness checklist
+(Markdown + machine-readable JSON per `schemas/readiness_report.schema.json`):
+
+1. **What are we deploying, and where will it run?** — workflow, intended
+   users/systems, environment & exposure, runtime/secrets approach, and the
+   data/access/dependency/rate-limit assumptions that affect readiness.
+2. **What evidence shows the release is ready to move?** — release identifier set,
+   health/smoke/controlled-failure evidence, approval/release/rollback owners, and
+   evidence still missing.
+3. **How will the team know what is happening after release?** — key signals (each
+   naming its decision), correlation IDs and rate-limit headers, alert triggers,
+   and named sensitive-data classes that must not be logged.
+4. **What happens if it fails or degrades?** — top failure modes with default
+   response actions, retry/degradation/fallback behavior, incident route,
+   rollback/pause criteria.
+5. **What is the recommendation?** — one of **ready / ready with conditions /
+   remediate before release / pause and redesign / escalate for review / rollback
+   or pause expansion**, with rationale, top blocker, next-action owner, and —
+   keeping the decision falsifiable — *the evidence that would change it*.
+   *Pause-and-redesign* (the design itself is unfit for the workflow) and
+   *escalate-for-review* (the risk exceeds the working team's authority) are
+   deliberately distinct diagnoses: gaps that are fixable evidence problems point
+   to *remediate*, not to either.
+
+Every section ends with its open blocker or next validation step. The Markdown
+half narrates the same content in seven sections: customer situation /
+recommendation / **evidence position (confirmed vs. assumed vs. unknown)** /
+readiness gaps / **scope and exclusions** (what stays out of the first release
+unless separately approved — evidence-led, not ambition-led) / owners and next
+action / decision-change evidence in both directions (what would upgrade the
+decision, what would force escalation). The report is short, specific, and
+decision-ready — evidence a reviewer needs, not an inventory of every operational
+detail. Two standing rules: the gate never advances on confidence, urgency, or a
+successful demo alone; and the recommendation must be **deployment-safe** — clear
+about what the product can do, what it cannot yet prove, and what must happen
+before users are exposed to risk. The release recommendation is a decision layer above
+S11's technical verdict (`validated`/`validation_failed`/`needs_review`): a
+technically `validated` run can still be `ready_with_conditions`, and post-release
+evidence can turn any prior decision into `rollback_or_pause_expansion`. **Fix
+mode does not proceed without a recorded decision of `ready` or
+`ready_with_conditions` (with conditions logged).**
+
+## Phase 4 — Implementation & Validation
+
+### S10 — Instrument *(agentic; Claude Agent SDK)*
+Apply DTOs: insert SDK calls/decorators, wire collector config, generate
+docker-compose for self-hosted backends. One commit (or PR) per DTO. Modes:
+`report-only` (diffs only) / `fix` (applies). Failed application → clean rollback +
+recorded failure, never a silent skip. ⚠️ Fix mode edits source in the target repo.
+
+### S11 — Validate *(deterministic layer + agentic panel)*
+**Deterministic:** run the target's own test suite (regression check); exercise the
+product per the validation ladder ([validation.md](validation.md)); intercept emitted
+events via a local OTLP collector; validate every event against `event_schema.json`;
+compute **actual Trace Completeness Rate** and latency overhead vs. budget.
+
+**Agentic panel:** *telemetry auditor* ("take trace X, reconstruct the incident from
+telemetry alone"), *privacy auditor* ("find PII in real emitted events"), optional
+*cross-service analyzer* for multi-repo products.
+
+**Verdicts:** `validated` / `validation_failed` / `needs_review`, always annotated
+with the ladder rung achieved.
+
+## Cross-cutting
+
+- **Run manifest.** Every run writes `run_manifest.json`: tool version, model roles,
+  config hash, target git SHA, timing, per-stage cost.
+- **Budgets.** Per-stage `max_budget_usd`; `oah estimate` predicts before spending.
+- **Model backend abstraction (LiteLLM).** The harness talks to models through
+  [LiteLLM](https://www.litellm.ai/), so every stage's model is a config role
+  resolvable to any provider — Anthropic, OpenAI-compatible, or local
+  (Ollama/vLLM) — mirroring VVAH's vendor-neutral layer without building one.
+  High-volume/low-judgment stages (S1 disambiguation, S2 inventory) default to a
+  light tier (Haiku-class or local for zero-egress deployments); design and panel
+  stages (S4, S6) default to a frontier model. **Exception, VVAH-style:** the
+  agentic stages S10 (instrumenter) and S11 (validation panel) require the Claude
+  Agent SDK's file-mutation and agent tooling and are Anthropic-pinned; a
+  non-Anthropic role there is refused rather than degraded silently. SP8 validates
+  where the light tier holds quality before it becomes a default.
+- **Self-telemetry.** The harness emits traces of its own stages in the same event
+  schema it installs (dogfooding, and the best product demo).
+- **Primary metric.** TCR — share of exercised user requests reconstructable
+  end-to-end with no missing spans. Reported per run and per workflow.
