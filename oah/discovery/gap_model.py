@@ -18,11 +18,12 @@ PROXIMITY_LINES = 15  # a logger call site within this many lines of a
                        # heuristic, not a claim the log line actually
                        # captures anything about that specific call.
 
-# S1 currently only detects llm_generation kind (raw-Anthropic-SDK
-# call sites) — the dimension mapping below is a single entry for that
+# S1 currently detects two surface_map point kinds (llm_generation,
+# retrieval) -- the dimension mapping below has two entries for that
 # reason, not an oversight; extend as S1/S4's kind vocabulary grows.
 KIND_TO_DIMENSION = {
     "llm_generation": "generation_capture",
+    "retrieval": "retrieval",
 }
 
 # status -> criticality -> priority. p0 reserved for the most severe case
@@ -133,6 +134,12 @@ def build_gap_model(surface_map, telemetry_inventory, context=None, harness_vers
             gap["existing_telemetry_refs"] = existing_refs
         if priority_drivers:
             gap["priority_drivers"] = priority_drivers
+        if workflow is not None:
+            # Structured, not just baked into rationale prose -- S8's real
+            # rollout ordering (architecture.md S7: "first workflow = most
+            # critical one") needs to group gaps by workflow identity, not
+            # re-parse it out of a free-text sentence.
+            gap["workflow"] = workflow["name"]
         gaps.append(gap)
 
     total = dark + partial + covered

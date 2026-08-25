@@ -412,8 +412,10 @@ def cmd_dtos(args):
     """S8 (partial): implementation_dto.json generation from whatever
     event_schema.json + gap_model.json exist so far. Requires a real model
     call (anchor/precondition/change-type judgment) but rollout_step is
-    assigned deterministically by gap priority, not by the model -- a
-    stand-in for real rollout_plan.md ordering, which isn't built yet."""
+    assigned deterministically, by architecture.md S7's real ordering rule
+    (workflow criticality from --context, then dimension tiering, then gap
+    priority) when --context is given, falling back to gap-priority-only
+    ordering otherwise -- never by the model."""
     from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
@@ -423,11 +425,18 @@ def cmd_dtos(args):
     )
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
     from oah.design.dto_generator import generate_dtos, DtoGenerationError
+    from oah.schemas import validate
 
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
         return 1
+
+    context = None
+    if args.context:
+        context_data = yaml.safe_load(Path(args.context).read_text())
+        validate("context", context_data)
+        context = context_data
 
     surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
     if not surface_map["points"]:
@@ -443,7 +452,7 @@ def cmd_dtos(args):
         ("retrieval", design_retrieval),
     ):
         try:
-            fragment = design_fn(surface_map["points"], git_sha)
+            fragment = design_fn(surface_map["points"], git_sha, context=context)
         except LensDesignError as e:
             print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
             continue
@@ -461,7 +470,7 @@ def cmd_dtos(args):
         return 1
 
     inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
-    gap_model = build_gap_model(surface_map, inventory)
+    gap_model = build_gap_model(surface_map, inventory, context=context)
 
     covered_point_ids = {pid for a in event_schema["attributes"] for pid in a["surface_point_ids"]}
     points = [p for p in surface_map["points"] if p["id"] in covered_point_ids]
@@ -470,7 +479,7 @@ def cmd_dtos(args):
     gaps = [g for g in gap_model["gaps"] if g["id"] in relevant_gap_ids]
 
     try:
-        dtos = generate_dtos(event_schema, points, gaps, git_sha)
+        dtos = generate_dtos(event_schema, points, gaps, git_sha, context=context)
     except DtoGenerationError as e:
         print(f"error: DTO generation failed: {e}", file=sys.stderr)
         return 1
@@ -485,10 +494,15 @@ def cmd_dtos(args):
     else:
         print(json.dumps(dtos, indent=2))
 
-    print(f"\nnote: rollout_step is ordered by gap priority only (p0 first) — a stand-in for "
-          f"real rollout_plan.md workflow-criticality ordering, not built yet. Only "
-          f"generation-capture's, pii-governance's, cost's, ops's, and retrieval's attributes "
-          f"are covered (5 of 9 S4 lenses).", file=sys.stderr)
+    rollout_note = (
+        "rollout_step is ordered by workflow criticality (from --context), then dimension "
+        "tiering, then gap priority (architecture.md S7's real rule)"
+        if context else
+        "rollout_step is ordered by gap priority only (p0 first) — pass --context for real "
+        "workflow-criticality ordering (architecture.md S7)"
+    )
+    print(f"\nnote: {rollout_note}. Only generation-capture's, pii-governance's, cost's, "
+          f"ops's, and retrieval's attributes are covered (5 of 9 S4 lenses).", file=sys.stderr)
     return 0
 
 
@@ -581,7 +595,7 @@ def cmd_readiness(args):
             gaps_for_dtos = [g for g in gap_model["gaps"] if g["id"] in relevant_gap_ids]
             if points:
                 try:
-                    generated = generate_dtos(event_schema, points, gaps_for_dtos, git_sha)
+                    generated = generate_dtos(event_schema, points, gaps_for_dtos, git_sha, context=context)
                     if generated:
                         dtos = generated
                 except DtoGenerationError as e:
@@ -684,6 +698,9 @@ def build_parser():
 
     p_dtos = sub.add_parser("dtos", help="S8 (partial): implementation_dto.json generation")
     p_dtos.add_argument("target", help="Path to the target repository")
+    p_dtos.add_argument("--context", default=None,
+                         help="Path to a context.yaml from `oah interview` -- enables real "
+                              "workflow-criticality rollout_step ordering (architecture.md S7)")
     p_dtos.add_argument("-o", "--output", default=None, help="Write implementation_dto.json here instead of stdout")
     p_dtos.set_defaults(func=cmd_dtos)
 

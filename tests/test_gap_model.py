@@ -142,3 +142,35 @@ def test_no_workflow_hint_falls_back_to_coverage_only_even_with_context():
     gm = build_gap_model(sm, _telemetry(), context=context)
     assert gm["gaps"][0]["priority"] == "p1"
     assert "priority_drivers" not in gm["gaps"][0]
+
+
+def test_retrieval_kind_produces_a_gap_not_silently_skipped():
+    """Before KIND_TO_DIMENSION gained a retrieval entry, a retrieval
+    point had dimension=None and build_gap_model silently skipped it --
+    no gap, no dark/partial/covered count, nothing for S8 to generate a
+    DTO against even though S4's retrieval lens designs for these points."""
+    sm = _surface_map([{"id": "sp-0001", "kind": "retrieval", "file": "app.py", "line": 10,
+                         "detection": "signature", "confidence": 0.95}])
+    gm = build_gap_model(sm, _telemetry())
+    validate("gap_model", gm)
+    assert len(gm["gaps"]) == 1
+    assert gm["gaps"][0]["dimension"] == "retrieval"
+    assert gm["gaps"][0]["status"] == "dark"
+
+
+def test_gap_carries_structured_workflow_name_not_just_rationale_prose():
+    """S8's real rollout ordering needs to group gaps by workflow identity
+    -- the workflow name must be a structured field, not something only
+    re-parseable out of the free-text rationale sentence."""
+    sm = _surface_map([{"id": "sp-0001", "kind": "llm_generation", "file": "app.py", "line": 10,
+                         "detection": "signature", "confidence": 0.95, "workflow_hint": "billing"}])
+    context = _context([{"name": "billing", "criticality": "critical"}])
+    gm = build_gap_model(sm, _telemetry(), context=context)
+    assert gm["gaps"][0]["workflow"] == "billing"
+
+
+def test_gap_omits_workflow_field_when_unresolved():
+    sm = _surface_map([{"id": "sp-0001", "kind": "llm_generation", "file": "app.py", "line": 10,
+                         "detection": "signature", "confidence": 0.95}])
+    gm = build_gap_model(sm, _telemetry())
+    assert "workflow" not in gm["gaps"][0]

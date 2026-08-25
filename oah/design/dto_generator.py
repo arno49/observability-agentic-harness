@@ -1,9 +1,10 @@
 """S8 DTO generation — real LiteLLM call for the parts that need judgment
 (anchor selection, preconditions, change type), deterministic post-
-processing for the part that doesn't (rollout_step, assigned from
-gap_model priority — a stand-in for real rollout_plan.md-driven,
-workflow-criticality ordering, which isn't built yet; SKILL.md itself
-instructs the model not to set this field).
+processing for the part that doesn't: rollout_step, assigned by
+architecture.md S7's real ordering rule ("first workflow = most critical
+one, tracing + generation capture first, feedback loop second,
+auto-scoring third"), not the model (SKILL.md itself instructs the model
+not to set this field).
 """
 import json
 from pathlib import Path
@@ -17,8 +18,35 @@ SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
 SKILL_NAME = "s8-dto-generator"
 DEFAULT_MODEL = "claude-sonnet-5"  # SP8: frontier default
 
-# gap priority -> rollout_step ordering. Lower step number = earlier rollout.
-_PRIORITY_TO_STEP_BASE = {"p0": 0, "p1": 1000, "p2": 2000, "p3": 3000}
+# architecture.md S7: "first workflow = most critical one" -- the primary
+# rollout ordering key. Lower rank rolls out first. A gap whose point had
+# no resolvable workflow_hint (or no context.yaml at all) sorts last, not
+# first and not interleaved with known-critical workflows -- known beats
+# unknown, same principle as gap_model.py's own priority-driver honesty.
+_CRITICALITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+_UNKNOWN_WORKFLOW_RANK = 4
+
+# architecture.md S7: "tracing + generation capture first, feedback loop
+# second, auto-scoring third." Only three dimension names are named by
+# that rule; schemas/gap_model.schema.json's dimension enum has no
+# auto_scoring member yet (no lens/point-kind produces one), so rank 2
+# ("auto-scoring third") is never actually reachable today -- stated here,
+# not silently assumed. Every other real dimension (retrieval, tools,
+# pii_governance, cost, operations, error_taxonomy, self_telemetry) gets
+# the stated default rank between the two named tiers, not a fabricated
+# more-specific one architecture.md never assigned it.
+_DIMENSION_ROLLOUT_RANK = {
+    "tracing": 0,
+    "generation_capture": 0,
+    "feedback": 2,
+}
+_DEFAULT_DIMENSION_RANK = 1
+
+# Gap priority (p0 first) as the final tiebreak -- meaningful on its own
+# (severity + coverage status) even without context.yaml, so it still
+# orders DTOs sensibly when no workflow is resolvable for any of them,
+# rather than falling through to an arbitrary dto-id-only order.
+_PRIORITY_RANK = {"p0": 0, "p1": 1, "p2": 2, "p3": 3}
 
 
 class DtoGenerationError(Exception):
@@ -38,24 +66,50 @@ def _load_output_schema():
     return json.loads((SKILLS_DIR / SKILL_NAME / "io" / "output.schema.json").read_text())
 
 
-def _assign_rollout_steps(dtos, gaps_by_id):
-    """Deterministic: order by (gap priority, dto id) for a stable,
-    reproducible step assignment given the same inputs — not by whatever
-    order the model happened to list DTOs in."""
+def _workflow_criticality_rank(workflow_name, context):
+    if not workflow_name or not context:
+        return _UNKNOWN_WORKFLOW_RANK
+    for wf in context.get("workflows", []):
+        if wf["name"] == workflow_name:
+            return _CRITICALITY_RANK.get(wf["criticality"], _UNKNOWN_WORKFLOW_RANK)
+    return _UNKNOWN_WORKFLOW_RANK
+
+
+def _assign_rollout_steps(dtos, gaps_by_id, context=None):
+    """Deterministic, real workflow-criticality-and-dimension ordering
+    (architecture.md S7), not a gap-priority-only stand-in: groups by
+    workflow criticality first (most critical workflow's DTOs all roll
+    out before the next workflow's), then by workflow identity (so two
+    same-criticality workflows don't interleave), then by the named
+    dimension tiering, then gap priority, then dto id for full
+    determinism given the same inputs."""
     def sort_key(dto):
         gap = gaps_by_id.get(dto["gap_id"])
+        workflow_name = gap.get("workflow") if gap else None
+        dimension = gap["dimension"] if gap else None
         priority = gap["priority"] if gap else "p3"
-        return (_PRIORITY_TO_STEP_BASE.get(priority, 9999), dto["id"])
+        return (
+            _workflow_criticality_rank(workflow_name, context),
+            workflow_name or "",
+            _DIMENSION_ROLLOUT_RANK.get(dimension, _DEFAULT_DIMENSION_RANK),
+            _PRIORITY_RANK.get(priority, 9999),
+            dto["id"],
+        )
 
     for step, dto in enumerate(sorted(dtos, key=sort_key), start=1):
         dto["rollout_step"] = step
     return dtos
 
 
-def generate_dtos(event_schema, points, gaps, repo_git_sha, model=None, _completion_fn=None):
+def generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=None, _completion_fn=None):
     """Returns a dict conforming to schemas/implementation_dto.schema.json
     (the real, shared schema — rollout_step included, assigned here, not
-    by the model). Returns None if there are no points to generate for."""
+    by the model). `context` (context.yaml, if an interview has run) is
+    used only for the deterministic rollout_step ordering below, never
+    sent to the model -- the model makes no workflow-criticality judgment
+    of its own, matching s8-dto-generator/io/input.schema.json, which has
+    no context field at all. Returns None if there are no points to
+    generate for."""
     if not points:
         return None
 
@@ -112,7 +166,7 @@ def generate_dtos(event_schema, points, gaps, repo_git_sha, model=None, _complet
                 )
 
     gaps_by_id = {g["id"]: g for g in gaps}
-    parsed["dtos"] = _assign_rollout_steps(parsed["dtos"], gaps_by_id)
+    parsed["dtos"] = _assign_rollout_steps(parsed["dtos"], gaps_by_id, context=context)
 
     validate_shared_schema("implementation_dto", parsed)
     return parsed
