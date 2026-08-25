@@ -41,14 +41,24 @@
               "type": "object",
               "required": ["event_type"],
               "properties": {
-                "event_type": { "enum": ["trace", "span", "generation", "retrieval_span", "tool_span", "feedback_event", "degradation_event", "escalation_event"] },
+                "event_type": { "enum": ["trace", "span", "generation", "retrieval_span", "tool_span", "guardrail_span", "feedback_event", "degradation_event", "escalation_event"] },
                 "required_attributes": { "type": "array", "items": { "type": "string" } },
+                "consistency_assertions": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Predicate expressions over this event's own attributes that must hold together, not just be present, e.g. \"access_result == 'restricted' implies source_ids == [] and needs_review == true\". Field presence alone does not satisfy an assertion here."
+                },
                 "parented_under": { "type": "string", "description": "Expected parent span relationship, if asserted" }
               }
             }
           },
           "risk": { "enum": ["low", "medium", "high"], "description": "High-risk DTOs (e.g. context propagation changes) get extra review flagging in S9" },
-          "estimated_overhead_ms": { "type": ["number", "null"] }
+          "estimated_overhead_ms": { "type": ["number", "null"] },
+          "retest_triggers": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Files or config keys whose change invalidates this DTO's recorded S11 evidence, e.g. 'prompts/policy_v*.md', 'config/retrieval.yaml#index_id'. Consumed by `oah check-drift` to flag stale validation without a full pipeline re-run."
+          }
         }
       }
     }

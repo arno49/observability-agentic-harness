@@ -43,6 +43,10 @@
           "type": "string",
           "description": "Environment under review and exposure level; staging/production separation noted"
         },
+        "environment_provenance": {
+          "enum": ["self_reported", "iac_corroborated", "cloud_api_verified", "unknown"],
+          "description": "How `environment` above was established, not just asserted. Provisional pending SP9's decision record — default `self_reported` until a corroboration mechanism lands; a `self_reported`-only environment claim is lower-weight evidence and S9 prose must say so, not silently treat it as confirmed."
+        },
         "runtime_and_secrets_approach": {
           "type": "string"
         },

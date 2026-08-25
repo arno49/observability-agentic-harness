@@ -9,7 +9,7 @@ milestones are scope gates, not dates.
 
 | Milestone | Outcome | Gate criterion |
 |---|---|---|
-| **M0 — De-risked** | All blocking spikes answered | Decision records for SP1–SP4 merged |
+| **M0 — De-risked** | All blocking spikes answered | Decision records for SP1–SP4, SP10 merged |
 | **M1 — Auditor** | `oah map` produces a surface map + gap report on real repos | TCR-relevant call-site recall ≥ 90% on reference corpus (Python) |
 | **M2 — Architect** | `oah design` emits architecture, event schema, rollout plan, DTOs | Two pilot products accept an S9 gate report with ≤ minor edits |
 | **M3 — Implementer** | `oah instrument --mode fix` lands reviewable instrumentation | Instrumented reference repo passes its own test suite; events validate against schema |
@@ -21,28 +21,48 @@ milestones are scope gates, not dates.
 State DB (SQLite) with checkpoint/resume, per-run `run_manifest.json` (tool version,
 model roles, config hash, target git SHA, timing), per-stage cost budgets, structured
 artifact passing with schema validation at every stage boundary, `doctor` and
-`estimate` commands. *DoD:* a crashed run resumes idempotently; every artifact in a
+`estimate` commands. Checkpoint granularity is sub-stage, not just stage-boundary:
+S10 checkpoints per applied DTO, S11 per completed scenario/panel-question, and any
+long agentic stage that hits a token/session-budget wall (not just a crash) must be
+resumable from the last completed unit of work via `oah resume <run_id>` — this was
+a specific pain point in VVAH (no way to pick back up mid-stage after hitting a
+session limit) that OAH must not repeat. *DoD:* a crashed OR session-limit-terminated
+run resumes idempotently from its last completed unit of work; every artifact in a
 run validates against `schemas/`; `estimate` predicts cost within ±40% on corpus repos.
 *Depends on:* SP5.
 
 ### E2 — Discovery (S1–S3)
-Deterministic surface mapper for Python (AST + signature registry), LLM
-disambiguation pass, telemetry inventory scanner, gap-model skill, owner-interview
+Deterministic surface mapper built as a **per-language pluggable registry from day
+one** (architecture decided by SP10, not re-derived when the second language lands),
+LLM disambiguation pass, telemetry inventory scanner, gap-model skill, owner-interview
 stage producing `context.yaml`. **First target stack (pilot-driven): Python + raw
 Anthropic SDK** — the Messages API call shapes incl. streaming and tool-use loops
 get the first, deepest signature registry and `references/raw-sdk.md`; **LiteLLM**
 follows immediately after (both as a call-site signature — `litellm.completion` /
 proxy usage in target products — and as an S2 inventory item, since its built-in
 callbacks/logging count as existing telemetry); LangChain / LlamaIndex / raw-HTTP /
-vector-DB signatures follow as registry extensions.
+vector-DB signatures follow as registry extensions. Python-only scope at the M1 gate
+is deliberate — one concrete, deep registry proves the pipeline — not a statement
+that other stacks are secondary; see E11 for the mainstream-language follow-on,
+sequenced immediately after M1 rather than deferred to post-M4.
 *DoD:* M1 gate; false-positive rate < 10% on corpus; interview questions cover
-PII/criticality/data-egress constraints. *Depends on:* SP1.
+PII/criticality/data-egress constraints; the registry interface has at least one
+non-Python language plugged in against SP10's abstraction before M2, proving it
+holds. *Depends on:* SP1, SP10.
 
 ### E3 — Design lenses & verification (S4–S6)
 Skills: tracing (incl. async/queue propagation), generation capture, retrieval, tools,
-feedback loop, PII & governance, cost. Deterministic invariant gates (every surface
-point covered; OTel GenAI semconv compliance; no plaintext PII fields; overhead budget
-declared). Adversarial design panel (SRE / security / cost-skeptic personas).
+feedback loop, PII & governance, cost, **realtime & multimodal** (turn-taking/
+interruption latency for live voice, transcription/recognition error rate, media
+consent/retention/derived-artifact visibility, fallback across channels — see
+`realtime_session` in `surface_map.schema.json` and the `modality` attribute on the
+Generation entity in [event-model.md](docs/event-model.md)). This lens is on the
+roster from the start, not a deferred bolt-on — the event model is designed
+modality-neutral now precisely so a text-only first registry doesn't require a
+schema migration when voice/image call sites are added. Deterministic invariant
+gates (every surface point covered; OTel GenAI semconv compliance; no plaintext PII
+fields; overhead budget declared). Adversarial design panel (SRE / security /
+cost-skeptic personas).
 *DoD:* design for a corpus repo passes gates; panel findings are reproducibly
 categorized, not free-text. *Depends on:* E2, SP2, SP6.
 
@@ -66,15 +86,26 @@ against event schema; compute actual TCR and latency overhead. Agentic layer:
 adversarial panel (telemetry auditor: "reconstruct incident X from this trace";
 privacy auditor: "find PII in real emitted events"). Verdicts `validated` /
 `validation_failed` / `needs_review` with the degradation ladder from
-`docs/validation.md`. *DoD:* M4 gate; verdict always states which ladder rung was
-achieved. *Depends on:* E5, SP3.
+`docs/validation.md`, **plus the environment the evidence came from** (per SP9's
+data model) so a `validated` verdict in a throwaway sandbox is never presented the
+same way as one from staging or production-shadow. **`oah check-drift`** — a
+standalone, cheap command — reads each DTO's `retest_triggers`
+(`implementation_dto.schema.json`) against the target repo's current state and
+flags which prior verdicts are stale without re-running the full pipeline. *DoD:*
+M4 gate; verdict always states which ladder rung was achieved and which
+environment produced it; `check-drift` correctly flags staleness on a corpus repo
+with a seeded post-validation prompt/schema change. *Depends on:* E5, SP3, SP9.
 
 ### E7 — Reference corpus & skill evals
 Curate open-source LLM apps across architectures (simple RAG chat, multi-agent
-system, queue-based pipeline, TS/Node app for later), hand-label ground truth
-(call sites, expected spans), eval runner scoring skill recall/precision, regression
-suite in CI. *DoD:* every skill PR runs evals; published accuracy table in README.
-*Starts alongside E2 — the corpus is the test bed for everything.*
+system, queue-based pipeline) and, once SP10 lands, across languages (Python first;
+a TypeScript/Node and a Java fixture follow immediately, not deferred — otherwise
+E11's registries have no eval signal). Add a realtime/voice or image-input fixture
+once `lens-realtime-multimodal` is buildable, so that lens isn't shipped
+unevaluated. Hand-label ground truth (call sites, expected spans), eval runner
+scoring skill recall/precision, regression suite in CI. *DoD:* every skill PR runs
+evals; published accuracy table in README, broken out per language once more than
+one is registered. *Starts alongside E2 — the corpus is the test bed for everything.*
 
 ### E8 — Security hardening of the harness
 Secret-redaction in harness's own logs, directory allowlist, prompt-injection
@@ -92,31 +123,48 @@ targets from the same DTOs. *Depends on:* SP6.
 OAH emits traces of its own stages in the schema it installs; a run is debuggable
 from its own telemetry. *DoD:* an OAH incident is reconstructed from OAH traces alone.
 
-### E11 — Second language: TypeScript/Node
-Port S1 signature registry + AST layer; extend corpus. *Post-M4.*
+### E11 — Mainstream language coverage: TypeScript/Node, Java
+Python-only would cede most of the enterprise LLM-app market, where a large share
+of production API/backends are TS/Node or Java/Spring. Port the S1 signature
+registry + call-site detection layer to each per SP10's language-agnostic
+abstraction; extend the corpus (E7) per language as it lands. Priority order and
+rationale: **1. TypeScript/Node** — dominant for LLM-facing backends and the
+Vercel AI SDK / LangChain.js ecosystem, closest in call-shape to the Python raw-SDK
+registry already built; **2. Java** — dominant in regulated-enterprise backends
+(finance, healthcare, public sector) that are exactly OAH's stated vertical context
+in `context.yaml`, but a heavier lift (Spring AI / LangChain4j patterns, different
+async model). Go and C#/.NET are stretch candidates, sequenced only after SP10's
+abstraction survives two real languages, not designed for speculatively now.
+*DoD:* TS/Node registry reaches E2's M1 recall/FP bar on a TS corpus fixture before
+M2 closes; Java follows using the same bar, timeboxed independently so a slow Java
+port doesn't block M2. *Depends on:* SP10, E2. *Starts immediately after SP10's
+decision record lands — not deferred to post-M4.*
 
 ## Spikes
 
 | ID | Question | Timebox | Blocks | Output |
 |---|---|---|---|---|
 | **SP1** | Can AST + signature registry reach ≥90% recall on LLM call-site detection in Python, incl. dynamic dispatch and wrapper functions? Where exactly is the LLM pass required? | 1 wk | E2 | Decision record + prototype on 3 corpus repos |
-| **SP2** | Catalog of trace-ID propagation patterns through async/celery/queues per framework; which are auto-instrumentable vs. require code-shape changes? | 1 wk | E3 | Pattern catalog in docs/ |
+| **SP2** | Catalog of trace-ID propagation patterns through async/celery/queues per framework, **plus long-running background jobs** (e.g. Deep Research / batch-style calls that run tens of minutes via polling or webhook completion rather than a queue hop) — how does a trace stay correlated from submission to a completion event that may arrive in a different process/session entirely? Which are auto-instrumentable vs. require code-shape changes? | 1 wk | E3 | Pattern catalog in docs/ |
 | **SP3** | Feasibility of the dynamic validation harness: reliably run an unfamiliar product (tests/compose/smoke), intercept OTLP locally, diff against schema. What % of corpus repos are runnable at each ladder rung? | 2 wk | E6 | Decision record + runnability matrix |
 | **SP4** | Claude Agent SDK for code mutation: per-DTO commit discipline, rollback on failure, diff quality vs. plain prompting. | 1 wk | E5 | Decision record + demo branch |
 | **SP5** | Cost model: predict run cost from repo size/complexity before spending. Accuracy target ±40%. | 3 d | E1 | estimate formula + calibration data |
 | **SP6** | Maturity check: OTel GenAI semantic conventions — what's stable vs. experimental right now; gaps we must fill with `oah.*` extension attributes. | 3 d | E3, E9 | Convention mapping doc |
 | **SP7** | Prompt-injection attack surface of a harness that reads hostile repo content; mitigation patterns (content/instruction separation, tool sandboxing). | 1 wk | E8 | Threat model section + test payload set |
 | **SP8** | LiteLLM as the harness's model abstraction: per-role config (any provider incl. local Ollama/vLLM), streaming & tool-use parity for skill stages, cost-tracking hooks feeding `estimate`. Where does a light tier (Haiku-class / local) hold quality — measure S1-disambiguation and S2-inventory recall light-vs-frontier on corpus. S10/S11 stay Anthropic-pinned (Claude Agent SDK). | 1 wk | E1, E2 | Decision record + role/model matrix |
+| **SP9** | Environment provenance: how does OAH determine — not just accept on trust — which environment (sandbox / staging / production-shadow / production) a validation run's evidence actually came from? Compare: (a) a self-reported CLI flag (weak, unverified), (b) parsing IaC/CI config already in the product repo (Terraform/Helm/k8s manifests, deploy workflows) to infer environment from what's being targeted, (c) accepting a second, separately supplied infra/IaC repo path for cross-reference, (d) cloud-API introspection at run time. Recommend an MVP for the M4 gate vs. what's a stretch worth its own future epic (e.g. a dedicated IaC-assessment sub-pipeline). Must also decide the data model: does environment live on the run manifest only, or per-trace/per-verdict, and how is self-reported-and-unverified visually distinguished from corroborated in the S9 report? | 1.5 wk | E6, E4 | Decision record + environment-provenance data model |
+| **SP10** | Multi-language surface-mapping architecture: what's the language-agnostic intermediate call-site representation that lets S1 add a new language (TypeScript/Node, Java, then Go/.NET as stretch) without touching pipeline core or the S3+ skills downstream of it? Compare a unified tree-sitter-based parse layer across all languages vs. native per-language parsers (Python `ast`/`libcst`; TypeScript `ts-morph`/compiler API; Java `javaparser`/tree-sitter) behind a common adapter interface. Prototype must prove the abstraction on **two** real languages (Python + TypeScript), not one — a single-language prototype doesn't test whether the abstraction actually generalizes. | 1.5 wk | E2, E11 | Decision record + two-language prototype |
 
 ## Sequencing sketch
 
 ```
-M0:  SP1 SP5 SP6 → SP2 SP4 SP7 → SP3
+M0:  SP1 SP5 SP6 SP10 → SP2 SP4 SP7 SP9 → SP3
 M1:  E1 ─┬─ E2 ── E7(start)
+     E11 (TS/Node) starts right after M1, Java follows on its own timebox
 M2:      └─ E3 ── E4          E8(start, continuous)
 M3:  E5
 M4:  E6 ── E9 ── E10
-post-M4: E11, managed-backend targets, non-Python frameworks
+post-M4: managed-backend targets, Go/.NET (if SP10's abstraction earns it)
 ```
 
 ## Explicit non-goals (for now)

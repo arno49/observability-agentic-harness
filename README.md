@@ -87,6 +87,10 @@ oah design --repo ./product         # through S9: architecture + plan, no code c
 oah instrument --repo ./product     # S10, --mode report-only|fix
 oah validate --repo ./product       # S11
 oah scan --repo ./product           # full run; --stop-after s9 for analysis-only
+oah resume <run_id>                 # continue a crashed or session-limit-terminated run
+                                     # from its last completed unit of work
+oah check-drift --repo ./product    # cheap staleness check against DTOs' retest_triggers,
+                                     # no full pipeline re-run
 ```
 
 > ⚠️ Following VVAH's convention and warning: a full run in fix mode **edits source
@@ -122,6 +126,11 @@ a codebase has value even if you never proceed to instrumentation.
    coverage class, not test count.
 8. **Dogfooding.** Every OAH run emits a trace of its own stages in the very schema it
    installs for clients.
+9. **Language and modality are plugins, not the core.** S1's registry and the S4
+   design lenses are architected so a new source language (TypeScript, Java, ...)
+   or a new call-site modality (voice, image) is an additive extension, not a
+   pipeline rewrite — Python and text-first are the first concrete targets because
+   a pilot needs one deep example, not because the architecture assumes them.
 
 ## Repository layout
 

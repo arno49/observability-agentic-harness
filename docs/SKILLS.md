@@ -30,7 +30,7 @@ is loaded only when the surface map says that framework is present.
 
 | Stage | Skill | Notes |
 |---|---|---|
-| S1 | surface-mapper (disambiguation role) | LLM pass only for low-confidence AST hits |
+| S1 | surface-mapper (disambiguation role) | LLM pass only for low-confidence AST hits; the AST/registry layer itself sits behind a per-language adapter (SP10), so this skill is language-agnostic already |
 | S3 | gap-modeler | Joins S1×S2 vs. event model; generates owner interview |
 | S4 | lens-tracing | Async/queue propagation patterns per framework |
 | S4 | lens-generation-capture | Prompt versioning, tokens, cost, cache |
@@ -39,6 +39,7 @@ is loaded only when the surface map says that framework is present.
 | S4 | lens-feedback | Verdict taxonomy design |
 | S4 | lens-pii-governance | Masking, access, retention |
 | S4 | lens-cost | Attribution, spend thresholds w/ named actor, quota & rate-limit headroom |
+| S4 | lens-realtime-multimodal | Turn-taking/interruption latency, transcription error rate, media consent/retention, channel fallback — on the roster from the start, not deferred |
 | S4 | lens-ops | Production readiness: release identifiers, persistent smoke test, degradation & rollback visibility, incident-response route |
 | S6 | panel-sre / panel-security / panel-cost | Adversarial design review |
 | S7 | synthesizer | Architecture + schema + rollout plan |
@@ -57,4 +58,8 @@ skill PR runs its eval suite; recall/precision per skill are published. Target f
 M1: surface-mapping recall ≥ 90%, FP rate < 10% on Python corpus.
 
 Adding a new framework = adding a `references/<framework>.md` to the affected skills
-plus corpus fixtures — not touching the pipeline.
+plus corpus fixtures — not touching the pipeline. Adding a new **language**
+(TypeScript/Node, Java, ...) is the same shape one level down: implement SP10's
+adapter interface for it and add per-language corpus fixtures — the skills
+themselves (gap-modeler, the S4 lenses, S6 panels) are already language-agnostic,
+since they operate on `surface_map.json`/`gap_model.json`, not source text.

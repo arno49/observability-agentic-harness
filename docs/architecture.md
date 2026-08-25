@@ -11,11 +11,16 @@ repo; runs are resumable and idempotent.
 ### S1 — Observability surface mapping *(deterministic + LLM disambiguation)*
 Walk the target repo with AST parsing and a signature registry (Anthropic/OpenAI
 SDKs, LangChain, LlamaIndex, raw HTTP to known LLM endpoints, vector DB clients,
-tool/agent frameworks, queue producers/consumers on paths between them). Ambiguous
-sites (dynamic dispatch, homemade wrappers) go to an LLM disambiguation pass with the
-surrounding code as context. **Output:** `surface_map.json` — every LLM, retrieval,
-tool, and queue touchpoint with file/line, framework, sync/async nature, and
-confidence.
+tool/agent frameworks, queue producers/consumers on paths between them, and
+`realtime_session` sites — persistent duplex connections such as a WebRTC/WebSocket/
+SIP voice session, structurally distinct from a single request/response call).
+The AST layer and signature registry sit behind a per-language adapter interface
+(SP10) so Python ships first without hard-coding Python-only assumptions into the
+pipeline core — TypeScript/Node and Java (E11) plug into the same interface.
+Ambiguous sites (dynamic dispatch, homemade wrappers) go to an LLM disambiguation
+pass with the surrounding code as context. **Output:** `surface_map.json` — every
+LLM, retrieval, tool, queue, and realtime-session touchpoint with file/line,
+framework, sync/async nature, and confidence.
 
 ### S2 — Existing telemetry inventory *(deterministic + LLM)*
 Find what already exists: loggers and their call sites, metrics libraries, existing
@@ -33,7 +38,11 @@ with approval status per region and use case, restricted sources and their
 approved handling path; **trust boundaries** — which caller-asserted context
 (role, region) is verified server-side vs. trusted; and the **declared tool/action
 boundary** for the current release. Answers are recorded as `context.yaml` and
-weight prioritization. **Output:** `gap_model.json` (prioritized),
+weight prioritization. The skill also flags any place the target product treats a
+model-generated confidence/certainty field (e.g. `confidence_note`) as if it were
+calibrated — routing on it without a deterministic rule, evaluator, or human behind
+it is a gap, not coverage (see the confidence-field invariant in
+[event-model.md](event-model.md)). **Output:** `gap_model.json` (prioritized),
 `context.yaml`.
 
 ## Phase 2 — Design & Verification
@@ -58,6 +67,15 @@ Specialized skills each design their slice for this specific stack:
 - **cost** — per-call cost attribution, spend thresholds with a named acting role,
   quota/rate-limit headroom capture (provider rate-limit headers on generation
   spans), throttling/queueing hooks;
+- **realtime & multimodal** — turn-taking and interruption latency for live voice,
+  transcription/recognition error rate, fallback/handoff across channels when a
+  modality isn't working for the user, and media-specific governance: consent,
+  access/storage/retention for captured media, what derived artifacts (transcripts,
+  embeddings) must never reach logs. On the `surface_map.json` side this lens is
+  the consumer of `realtime_session` points; on the event side it's the consumer
+  of the Generation entity's `modality` attribute. Present on the lens roster from
+  the start (not deferred) so the event model stays modality-neutral even while
+  the first registries are text-only;
 - **ops (production readiness)** — release identifiers stamped on every event
   (prompt, model config, tool setup, retrieval config, deployment package — "we see
   a problem but don't know what changed" must be impossible); a **persistent
@@ -84,11 +102,15 @@ Specialized skills each design their slice for this specific stack:
 
 ### S5 — Deterministic invariant gates *(pure code)*
 No LLM. Checks include: every S1 surface point has a design decision; event fields
-map to OTel GenAI semantic conventions or declared `oah.*` extensions; no field is
-allowed to carry plaintext PII; latency-overhead budget is declared per call path;
-telemetry failure mode is declared fail-open (telemetry loss must never break the
-product); **every designed signal names at least one decision it supports and the
-role that acts** (anti-metric-hoarding gate — see the signals→decisions matrix in
+map to OTel GenAI semantic conventions or declared `oah.*` extensions; every schema
+field carries a data-sensitivity tier and no field is allowed to carry unmasked PII
+above its declared tier; declared cross-field consistency assertions (e.g. a
+restricted-access response cannot carry `needs_review: false`) are present wherever
+a structured output has more than one field whose values can contradict each other;
+latency-overhead budget is declared per call path; telemetry failure mode is
+declared fail-open (telemetry loss must never break the product); **every designed
+signal names at least one decision it supports and the role that acts**
+(anti-metric-hoarding gate — see the signals→decisions matrix in
 [event-model.md](event-model.md)). A failed gate blocks progression with a machine-readable reason.
 
 ### S6 — Adversarial design review *(agentic panel)*
@@ -125,8 +147,12 @@ issue.
 ### S8 — Implementation DTOs *(skill: dto-generator)*
 Each rollout step decomposes into `implementation_dto.json` entries: target file and
 insertion point, instrumentation type, code-shape preconditions, and — crucially —
-**expected emitted events**, which is what makes S11 verification possible. Every DTO
-links back to a gap-model entry and a surface-map point.
+**expected emitted events**, which is what makes S11 verification possible. Expected
+events may include **cross-field consistency assertions** (not just field presence)
+— e.g. "if `access_result == restricted` then `source_ids == []` and `needs_review
+== true`" — so S11 catches a schema-valid-but-incoherent response the same way it
+catches a missing field. Every DTO links back to a gap-model entry and a surface-map
+point.
 
 ### S9 — Production readiness report *(deterministic assembly)*
 The human gate artifact, structured as a five-question readiness checklist
@@ -195,7 +221,15 @@ with the ladder rung achieved.
 ## Cross-cutting
 
 - **Run manifest.** Every run writes `run_manifest.json`: tool version, model roles,
-  config hash, target git SHA, timing, per-stage cost.
+  config hash, target git SHA, timing, per-stage cost, and — once produced —
+  **environment** (per SP9's provenance model: self-reported vs. IaC-corroborated),
+  since a verdict must be readable without cross-referencing a separate document to
+  know what it's evidence *of*.
+- **Checkpointing.** Sub-stage, not just stage-boundary: S10 checkpoints per applied
+  DTO, S11 per completed scenario. `oah resume <run_id>` continues from the last
+  completed unit of work whether the run stopped because it crashed or because it
+  hit a token/session budget wall — the two cases are indistinguishable to resume
+  logic and must both "just continue."
 - **Budgets.** Per-stage `max_budget_usd`; `oah estimate` predicts before spending.
 - **Model backend abstraction (LiteLLM).** The harness talks to models through
   [LiteLLM](https://www.litellm.ai/), so every stage's model is a config role

@@ -22,7 +22,17 @@ check, human review, queue hop. Spans carry stage-local latency and status inclu
 
 **Generation** — specialized span for an LLM call: prompt reference (versioned, not
 inline duplicated), parameters, token counts, cost, cache-hit flag, finish reason,
-and refusal/guardrail outcomes.
+and refusal/guardrail outcomes. Carries **`input_modality`/`output_modality`**
+(`text` / `audio` / `image` / `structured`, extensible) so a call that takes voice
+input or returns an image is the same entity as a text call, not a special case —
+this is what lets the `lens-realtime-multimodal` design lens (see architecture.md
+S4) reuse the whole trace/span model instead of forking it, even though the first
+concrete registries only ever populate `text`. Carries a **`response_path`**
+classification —
+`answer` / `clarify` / `refuse_safe_complete` / `escalate` / `structured_failure` —
+naming which of the designed response paths this generation actually took, so
+behavior rates (fallback, clarification, refusal, escalation) are computable
+directly from spans instead of reconstructed from free-text output after the fact.
 
 **Retrieval span** — query, retrieved source IDs with scores, the
 made-it-into-context vs. truncated distinction (silent truncation is a top hidden
@@ -38,6 +48,17 @@ and the **declared action boundary**: which external effects this release is
 allowed to have (e.g. read-only pilot: no ticket creation, no record updates, no
 outbound messages). A tool action outside the declared boundary is an alertable
 event in its own right, regardless of whether it succeeded.
+
+**Guardrail span** — a single pre- or post-generation check, structured the same
+way as the S7 alert plan so a check is never just a pass/fail with no accountable
+owner: **boundary** (what it controls), **trigger** (the condition that activates
+it), **check location** (before generation / after generation / before action /
+before display), **expected behavior** (continue / clarify / refuse / retry /
+block / escalate), **evidence captured**, and **owner**. A guardrail's job is not
+"did every required field come back" but whether the fields are *mutually
+consistent* — e.g. a response about a restricted dataset with an empty
+`source_ids` and `needs_review: false` is a guardrail failure even though every
+required field is present and schema-valid.
 
 **Feedback event** — user report or reviewer verdict bound to a trace ID. Verdicts
 use a fixed taxonomy (hallucination / irrelevant-retrieval / refusal-error /
@@ -95,13 +116,35 @@ reachable, and treating every failure as a full emergency.
 
 ## Governance requirements (first-class, not add-ons)
 
+**Data sensitivity classification.** Every field a designed signal might carry is
+classified into one of five tiers, and the tier — not the field's apparent
+harmlessness — drives masking, access, and retention design:
+
+| Tier | Examples |
+|---|---|
+| Public | Content already approved for public use |
+| Internal | Business information for internal users |
+| Customer-confidential | Records, correspondence, documents tied to a specific customer |
+| Personal / regulated | Personal, protected, or regulated data |
+| Secrets / credentials | API keys, passwords, tokens, certificates |
+
+**Rule under uncertainty:** classify at the highest tier reasonably applicable
+until a responsible owner confirms otherwise — never guess down. `lens-pii-governance`
+designs masking/access/retention per tier; the S5 gate checks every schema field
+against its declared tier.
+
 1. **PII masking at ingestion** — before storage, not at query time. The
    exclusion list goes beyond personal data: customer confidential content,
    access tokens/credentials, **internal system prompts and hidden instructions**
    (log prompt *references and versions*, never bodies, outside permissioned
    tiers), **raw tool outputs containing sensitive data**, and full source
    documents that don't need to live in logs. More logging is not better: excess
-   capture raises noise, cost, privacy risk, and review burden.
+   capture raises noise, cost, privacy risk, and review burden. A reference
+   allow/deny pair anchors the design: **safe** — `request_id, caller_id,
+   environment, action, approval_status, status_code, latency_ms, timestamp`;
+   **unsafe** — raw prompt body, `api_key`, customer email address, generated
+   customer-facing text. The privacy-auditor panel (S11) is graded against this
+   pair on real emitted events, not the design.
 2. **Role-scoped access** — metadata visible broadly; prompt/output content by
    permission; content reads are themselves audited.
 3. **Retention matrix** — separate clocks for metadata (long) and content (short);
@@ -124,7 +167,7 @@ affordable, and safe for its workflow).
 | **Health & availability** | Service reachable, responding, available when intended users need it (continuous health check + the installed post-deploy smoke test) | continue / investigate outage / block release / escalate availability risk |
 | **Latency & dependency timing** | Whether slowness comes from the API layer, model, retrieval, tool, or downstream — per-stage span timing makes the decomposition free | investigate source of slowness / tune / review scaling / degrade gracefully / pause expansion / roll back |
 | **Usage, throughput & quota pressure** | Traffic volume vs. expectations; headroom against provider rate limits and quotas — generation spans capture provider rate-limit response headers (`anthropic-ratelimit-*`; `x-ratelimit-*` on OpenAI-compatible backends incl. LiteLLM-proxied local ones; exact header sets validated against current provider docs at design time, not hardcoded) | adjust rollout / review quota needs / plan capacity / add throttling or queueing / revisit rate-limit assumptions |
-| **Cost & consumption** | Whether usage creates expected consumption; whether the chosen model/capability/retrieval pattern still fits the operating plan; spend vs. declared thresholds | continue / cap usage / set usage limits / add release conditions / investigate cost drivers / review model choice — each spend threshold names **who acts** when approached |
+| **Cost & consumption** | Whether usage creates expected consumption; whether the chosen model/capability/retrieval pattern still fits the operating plan; spend vs. declared thresholds. Primary metric is **cost per successful task** — including retries, extra calls, and reviewer correction — not nominal per-call price, which understates cost on any workflow with a non-trivial retry or correction rate | continue / cap usage / set usage limits / add release conditions / investigate cost drivers / review model choice — each spend threshold names **who acts** when approached |
 | **Retrieval & dependency reliability** | Source/model/tool/downstream failing, unavailable, slow, permission-blocked, or incomplete | remediate source or permission / fall back / degrade gracefully / escalate to owner / pause expansion / roll back |
 | **Error behavior & release traceability** | Error rate vs. baseline; whether errors rose after a release; which release identifier produced the behavior | investigate / remediate / pause expansion / roll back / review release / preserve auditability |
 | **Behavior & guardrail signals** | Fallback rate *with reason*, clarification rate, escalation/human-handoff rate, restricted-topic attempt rate with handling outcome — and error patterns **segmented by region, role, and restricted-attempt**, since a systematic failure for one user group is invisible in aggregate rates | tune guardrails / expand or narrow scope / escalate to policy owners / pause expansion for an affected segment — a health check says the service is reachable, not that users receive correct, approved, region- and role-appropriate, safely escalated answers |
@@ -144,13 +187,15 @@ sensitive data excluded from the record. The S11 telemetry-auditor uses these ni
 questions verbatim as its reconstruction rubric.
 
 **Request summary record.** Besides full traces, each request emits one compact
-summary record — the support-facing rollup: request IDs, environment, caller,
-release identifiers, action, status, per-dependency statuses (model / retrieval /
-tool / downstream, incl. `not_used`), latency, error category, rate-limit
-headroom, and a `sensitive_content_logged` self-attestation flag (asserted `false`
-by construction; the S11 privacy-auditor treats a `true` or a wrong `false` as a
-blocking finding). Support works from summaries; full traces are opened by
-permission when a summary isn't enough.
+summary record — the support-facing rollup: request IDs, environment (tagged with
+its provenance — self-reported vs. IaC-corroborated, per SP9 — so "staging" in a
+record is never silently taken on faith), caller, release identifiers, action,
+status, per-dependency statuses (model / retrieval / tool / downstream, incl.
+`not_used`), latency, error category, rate-limit headroom, and a
+`sensitive_content_logged` self-attestation flag (asserted `false` by construction;
+the S11 privacy-auditor treats a `true` or a wrong `false` as a blocking finding).
+Support works from summaries; full traces are opened by permission when a summary
+isn't enough.
 
 **Dual request-ID correlation.** Generation spans record both the
 provider-generated request id (e.g. Anthropic's `request-id` response header) and
@@ -173,3 +218,13 @@ logs and support tickets.
   whether the API verified it or trusted the calling application. Authentication
   of the caller alone does not prove authorization of the request.
 - No schema field may contain unmasked PII.
+- Structured output fields must be internally consistent, not merely
+  schema-valid — a DTO (S8) may declare cross-field assertions (e.g. `access_result
+  == "restricted"` implies `source_ids == []` and `needs_review == true`), and
+  a field-presence check that ignores such assertions is not a passing check.
+- A model-generated confidence/certainty field (e.g. a `confidence_note`) is
+  explanatory text, not a calibrated probability, and must never be the sole
+  basis for a low-confidence trigger, a review gate, or a decision signal. If
+  the target product treats one as calibrated, that is a gap-model finding
+  (S3), not coverage — the trigger needs a deterministic rule, an evaluator, or
+  a human in the loop behind it.

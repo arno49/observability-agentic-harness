@@ -52,5 +52,22 @@ findings, applies no patches.
 ## Verdicts
 
 `validated` / `validation_failed` / `needs_review` — VVAH vocabulary — always with:
-ladder rung, TCR achieved, overhead measured, panel findings by category. Re-runs are
-idempotent.
+ladder rung, TCR achieved, overhead measured, panel findings by category, and
+**environment** — which environment (sandbox / staging / production-shadow /
+production) the evidence came from, and whether that environment claim is
+self-reported or corroborated against IaC/CI config (SP9 decides the mechanism and
+exact data model). Ladder rung answers "how much did we actually run"; environment
+answers "against what" — the two are independent axes, and a report collapsing them
+into one line hides exactly the "staging proved this" vs. "production proved this"
+distinction that matters most to a reader deciding whether to trust the verdict.
+Re-runs are idempotent.
+
+## Staleness
+
+A `validated` verdict is a statement about the repo at the git SHA it ran against,
+not a durable property of the product. `oah check-drift` compares the current repo
+state to each DTO's `retest_triggers` (files/config keys named at DTO-generation
+time, S8) and flags which recorded verdicts are stale — without re-running S11. It
+is deliberately cheap and non-agentic: a yes/no staleness flag per DTO, not a new
+verdict. A flagged DTO's evidence should be treated as `needs_review` until S11
+re-runs, even though its stored verdict still reads `validated`.
