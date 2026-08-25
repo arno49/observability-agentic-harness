@@ -6,6 +6,12 @@ Transport floor: OpenTelemetry, using GenAI semantic conventions (`gen_ai.*`) wh
 they exist and `oah.*` extension attributes where they do not (SP6 maintains the
 mapping).
 
+This file is OAH's GenAI **domain pack**: the pipeline stages that consume it
+(S1–S11, see [architecture.md](architecture.md)) don't otherwise assume LLM
+content, so a different domain pack here is what retargeting the harness to a
+non-AI product would mean in practice — see README's "Why" and ROADMAP's
+explicit non-goals.
+
 ## Entities
 
 **Trace** — the full path of one user request through all components. Carries the

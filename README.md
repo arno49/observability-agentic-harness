@@ -61,6 +61,17 @@ degrades. Observability for LLM systems therefore needs a domain model of its ow
 traces, generations, retrieval spans, tool spans, feedback events, eval datasets —
 plus governance over the telemetry itself (prompts and outputs are sensitive data).
 
+The pipeline itself doesn't know it's about LLMs, though: S1–S3's mapping/gap-model
+mechanics, the S4 ops lens (release identifiers, alert plan, decision menu), S5's
+invariant gates, S7's runbook/roll-up structure, S8–S9's DTO and readiness-report
+shapes, and S11's TCR/validation-ladder concept are domain-agnostic SRE engineering.
+What's LLM-specific is concentrated in [docs/event-model.md](docs/event-model.md)
+(the Generation/Retrieval entities S3 diffs against) and three of S4's eight lenses
+(generation-capture, retrieval, realtime-multimodal) — call it the **GenAI domain
+pack** the harness ships with. That's a scope choice, not an architectural limit:
+LLM observability is where OTel semantic conventions and APM tooling are least
+mature, so it's where a gap-modeling harness adds the most value first.
+
 Retrofitting this by hand into an existing codebase is slow, inconsistent, and usually
 stalls after the first dashboard. OAH turns it into a repeatable, reviewable,
 agent-executed pipeline with human gates.

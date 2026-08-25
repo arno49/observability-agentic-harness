@@ -183,3 +183,8 @@ post-M4: managed-backend targets, Go/.NET (if SP10's abstraction earns it)
 - Runtime guardrails/content filtering — adjacent product; we only make their
   signals visible.
 - Supporting closed/no-code LLM platforms where we cannot touch source.
+- Retargeting the pipeline to non-AI/non-LLM products. The S1–S11 orchestration
+  and DTO/schema-as-truth mechanics are domain-agnostic by construction (see
+  README's "Why") — what's LLM-specific is concentrated in `event-model.md` and
+  three of S4's eight lenses — but that portability isn't being exercised or
+  promised until one domain (GenAI) is dogfooded end-to-end through M4.
