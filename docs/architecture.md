@@ -146,7 +146,15 @@ degrade / roll back / escalate) with rollback targets identified by release
 identifiers. Each ownership row binds to evidence ("if cost exceeds pilot range,
 X reviews spend evidence and decides on limits") — the aim is a clear decision
 path for the most important signals, not an ownership matrix for every possible
-issue. The runbook also names a **drill cadence** — the corpus tabletop
+issue. Dashboards and alerts are specified as one roll-up per critical workflow,
+not authored as two independent views: S4's alert-plan catalog (availability,
+latency, error-rate, quota, cost, dependency, safety/quality) is the technical
+layer; the ops lens's golden-path smoke checks are the functional layer directly
+above it; both roll up into a single per-workflow status. An on-call engineer
+paged by an alert and a stakeholder reading a dashboard are then reading the same
+tree at different depths, so a signal added at the technical layer is visible at
+every layer above it by construction, instead of requiring someone to remember to
+also wire it into a separately-maintained dashboard. The runbook also names a **drill cadence** — the corpus tabletop
 walkthrough (`docs/validation.md`) and a fail-open check (kill the collector
 mid-traffic) rerun on a schedule, not only once at S11 and not only when a
 retest trigger fires, since an untested runbook is a document, not a
