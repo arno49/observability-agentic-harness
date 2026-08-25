@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s8-dto-generator/input.schema.json",
+  "title": "S8 DTO generator — input",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "event_schema", "points", "gaps"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "event_schema": { "type": "object", "description": "The merged event_schema.json (schemas/event_schema.schema.json) -- only attributes named here may appear in a DTO's expected_events." },
+    "points": {
+      "type": "array", "minItems": 1,
+      "description": "surface_map.json points that have at least one attribute in event_schema (already filtered by the caller).",
+      "items": { "type": "object", "required": ["id", "kind", "file", "line"] }
+    },
+    "gaps": {
+      "type": "array",
+      "description": "gap_model.json entries for the points above, for priority context only -- rollout_step is assigned by the caller, not this skill.",
+      "items": { "type": "object" }
+    }
+  }
+}

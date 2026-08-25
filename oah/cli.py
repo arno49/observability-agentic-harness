@@ -344,6 +344,75 @@ def cmd_event_schema(args):
     return 0
 
 
+def cmd_dtos(args):
+    """S8 (partial): implementation_dto.json generation from whatever
+    event_schema.json + gap_model.json exist so far. Requires a real model
+    call (anchor/precondition/change-type judgment) but rollout_step is
+    assigned deterministically by gap priority, not by the model -- a
+    stand-in for real rollout_plan.md ordering, which isn't built yet."""
+    from oah.discovery.python_adapter import build_surface_map
+    from oah.discovery.telemetry_scanner import build_telemetry_inventory
+    from oah.discovery.gap_model import build_gap_model
+    from oah.design.lens import design_generation_capture, LensDesignError
+    from oah.design.event_schema import build_event_schema, EventSchemaConflictError
+    from oah.design.dto_generator import generate_dtos, DtoGenerationError
+
+    git_sha = _git_sha(args.target)
+    if git_sha is None:
+        print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
+        return 1
+
+    surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
+    if not surface_map["points"]:
+        print("No surface points found — nothing to generate DTOs for.", file=sys.stderr)
+        return 0
+
+    try:
+        fragment = design_generation_capture(surface_map["points"], git_sha)
+    except LensDesignError as e:
+        print(f"error: generation-capture lens design failed: {e}", file=sys.stderr)
+        return 1
+    if fragment is None:
+        print("No llm_generation points to generate DTOs for.", file=sys.stderr)
+        return 0
+
+    try:
+        event_schema = build_event_schema([fragment], git_sha)
+    except EventSchemaConflictError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
+    gap_model = build_gap_model(surface_map, inventory)
+
+    covered_point_ids = {pid for a in event_schema["attributes"] for pid in a["surface_point_ids"]}
+    points = [p for p in surface_map["points"] if p["id"] in covered_point_ids]
+    relevant_gap_ids = {g["id"] for g in gap_model["gaps"]
+                         if any(pid in covered_point_ids for pid in g["surface_point_ids"])}
+    gaps = [g for g in gap_model["gaps"] if g["id"] in relevant_gap_ids]
+
+    try:
+        dtos = generate_dtos(event_schema, points, gaps, git_sha)
+    except DtoGenerationError as e:
+        print(f"error: DTO generation failed: {e}", file=sys.stderr)
+        return 1
+
+    if dtos is None:
+        print("No DTOs to generate.", file=sys.stderr)
+        return 0
+
+    if args.output:
+        Path(args.output).write_text(json.dumps(dtos, indent=2) + "\n")
+        print(f"Wrote {args.output}")
+    else:
+        print(json.dumps(dtos, indent=2))
+
+    print(f"\nnote: rollout_step is ordered by gap priority only (p0 first) — a stand-in for "
+          f"real rollout_plan.md workflow-criticality ordering, not built yet. Only "
+          f"generation-capture's attributes are covered (1 of 9 S4 lenses).", file=sys.stderr)
+    return 0
+
+
 def cmd_interview(args):
     """S3's owner interview — real stdin prompts, not stub data. See
     oah/interview.py's module docstring for why this is genuinely
@@ -421,6 +490,11 @@ def build_parser():
     p_event_schema.add_argument("target", help="Path to the target repository")
     p_event_schema.add_argument("-o", "--output", default=None, help="Write event_schema.json here instead of stdout")
     p_event_schema.set_defaults(func=cmd_event_schema)
+
+    p_dtos = sub.add_parser("dtos", help="S8 (partial): implementation_dto.json generation")
+    p_dtos.add_argument("target", help="Path to the target repository")
+    p_dtos.add_argument("-o", "--output", default=None, help="Write implementation_dto.json here instead of stdout")
+    p_dtos.set_defaults(func=cmd_dtos)
 
     return parser
 
