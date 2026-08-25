@@ -97,10 +97,16 @@ Specialized skills each design their slice for this specific stack:
   attribute on every workflow's telemetry, alert routing to named first responders,
   escalation events recorded with outcome; **alert plan** — the standard catalog
   (availability, latency, error-rate, quota, cost/consumption, dependency,
-  safety/quality) where every alert declares trigger condition, priority, first
-  responder, escalation path, and decision owner. Rule mirroring the S5
-  signal-gate: an alert no one owns, or whose signal only matters in periodic
-  review, is not created — low-value alerts bury the ones that matter.
+  safety/quality), each category a user-facing symptom rather than an enumerated
+  internal cause — alerting on every possible failure mode individually is exactly
+  the noise the anti-metric-hoarding gate below exists to keep out — where every
+  alert declares a trigger condition stated as a target and measurement window per
+  critical workflow (a reliability budget, not a bare threshold pulled from
+  nowhere), so "pause expansion" or "roll back" in the S7 decision menu fires when
+  that budget is spent, priority, first responder, escalation path, and decision
+  owner. Rule mirroring the S5 signal-gate: an alert no one owns, or whose signal
+  only matters in periodic review, is not created — low-value alerts bury the ones
+  that matter.
 
 **Output:** per-lens design fragments (structured), merged into a draft design.
 
@@ -154,7 +160,13 @@ above it; both roll up into a single per-workflow status. An on-call engineer
 paged by an alert and a stakeholder reading a dashboard are then reading the same
 tree at different depths, so a signal added at the technical layer is visible at
 every layer above it by construction, instead of requiring someone to remember to
-also wire it into a separately-maintained dashboard. The runbook also names a **drill cadence** — the corpus tabletop
+also wire it into a separately-maintained dashboard. What S7 fixes is the roll-up
+structure — which signals feed which layer — not a set of pre-built charts: a
+curated dashboard goes stale the moment a workflow's shape changes faster than
+someone maintains it, so the roll-up is built to be queried ad hoc as well as
+viewed pre-assembled.
+
+The runbook also names a **drill cadence** — the corpus tabletop
 walkthrough (`docs/validation.md`) and a fail-open check (kill the collector
 mid-traffic) rerun on a schedule, not only once at S11 and not only when a
 retest trigger fires, since an untested runbook is a document, not a

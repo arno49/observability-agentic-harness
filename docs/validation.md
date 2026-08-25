@@ -86,3 +86,10 @@ produces a new verdict, both just flag:
    signal with no supporting decision never gets created (S5's anti-metric-hoarding
    gate) — orphaned instrumentation is that same gate's overdue enforcement,
    applied after the fact instead of only at design time.
+3. **Alert-plan decay** — pulled from the alert-delivery system itself, not repo
+   state: unactionable-alert rate, off-hours share, and silence duration (including
+   effectively-permanent silences) per alert in the S7 alert plan. Flags the alert
+   plan for review in the next runbook update, the same way stale evidence flags a
+   DTO. An alert nobody acts on, or one that's been silenced indefinitely, is the
+   same low-value alert the S4 anti-metric-hoarding gate was meant to keep from
+   ever being created — caught here after the fact instead.
