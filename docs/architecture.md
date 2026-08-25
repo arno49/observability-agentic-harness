@@ -53,7 +53,11 @@ Specialized skills each design their slice for this specific stack:
 - **tracing** — trace-ID propagation end-to-end, including async boundaries, queues,
   and retries (the hardest lens; see SP2 pattern catalog);
 - **generation-capture** — prompt/completion capture, model+prompt versioning,
-  parameters, token & cost accounting, cache-hit flags;
+  parameters, token & cost accounting, cache-hit flags, **time-to-first-token**
+  alongside total generation latency for streaming calls; and whether
+  user-supplied data is captured in a field structurally separate from system
+  instructions — the design-time mitigation the prompt-injection guardrail
+  (see event-model.md) is the runtime backstop for;
 - **retrieval** — retrieved sources, scores, the critical "what actually made it
   into the context window vs. was truncated" signal, and **permission-aware
   retrieval visibility**: per-source governance status against the inventory from

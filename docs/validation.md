@@ -25,8 +25,10 @@ performed.
    failures.
 3. Metrics — TCR per workflow; behavioral rates observable end-to-end (fallback
    with reason, clarification, escalation, restricted-attempt handling — and
-   sliceable by region/role); p50/p95 latency overhead vs. declared budget;
-   telemetry fail-open check (kill the collector mid-traffic → product must not
+   sliceable by region/role); p50/p95 latency overhead vs. declared budget,
+   **and time-to-first-token separately for streaming call paths** — a budget
+   met on total latency while TTFT stalls is not a passing result; telemetry
+   fail-open check (kill the collector mid-traffic → product must not
    degrade).
 
 ## Agentic panel (runs on R1–R3 evidence)

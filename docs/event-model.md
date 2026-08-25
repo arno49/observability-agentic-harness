@@ -33,6 +33,13 @@ classification —
 naming which of the designed response paths this generation actually took, so
 behavior rates (fallback, clarification, refusal, escalation) are computable
 directly from spans instead of reconstructed from free-text output after the fact.
+For streaming generations, latency is not one number: **time-to-first-token
+(TTFT)** — how long the caller waits before anything appears — is a materially
+different signal from total generation time, and a design that only measures
+the total hides exactly the stall a chat or voice UX experiences as
+unresponsiveness even while the end-to-end number is within budget. OTel's
+GenAI semantic conventions already define a TTFT attribute, so this is a
+mapping, not a new concept.
 
 **Retrieval span** — query, retrieved source IDs with scores, the
 made-it-into-context vs. truncated distinction (silent truncation is a top hidden
@@ -58,7 +65,18 @@ block / escalate), **evidence captured**, and **owner**. A guardrail's job is no
 "did every required field come back" but whether the fields are *mutually
 consistent* — e.g. a response about a restricted dataset with an empty
 `source_ids` and `needs_review: false` is a guardrail failure even though every
-required field is present and schema-valid.
+required field is present and schema-valid. A recurring concrete instance:
+**prompt-injection detection** on the target product's own inputs (distinct
+from T1 in [security.md](security.md), which is injection into the harness
+itself) — trigger is a known-pattern match or an instruction anomalously
+embedded in retrieved or tool content; check location is before generation for
+the input and before action for any tool call the output attempts; expected
+behavior on a match is block or escalate, never silent continue; evidence
+captured is the triggering input segment. The stronger mitigation this
+guardrail backs up — keeping user-supplied data structurally separate from
+system instructions rather than concatenated into one prompt string — is a
+`generation-capture` lens (S4) design decision, not the guardrail itself: the
+guardrail is the runtime net for injection that gets through anyway.
 
 **Feedback event** — user report or reviewer verdict bound to a trace ID. Verdicts
 use a fixed taxonomy (hallucination / irrelevant-retrieval / refusal-error /
