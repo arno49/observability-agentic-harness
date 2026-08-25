@@ -53,7 +53,10 @@ Specialized skills each design their slice for this specific stack:
 - **tracing** — trace-ID propagation end-to-end, including async boundaries, queues,
   and retries (the hardest lens; see SP2 pattern catalog);
 - **generation-capture** — prompt/completion capture, model+prompt versioning,
-  parameters, token & cost accounting, cache-hit flags, **time-to-first-token**
+  parameters, token & cost accounting including cache read/write and reasoning
+  tokens as their own line items where the provider bills them separately
+  (`gen_ai.usage.cache_read.input_tokens` / `cache_write.input_tokens` /
+  `reasoning.output_tokens`, per SP6), **time-to-first-token**
   alongside total generation latency for streaming calls; and whether
   user-supplied data is captured in a field structurally separate from system
   instructions — the design-time mitigation the prompt-injection guardrail
@@ -164,8 +167,10 @@ extension attribute is Development or Stable (nothing in between), a breaking
 rename ships alongside the old name for a stated dual-emission window before the
 old name is dropped, and consumers pin to a schema version instead of assuming
 latest. One gap this inherits, not solves: `gen_ai.*` itself publishes no
-schema-version marker to pin to (SP6 tracks this upstream gap) — so `oah.*`
-extensions carry the version discipline the GenAI layer doesn't yet provide for
+schema-version marker to pin to, and every `gen_ai.*` attribute currently sits
+at Development stability, not just some
+(see [SP6's decision record](decisions/001-sp6-otel-genai-semconv-maturity.md))
+— so `oah.*` extensions carry the version discipline the GenAI layer doesn't yet provide for
 itself. Also emit
 `runbook.md` — the incident-response route for the installed observability: per
 workflow, an **ownership matrix** (service owner, first responder, escalation

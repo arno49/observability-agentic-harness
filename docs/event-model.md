@@ -44,8 +44,15 @@ For streaming generations, latency is not one number: **time-to-first-token
 different signal from total generation time, and a design that only measures
 the total hides exactly the stall a chat or voice UX experiences as
 unresponsiveness even while the end-to-end number is within budget. OTel's
-GenAI semantic conventions already define a TTFT attribute, so this is a
-mapping, not a new concept.
+GenAI semantic conventions already define this on both sides of the call —
+a client-observed span attribute and histogram
+(`gen_ai.response.time_to_first_chunk`, `gen_ai.client.operation.time_to_first_chunk`)
+and, when the provider surfaces it, a server-observed histogram
+(`gen_ai.server.time_to_first_token`) — plus a matching pair for steady-state
+decode rate after the first token/chunk. This is a mapping onto attributes
+that already exist — all at Development stability, per
+[SP6's decision record](decisions/001-sp6-otel-genai-semconv-maturity.md) —
+not a new concept.
 
 **Retrieval span** — query, retrieved source IDs with scores, the
 made-it-into-context vs. truncated distinction (silent truncation is a top hidden
