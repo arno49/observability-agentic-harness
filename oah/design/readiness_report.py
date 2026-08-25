@@ -83,12 +83,17 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
     )
 
     confirmed = []
-    if not any(not f["passed"] and f["severity"] == "error" for f in gate_findings):
+    if gate_findings and not any(not f["passed"] and f["severity"] == "error" for f in gate_findings):
         confirmed.append("S5 deterministic invariant gates pass on the current design")
-    if all(v["overall"] != "fail" for v in panel_verdicts):
+    if panel_verdicts and all(v["overall"] != "fail" for v in panel_verdicts):
         confirmed.append("S6 reviewed personas (cost_skeptic only, 1 of 3) found no error-severity issues")
 
-    unknown = [
+    unknown = []
+    if not gate_findings:
+        unknown.append("S5 gates have not run -- no design fragment exists yet to check (S4 did not produce one)")
+    if not panel_verdicts:
+        unknown.append("S6 panel has not run -- no design fragment exists yet to review (S4 did not produce one)")
+    unknown += [
         "S10 instrumentation has not been applied to the target repo",
         "S11 dynamic validation has not run -- no real Trace Completeness Rate or overhead measurement exists",
         "8 of 9 S4 lenses are not built (only generation-capture) -- coverage claims are scoped to that lens only",

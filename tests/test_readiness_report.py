@@ -107,6 +107,20 @@ def test_known_limitations_and_unknown_evidence_always_present():
     assert any("S11" in u for u in report["recommendation"]["evidence_position"]["unknown"])
 
 
+def test_no_gates_or_panel_run_does_not_falsely_claim_confirmed():
+    """When S4 produced no design fragment (e.g. no credentials), S5/S6
+    never ran at all -- gate_findings and panel_verdicts are both empty.
+    Vacuous truth over an empty list must not read as 'checked and passed';
+    that would fabricate confirmation of something that never happened."""
+    report = build_readiness_report(
+        EMPTY_GAP_MODEL, [], [], EMPTY_EVENT_SCHEMA, EMPTY_DTOS, repo_git_sha="deadbeef",
+    )
+    validate("readiness_report", report)
+    assert report["recommendation"]["evidence_position"]["confirmed"] == []
+    assert any("S5 gates have not run" in u for u in report["recommendation"]["evidence_position"]["unknown"])
+    assert any("S6 panel has not run" in u for u in report["recommendation"]["evidence_position"]["unknown"])
+
+
 def test_event_schema_attributes_become_key_signals():
     event_schema = {**EMPTY_EVENT_SCHEMA, "attributes": [
         {"name": "gen_ai.usage.input_tokens", "kind": "otel_genai", "stability": "development",
