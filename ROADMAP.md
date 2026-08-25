@@ -69,8 +69,12 @@ categorized, not free-text. *Depends on:* E2, SP2, SP6.
 ### E4 — Synthesis (S7–S9)
 Architecture doc generator, versioned event schema emitter, rollout planner (ordered
 by workflow criticality from `context.yaml`), implementation-DTO generator, human
-gate-review report (Markdown + machine-readable JSON). *DoD:* M2 gate; every DTO is
-traceable to a gap-model entry and a surface-map point.
+gate-review report (Markdown + machine-readable JSON). `runbook.md` includes a
+drill cadence and the post-incident retrospective process (architecture.md S7) —
+resolved escalations with a named `preventative_action` feed back into the next
+S3 gap model and E7's eval dataset, closing the design loop, not just the
+incident. *DoD:* M2 gate; every DTO is traceable to a gap-model entry and a
+surface-map point.
 
 ### E5 — Instrumentation (S10)
 Claude Agent SDK executor applying DTOs: SDK/decorator insertion, collector config,
@@ -89,12 +93,17 @@ privacy auditor: "find PII in real emitted events"). Verdicts `validated` /
 `docs/validation.md`, **plus the environment the evidence came from** (per SP9's
 data model) so a `validated` verdict in a throwaway sandbox is never presented the
 same way as one from staging or production-shadow. **`oah check-drift`** — a
-standalone, cheap command — reads each DTO's `retest_triggers`
-(`implementation_dto.schema.json`) against the target repo's current state and
-flags which prior verdicts are stale without re-running the full pipeline. *DoD:*
-M4 gate; verdict always states which ladder rung was achieved and which
-environment produced it; `check-drift` correctly flags staleness on a corpus repo
-with a seeded post-validation prompt/schema change. *Depends on:* E5, SP3, SP9.
+standalone, cheap command — runs two non-agentic checks without re-running the
+full pipeline: stale evidence (each DTO's `retest_triggers` vs. current repo
+state) and **orphaned instrumentation** (each DTO's `surface_point_ids` vs. a
+fresh deterministic-only S1 pass — flags a DTO whose call site was refactored
+away, per `docs/validation.md`'s Staleness section). The runbook (S7) also names
+a **drill cadence** so the corpus tabletop walkthrough and the fail-open
+collector-kill check rerun on a schedule, not only once at S11. *DoD:* M4 gate;
+verdict always states which ladder rung was achieved and which environment
+produced it; `check-drift` correctly flags both staleness and an orphaned DTO on
+a corpus repo seeded with a post-validation prompt/schema change and a removed
+call site, respectively. *Depends on:* E5, SP3, SP9.
 
 ### E7 — Reference corpus & skill evals
 Curate open-source LLM apps across architectures (simple RAG chat, multi-agent

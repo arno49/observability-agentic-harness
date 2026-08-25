@@ -65,9 +65,22 @@ Re-runs are idempotent.
 ## Staleness
 
 A `validated` verdict is a statement about the repo at the git SHA it ran against,
-not a durable property of the product. `oah check-drift` compares the current repo
-state to each DTO's `retest_triggers` (files/config keys named at DTO-generation
-time, S8) and flags which recorded verdicts are stale — without re-running S11. It
-is deliberately cheap and non-agentic: a yes/no staleness flag per DTO, not a new
-verdict. A flagged DTO's evidence should be treated as `needs_review` until S11
-re-runs, even though its stored verdict still reads `validated`.
+not a durable property of the product. `oah check-drift` runs two independent,
+cheap, non-agentic checks against the current repo state — neither re-runs S11 or
+produces a new verdict, both just flag:
+
+1. **Stale evidence** — the current repo state vs. each DTO's `retest_triggers`
+   (files/config keys named at DTO-generation time, S8). A flagged DTO's evidence
+   should be treated as `needs_review` until S11 re-runs, even though its stored
+   verdict still reads `validated`.
+2. **Orphaned instrumentation** — each DTO's `surface_point_ids` vs. a fresh,
+   deterministic-only S1 pass (AST/signature registry, no LLM disambiguation
+   needed for a yes/no existence check). If a surface point a DTO instrumented no
+   longer resolves to a real call site — the code around it was refactored or
+   removed — the DTO is emitting telemetry for something that no longer exists.
+   This is dead weight, not just stale evidence: it costs collector volume and
+   review attention, and a stale `validated` badge on it actively misleads. Flag
+   it for removal in the next `oah instrument` pass, the same way a design-time
+   signal with no supporting decision never gets created (S5's anti-metric-hoarding
+   gate) — orphaned instrumentation is that same gate's overdue enforcement,
+   applied after the fact instead of only at design time.

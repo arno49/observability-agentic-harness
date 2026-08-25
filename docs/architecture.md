@@ -142,7 +142,15 @@ degrade / roll back / escalate) with rollback targets identified by release
 identifiers. Each ownership row binds to evidence ("if cost exceeds pilot range,
 X reviews spend evidence and decides on limits") — the aim is a clear decision
 path for the most important signals, not an ownership matrix for every possible
-issue.
+issue. The runbook also names a **drill cadence** — the corpus tabletop
+walkthrough (`docs/validation.md`) and a fail-open check (kill the collector
+mid-traffic) rerun on a schedule, not only once at S11 and not only when a
+retest trigger fires, since an untested runbook is a document, not a
+capability. And it names a **post-incident retrospective process**: every
+resolved escalation with a `preventative_action` (event-model.md) is reviewed
+against the current gap model and eval dataset within a stated window, so
+closing an incident operationally and feeding it back into the design are the
+same habit, not two unrelated processes that happen to share a data source.
 
 ### S8 — Implementation DTOs *(skill: dto-generator)*
 Each rollout step decomposes into `implementation_dto.json` entries: target file and

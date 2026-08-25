@@ -76,7 +76,15 @@ metrics instead of anecdotes.
 
 **Escalation event** — a human was pulled in: review flag raised, incident
 escalated, pause/rollback decision taken. Carries who, why (category), and outcome
-(confirmed / dismissed / rolled back), closing the loop the runbook defines.
+(confirmed / dismissed / rolled back), closing the loop the runbook defines. A
+resolved escalation also carries **`contributing_factors`** and
+**`preventative_action`** — the retrospective, not just the outcome — so the
+event that closed the loop operationally also feeds the design loop: a
+confirmed escalation with a named preventative action is a candidate for
+promotion into the eval dataset (a new case class, per the Dataset item entity
+below) and, where it points at a genuine design gap, a new `gap_model.json`
+entry for the next S3 run. An escalation resolved with no retrospective is an
+incomplete record, not just a closed ticket.
 
 **Dataset item** — a trace promoted into an eval set, tagged with a **case
 class**: common / ambiguous (expected: clarification) / restricted (expected:
