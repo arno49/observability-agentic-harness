@@ -1,10 +1,16 @@
 name: Bundle skills
 
 # Debug/tooling side-product: packages skills/*/SKILL.md (plus their
-# references/, examples/, io/ subfolders) into downloadable artifacts, so a
-# skill drafted in this repo can be loaded into a live Claude session without
-# manual copy-paste. See docs/skills-bundle.md for how to use the output.
-# Not part of the OAH pipeline itself.
+# references/, examples/, io/ subfolders, and an injected scripts/validate.py)
+# into downloadable artifacts, so a skill drafted in this repo can be loaded
+# into a live Claude session — with real schema validation available inside
+# that session — without manual copy-paste. See docs/skills-bundle.md for how
+# to use the output. Not part of the OAH pipeline itself.
+#
+# skills/_shared/ is build-time tooling (currently just validate.py), not a
+# skill: it has no SKILL.md, is skipped by the frontmatter check, and is never
+# zipped as its own "skill" — its contents are copied into every real skill's
+# scripts/ folder instead.
 
 on:
   push:
@@ -18,7 +24,7 @@ jobs:
   bundle:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate skill frontmatter
         run: |
@@ -49,6 +55,18 @@ jobs:
             exit 1
           fi
 
+      - name: Validate io/ schemas
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet jsonschema
+          shopt -s nullglob
+          schemas=(skills/*/io/*.schema.json)
+          if [ ${#schemas[@]} -eq 0 ]; then
+            echo "no io/ schemas yet — nothing to check"
+          else
+            python3 skills/_shared/check_schema.py "${schemas[@]}"
+          fi
+
       - name: Bundle skills
         run: |
           set -euo pipefail
@@ -57,20 +75,28 @@ jobs:
 
           for d in skills/*/; do
             name=$(basename "$d")
-            (cd skills && zip -rq "$OLDPWD/dist/individual/${name}.zip" "$name")
+            if [ "$name" = "_shared" ]; then
+              continue
+            fi
+            dest="dist/combined/skills/${name}"
+            mkdir -p "${dest}/scripts"
+            cp -r "skills/${name}/." "${dest}/"
+            if [ -f "skills/_shared/validate.py" ]; then
+              cp "skills/_shared/validate.py" "${dest}/scripts/validate.py"
+            fi
+            (cd dist/combined/skills && zip -rq "$OLDPWD/dist/individual/${name}.zip" "$name")
             echo "packaged $name"
           done
 
-          cp -r skills/. dist/combined/skills/
           (cd dist/combined && zip -rq "$OLDPWD/dist/oah-skills-bundle.zip" skills)
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: oah-skills-bundle
           path: dist/oah-skills-bundle.zip
           retention-days: 30
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: oah-skills-individual
           path: dist/individual/*.zip

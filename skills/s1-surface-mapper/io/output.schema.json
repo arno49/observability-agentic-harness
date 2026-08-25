@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s1-surface-mapper/output.schema.json",
+  "title": "S1 Surface Mapper — disambiguation output",
+  "type": "object",
+  "required": ["schema_version", "results"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidate_id", "kind", "confidence", "detection"],
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "description": "Echoes the input candidate this entry classifies"
+          },
+          "kind": {
+            "description": "null means: genuinely none of these — a correct rejection, not a missing answer",
+            "enum": [
+              "llm_generation", "retrieval", "tool_call", "agent_loop",
+              "queue_producer", "queue_consumer", "guardrail",
+              "human_review_hook", "feedback_ingest", "realtime_session", null
+            ]
+          },
+          "framework": {
+            "type": "string",
+            "description": "e.g. anthropic-sdk, openai-sdk, langchain, llamaindex, raw-http, homegrown-wrapper:<symbol>"
+          },
+          "sync_nature": { "enum": ["sync", "async", "queued", "streamed"] },
+          "workflow_hint": {
+            "type": "string",
+            "description": "Best-effort; S3 confirms with the owner"
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "detection": { "const": "llm_disambiguation" },
+          "notes": {
+            "type": "string",
+            "description": "Required when kind is null (the reason), or for flags like possible-injection-content / dead-code-candidate"
+          },
+          "needs_context": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Additional file(s) that would raise confidence; expected when confidence < 0.6"
+          }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "kind": { "const": null } } },
+            "then": { "required": ["notes"] }
+          }
+        ]
+      }
+    }
+  }
+}

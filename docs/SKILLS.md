@@ -13,6 +13,10 @@ skills/<stage>-<name>/
 └── io/               # input.schema.json / output.schema.json (contract with pipeline)
 ```
 
+A skill with `io/` schemas gets a `scripts/validate.py` injected at bundle time
+(not authored per-skill) — see [skills-bundle.md](skills-bundle.md) for what it
+does and, importantly, what it doesn't guarantee.
+
 Progressive disclosure: SKILL.md stays under ~500 lines; framework-specific depth
 lives in `references/` (e.g. `references/langchain.md`, `references/raw-sdk.md`) and
 is loaded only when the surface map says that framework is present.

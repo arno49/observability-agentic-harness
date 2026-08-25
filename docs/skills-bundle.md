@@ -14,15 +14,17 @@ Runs on every push that touches `skills/**`, or on demand
 Two artifact sets land on the run's summary page:
 
 - **`oah-skills-individual`** — one zip per skill (`s1-surface-mapper.zip`, ...),
-  each containing that skill's folder as-is (`SKILL.md` plus any `references/`,
-  `examples/`, `io/` it has).
+  each containing that skill's folder as-is (`SKILL.md`, any `references/` or
+  `examples/` it has, its `io/` schemas if present, and a `scripts/validate.py`
+  injected at bundle time — see "What a skill can validate about itself" below).
 - **`oah-skills-bundle`** — `oah-skills-bundle.zip`, all skills together under a
-  single `skills/` folder.
+  single `skills/` folder, each with the same `scripts/validate.py` injected.
 
-A validation step runs first and fails the build if a `SKILL.md`'s frontmatter
-`name:` doesn't match its directory name, or `description:`/`version:` is missing
-— the same shape check a skill needs to pass before anything downstream (a real
-pipeline, or a Claude skill loader) can use it.
+Two validation steps run first and fail the build if a `SKILL.md`'s frontmatter
+`name:` doesn't match its directory name, `description:`/`version:` is missing,
+or any `io/*.schema.json` isn't a well-formed JSON Schema document — the same
+shape check a skill needs to pass before anything downstream (a real pipeline,
+or a Claude skill loader) can use it.
 
 ## Downloading
 
@@ -53,11 +55,28 @@ zip's shape (a folder with `SKILL.md` at its root) is what has to stay stable,
 not the exact menu path.
 
 Either way, remember what you're loading: a **draft**, not a pipeline stage with
-schema-validated I/O enforced around it. `io/input.schema.json` and
-`io/output.schema.json` (see [SKILLS.md](SKILLS.md)) are what the real harness
-will validate against once S1–S11 exist; a hand-run session in Claude Code or
-claude.ai enforces none of that, so treat its output as a way to sanity-check the
-skill's instructions, not as a substitute for the real eval suite (Epic E7).
+schema-validated I/O enforced by code outside its control.
+
+## What a skill can validate about itself
+
+A skill with `io/` schemas (so far: `s1-surface-mapper`) carries its own
+`scripts/validate.py` — a small `jsonschema`-based CLI injected at bundle time
+from `skills/_shared/validate.py` — and its own `SKILL.md` instructs it to run
+`python3 scripts/validate.py io/output.schema.json output.json` on its own
+output before returning anything. In an environment with shell access (Claude
+Code) that's a real, working check: run it once by hand
+(`pip install jsonschema` if it's not already available) and the skill will keep
+enforcing it on itself for the rest of the session.
+
+What this is *not*: a pipeline shell that validates at every stage boundary
+whether or not the LLM cooperates. The self-check lives in the skill's own
+instructions — nothing stops a session from skipping it, the way nothing stops
+a person from skipping a step in a checklist they wrote for themselves. That
+guarantee only exists once the real pipeline shell (Epic E1) validates a
+skill's outputs from outside, in code the skill can't opt out of. Until then,
+treat a hand-run session's output as a way to sanity-check the skill's
+instructions and its schemas — including whether the schemas themselves are
+even the right shape — not as a substitute for the real eval suite (Epic E7).
 
 ## Adding a skill so it gets picked up
 
