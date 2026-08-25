@@ -1,0 +1,7 @@
+{
+  "repo_id": "llm-document-ocr",
+  "sites": [
+    {"file": "src/index.ts", "line": 330, "method": "messages.create", "note": "inside async function useAnthropic(), a local wrapper called elsewhere via `content = await useAnthropic(...)` — the wrapper call itself is not a surface point, its body is (same principle as beacon's LLMProvider.complete in the SP1 Python corpus)"},
+    {"file": "src/index.ts", "line": 354, "method": "messages.create", "note": "second call site in the same function, function-local client constructed at line 324"}
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "repo_id": "wechatbot",
+  "sites": [
+    {"file": "src/llm.ts", "line": 32, "method": "messages.create", "note": "receiver is a module-level `let client: Anthropic | null = null` (src/llm.ts:16), assigned inside initLLM() (line 21), read inside a different function (getResponse-equivalent, line 32) — no class involved, so this needed file-wide (not function- or class-scoped) tracking to resolve, the TS-side analogue of SP1's Python self-attr class prescan but one level broader"}
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "schema_note": "Source is not vendored — clone repo_url and checkout commit to reproduce, same policy as SP1's corpus (see spikes/sp1-surface-mapping/ground_truth/corpus_manifest.json).",
+  "repos": [
+    {
+      "id": "transcribee",
+      "language": "typescript",
+      "repo_url": "https://github.com/itsfabioroma/transcribee",
+      "commit": "de059a057b7c9903ddb64f6150ed362b9fbb74aa",
+      "license": "MIT",
+      "ts_files": 1,
+      "architecture_category": "simple direct call, module-level client"
+    },
+    {
+      "id": "llm-document-ocr",
+      "language": "typescript",
+      "repo_url": "https://github.com/mercoa-finance/llm-document-ocr",
+      "commit": "1b6dada451d10012707d4147c01f5de56b1d6027",
+      "license": "MIT",
+      "ts_files": 4,
+      "architecture_category": "wrapper function (useAnthropic) hiding two SDK-touching call sites, function-local client construction"
+    },
+    {
+      "id": "wechatbot",
+      "language": "typescript",
+      "repo_url": "https://github.com/sorrycc/wechatbot",
+      "commit": "b64e9e10fda33d0b91f38d1ac9cbccd270778281",
+      "license": null,
+      "license_note": "no LICENSE file present at pinned commit; analyzed read-only, never vendored/redistributed",
+      "ts_files": 11,
+      "architecture_category": "module-level mutable client assigned in one function (initLLM), read in another — cross-function indirection with no class involved"
+    }
+  ]
+}
