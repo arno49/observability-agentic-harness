@@ -211,4 +211,87 @@ response = clients["primary"].messages.create(model="x")
         tmp_path, git_sha="deadbeef", disambiguated=disambiguated
     )
     validate("surface_map", surface_map)
-    assert surface_map["points"] == []
+
+
+# --- Second registry (pinecone -> retrieval) --------------------------------
+# Confirms oah/discovery/registry.py's REGISTRIES generalization actually
+# resolves a second SDK end to end, not just the original anthropic one.
+
+def test_pinecone_direct_call_resolved_as_retrieval(tmp_path):
+    resolved, ambiguous = _detect(tmp_path, """
+import pinecone
+pinecone.init(api_key="x", environment="y")
+index = pinecone.Index("my-index")
+results = index.query(vector=[0.1, 0.2], top_k=5)
+""")
+    assert len(resolved) == 1
+    assert ambiguous == []
+    assert resolved[0]["kind"] == "retrieval"
+    assert resolved[0]["framework"] == "pinecone-sdk"
+    assert resolved[0]["detection"] == "signature"
+
+
+def test_two_registries_in_one_file_both_resolved_independently(tmp_path):
+    """anthropic's two-segment suffix and pinecone's one-segment suffix
+    must both match correctly in the same file without either registry's
+    receiver tracking bleeding into the other's."""
+    resolved, ambiguous = _detect(tmp_path, """
+import anthropic
+import pinecone
+
+client = anthropic.Anthropic()
+pinecone.init(api_key="x", environment="y")
+index = pinecone.Index("my-index")
+
+results = index.query(vector=[0.1, 0.2], top_k=5)
+message = client.messages.create(model="x")
+""")
+    assert ambiguous == []
+    kinds = {r["kind"] for r in resolved}
+    assert kinds == {"retrieval", "llm_generation"}
+
+
+def test_pinecone_self_attr_class_prescan(tmp_path):
+    resolved, _ = _detect(tmp_path, """
+import pinecone
+
+class Retriever:
+    def __init__(self):
+        self._index = pinecone.Index("my-index")
+
+    def search(self, vector):
+        return self._index.query(vector=vector, top_k=5)
+""")
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "retrieval"
+    assert resolved[0]["symbol"] == "Retriever.search"
+
+
+def test_unrelated_query_call_on_unresolved_receiver_flagged_ambiguous_not_misclassified(tmp_path):
+    """A SQLAlchemy-style `session.query(...)` shares pinecone's suffix but
+    resolves to a different (unresolvable) receiver -- registry.py's own
+    stated tradeoff: this must land in the ambiguous bucket for
+    disambiguation, never be silently accepted as retrieval and never be
+    silently dropped."""
+    resolved, ambiguous = _detect(tmp_path, """
+import sqlalchemy
+session = sqlalchemy.orm.Session()
+result = session.query(User).all()
+""")
+    assert resolved == []
+    assert len(ambiguous) == 1
+
+
+def test_pinecone_receiver_resolved_to_anthropic_module_is_true_negative(tmp_path):
+    """A variable bound to the anthropic client that happens to have a
+    `.query(...)` call on it (not a real pattern, but exercises the
+    resolved-to-a-known-but-wrong-registry path) must be a true negative,
+    not misreported as retrieval or flagged ambiguous -- the receiver IS
+    resolved, just not to a registry that declares this suffix."""
+    resolved, ambiguous = _detect(tmp_path, """
+import anthropic
+client = anthropic.Anthropic()
+result = client.query(vector=[0.1])
+""")
+    assert resolved == []
+    assert ambiguous == []

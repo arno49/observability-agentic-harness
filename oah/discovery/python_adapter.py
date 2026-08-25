@@ -26,7 +26,7 @@ import tree_sitter_python as tspython
 from tree_sitter import Language, Parser
 
 from oah.discovery.registry import (
-    CONSTRUCTOR_NAMES, SDK_MODULE, METHOD_SUFFIXES, SURFACE_KIND, FRAMEWORK,
+    CONSTRUCTOR_NAMES, MODULE_TO_REGISTRY, ALL_METHOD_SUFFIXES, SUFFIX_LENGTHS,
 )
 
 _LANGUAGE = Language(tspython.language())
@@ -141,6 +141,18 @@ def _flatten_attribute_chain(node, src):
     return None, parts
 
 
+def _match_suffix(chain):
+    """Return the longest attribute-chain-tail match against
+    ALL_METHOD_SUFFIXES, trying longer suffix lengths first so a more
+    specific pattern (e.g. anthropic's `("messages", "create")`) wins over
+    a shorter one that happens to share a final segment with another
+    registry's suffix. None if no registry's suffix matches at all."""
+    for length in SUFFIX_LENGTHS:
+        if len(chain) >= length and tuple(chain[-length:]) in ALL_METHOD_SUFFIXES:
+            return tuple(chain[-length:])
+    return None
+
+
 class KnownNames:
     def __init__(self):
         self.module_scope = {}
@@ -158,7 +170,7 @@ class KnownNames:
                 right = node.child_by_field_name("right")
                 if left is not None and right is not None and right.type == "call":
                     hit = resolver.resolve_constructor_call(right, src)
-                    if hit and hit[0] == SDK_MODULE and left.type == "attribute":
+                    if hit and hit[0] in MODULE_TO_REGISTRY and left.type == "attribute":
                         obj = left.child_by_field_name("object")
                         attr = left.child_by_field_name("attribute")
                         if (
@@ -243,7 +255,8 @@ def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local
             func = child.child_by_field_name("function")
             if func is not None and func.type == "attribute":
                 root, chain = _flatten_attribute_chain(func, src)
-                if len(chain) >= 2 and tuple(chain[-2:]) in METHOD_SUFFIXES:
+                suffix = _match_suffix(chain)
+                if suffix is not None:
                     if root is None:
                         resolved, receiver_desc = None, "<unresolved receiver expression>"
                     elif root == "self" and chain:
@@ -256,14 +269,15 @@ def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local
 
                     line = _line(child)
                     candidate_id = f"sp-{next_id[0]:04d}"
-                    if resolved == SDK_MODULE:
+                    registry = MODULE_TO_REGISTRY.get(resolved)
+                    if registry is not None and suffix in registry["method_suffixes"]:
                         resolved_points.append(_drop_none({
                             "id": candidate_id,
-                            "kind": SURFACE_KIND,
+                            "kind": registry["surface_kind"],
                             "file": rel_path,
                             "line": line,
                             "symbol": symbol,
-                            "framework": FRAMEWORK,
+                            "framework": registry["framework"],
                             "detection": "signature",
                             "confidence": 0.95,
                             "notes": f"receiver '{receiver_desc}' resolved via import/assignment/annotation tracking",
@@ -283,7 +297,8 @@ def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local
                             candidate["symbol"] = symbol
                         ambiguous.append(candidate)
                         next_id[0] += 1
-                    # resolved to a different SDK -> true negative, not reported.
+                    # resolved to a known module whose registry doesn't
+                    # declare this suffix -> true negative, not reported.
 
         _walk_calls(child, src, src_lines, resolver, known, class_name, symbol, local_scope,
                     resolved_points, ambiguous, rel_path, next_id, imports)
