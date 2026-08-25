@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/design_fragment.schema.json",
+  "title": "S4 lens design fragment",
+  "description": "One lens's output (architecture.md S4: 'per-lens design fragments (structured), merged into a draft design'). Every field S5's deterministic gates check (architecture.md S5) is required here, not bolted on after -- a fragment that can't satisfy S5 by construction is the wrong shape, not a fragment that fails validation later.",
+  "type": "object",
+  "required": ["schema_version", "lens", "repo_git_sha", "signals", "failure_mode"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "lens": {
+      "enum": ["tracing", "generation-capture", "retrieval", "tools", "feedback",
+               "pii-governance", "cost", "realtime-multimodal", "ops"]
+    },
+    "repo_git_sha": { "type": "string" },
+    "failure_mode": {
+      "const": "fail_open",
+      "description": "architecture.md S5: 'telemetry failure mode is declared fail-open (telemetry loss must never break the product)' -- not a per-lens choice, a fixed invariant every fragment states explicitly so S5 can check it's present, not assumed."
+    },
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Every field/event this lens designs. S5's anti-metric-hoarding gate: 'every designed signal names at least one decision it supports and the role that acts.'",
+      "items": {
+        "type": "object",
+        "required": ["name", "surface_point_ids", "maps_to", "sensitivity_tier",
+                     "supports_decision", "acting_role"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "description": "The field/attribute name as it will appear on the emitted event" },
+          "surface_point_ids": {
+            "type": "array", "minItems": 1, "items": { "type": "string" },
+            "description": "IDs from surface_map.json this signal covers -- S5's 'every S1 surface point has a design decision' gate is: every point ID in the input surface_map appears in some signal's surface_point_ids"
+          },
+          "maps_to": {
+            "type": "object",
+            "required": ["kind"],
+            "description": "S5: 'event fields map to OTel GenAI semantic conventions or declared oah.* extensions.'",
+            "properties": {
+              "kind": { "enum": ["otel_genai", "oah_extension"] },
+              "attribute": { "type": "string", "description": "e.g. gen_ai.usage.input_tokens, or oah.retrieval.truncated" }
+            }
+          },
+          "sensitivity_tier": {
+            "enum": ["public", "internal", "confidential", "restricted"],
+            "description": "S5: 'every schema field carries a data-sensitivity tier.'"
+          },
+          "pii_masked": {
+            "type": "boolean",
+            "description": "S5: 'no field is allowed to carry unmasked PII above its declared tier.' Required whenever sensitivity_tier is confidential or restricted (enforced by S5, not by this schema alone, since the rule is conditional)."
+          },
+          "supports_decision": {
+            "type": "string",
+            "description": "What decision this signal enables -- S5's anti-metric-hoarding gate rejects a signal with none."
+          },
+          "acting_role": {
+            "type": "string",
+            "description": "Who acts on supports_decision -- e.g. on-call SRE, cost owner, compliance reviewer."
+          },
+          "latency_overhead_budget_ms": {
+            "type": "number", "minimum": 0,
+            "description": "S5: 'latency-overhead budget is declared per call path.'"
+          }
+        }
+      }
+    },
+    "consistency_assertions": {
+      "type": "array",
+      "description": "S5: 'declared cross-field consistency assertions... are present wherever a structured output has more than one field whose values can contradict each other.'",
+      "items": {
+        "type": "object",
+        "required": ["description", "fields_involved"],
+        "properties": {
+          "description": { "type": "string", "description": "e.g. \"restricted-access response cannot carry needs_review: false\"" },
+          "fields_involved": { "type": "array", "minItems": 2, "items": { "type": "string" } }
+        }
+      }
+    },
+    "decision_menu_steps": {
+      "type": "array",
+      "description": "S5: 'a decision-menu step that pauses, freezes, or throttles never ships without a paired resumption condition.'",
+      "items": {
+        "type": "object",
+        "required": ["step", "type"],
+        "properties": {
+          "step": { "type": "string" },
+          "type": { "enum": ["pause", "freeze", "throttle", "continue", "escalate", "rollback"] },
+          "resumption_condition": {
+            "type": "string",
+            "description": "Required by S5 whenever type is pause/freeze/throttle -- enforced by S5, not this schema alone, since it's conditional on type."
+          }
+        }
+      }
+    }
+  }
+}

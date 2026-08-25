@@ -14,10 +14,11 @@ at runtime, not copied here — this can never drift from what
 docs/SKILLS.md documents as the skill of record.
 """
 import json
-import os
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
+
+from oah.llm_client import missing_credentials  # noqa: F401 (re-exported — see that module's docstring)
 
 SKILL_PATH = Path(__file__).parent.parent.parent / "skills" / "s1-surface-mapper"
 DEFAULT_MODEL = "claude-sonnet-5"  # SP8: frontier default for S1 disambiguation, not light tier
@@ -27,16 +28,6 @@ class DisambiguationError(Exception):
     """Raised on any failure to get a valid, schema-conformant result — a
     caller must treat this as 'candidate still unresolved', never catch it
     and fabricate a result."""
-
-
-def missing_credentials():
-    """Returns a human-readable reason a live call would fail, or None if
-    credentials look present. Checked before spending a call attempt, not
-    just caught after — the same "check before you spend" spirit as
-    oah estimate (SP5) and oah doctor (SP3)."""
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return "ANTHROPIC_API_KEY is not set — S1 disambiguation needs it (or another LiteLLM-supported credential for the configured model)."
-    return None
 
 
 def _load_skill_instructions():

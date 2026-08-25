@@ -210,6 +210,64 @@ def cmd_gaps(args):
     return 0
 
 
+def cmd_design(args):
+    """S4 (partial: generation-capture only, the one lens built so far) +
+    S5's deterministic gates. Not `oah design`'s full scope per
+    architecture.md -- eight more lenses and S6's adversarial panel aren't
+    built yet; this runs what exists and says so, rather than silently
+    producing an incomplete design as if it were complete."""
+    from oah.discovery.python_adapter import build_surface_map
+    from oah.design.lens import design_generation_capture, LensDesignError
+    from oah.design.gates import run_gates, gates_passed
+    from oah.schemas import validate
+
+    git_sha = _git_sha(args.target)
+    if git_sha is None:
+        print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
+        return 1
+
+    context = None
+    if args.context:
+        context_data = yaml.safe_load(Path(args.context).read_text())
+        validate("context", context_data)
+        context = context_data
+
+    surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
+    if not surface_map["points"]:
+        print("No surface points found (or all still ambiguous) — nothing to design for.", file=sys.stderr)
+        return 0
+
+    try:
+        fragment = design_generation_capture(surface_map["points"], git_sha, context=context)
+    except LensDesignError as e:
+        print(f"error: generation-capture lens design failed: {e}", file=sys.stderr)
+        return 1
+
+    if fragment is None:
+        print("No llm_generation points to design for.", file=sys.stderr)
+        return 0
+
+    point_ids = [p["id"] for p in surface_map["points"] if p["kind"] == "llm_generation"]
+    findings = run_gates(fragment, surface_map_point_ids=point_ids)
+    passed = gates_passed(findings)
+
+    output = {"design_fragment": fragment, "gate_findings": [f.__dict__ for f in findings], "gates_passed": passed}
+    if args.output:
+        Path(args.output).write_text(json.dumps(output, indent=2) + "\n")
+        print(f"Wrote {args.output}")
+    else:
+        print(json.dumps(output, indent=2))
+
+    for f in findings:
+        if not f.passed:
+            marker = "ERROR" if f.severity == "error" else "WARN"
+            print(f"[{marker}] {f.gate}: {f.reason}", file=sys.stderr)
+    print(f"\nS5 gates: {'PASSED' if passed else 'FAILED'}", file=sys.stderr)
+    print("note: only the generation-capture lens is built (architecture.md names 9 total) — "
+          "this is a partial design, not the full S4 output.", file=sys.stderr)
+    return 0 if passed else 1
+
+
 def cmd_interview(args):
     """S3's owner interview — real stdin prompts, not stub data. See
     oah/interview.py's module docstring for why this is genuinely
@@ -276,6 +334,12 @@ def build_parser():
     p_interview.add_argument("-o", "--output", default=None,
                               help="Write context.yaml here instead of stdout (never auto-written into the target repo)")
     p_interview.set_defaults(func=cmd_interview)
+
+    p_design = sub.add_parser("design", help="S4 (generation-capture only so far) + S5 gates")
+    p_design.add_argument("target", help="Path to the target repository")
+    p_design.add_argument("-o", "--output", default=None, help="Write the design fragment + gate findings here instead of stdout")
+    p_design.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
+    p_design.set_defaults(func=cmd_design)
 
     return parser
 

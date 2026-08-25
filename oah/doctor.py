@@ -60,13 +60,14 @@ def _check_litellm():
 def _check_llm_credentials():
     """Informational, not blocking — oah map --no-disambiguate, oah
     estimate, oah inventory, and oah gaps all work without it; only S1's
-    LLM disambiguation pass needs it. Reported as ok=True either way so it
-    never fails `oah doctor` on its own; the detail text is what matters."""
-    from oah.discovery.disambiguate import missing_credentials
+    LLM disambiguation pass and S4's design lenses need it. Reported as
+    ok=True either way so it never fails `oah doctor` on its own; the
+    detail text is what matters."""
+    from oah.llm_client import missing_credentials
     reason = missing_credentials()
     if reason:
         return Check("llm_credentials", True,
-                      f"optional, not configured (needed only for S1 LLM disambiguation): {reason}")
+                      f"optional, not configured (needed for S1 disambiguation and S4 design): {reason}")
     return Check("llm_credentials", True, "configured — ANTHROPIC_API_KEY is set")
 
 

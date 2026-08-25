@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s4-generation-capture/output.schema.json",
+  "title": "S4 generation-capture lens — output",
+  "description": "Same shape as schemas/design_fragment.schema.json (source of truth for the design_fragment concept), with lens fixed to generation-capture -- kept self-contained rather than $ref'd across the skills/ and schemas/ directory boundary, matching s1-surface-mapper's io/ schemas' own precedent.",
+  "type": "object",
+  "required": ["schema_version", "lens", "repo_git_sha", "signals", "failure_mode"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "lens": { "const": "generation-capture" },
+    "repo_git_sha": { "type": "string" },
+    "failure_mode": { "const": "fail_open" },
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "surface_point_ids", "maps_to", "sensitivity_tier",
+                     "supports_decision", "acting_role"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "surface_point_ids": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "maps_to": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": {
+              "kind": { "enum": ["otel_genai", "oah_extension"] },
+              "attribute": { "type": "string" }
+            }
+          },
+          "sensitivity_tier": { "enum": ["public", "internal", "confidential", "restricted"] },
+          "pii_masked": { "type": "boolean" },
+          "supports_decision": { "type": "string" },
+          "acting_role": { "type": "string" },
+          "latency_overhead_budget_ms": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "consistency_assertions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description", "fields_involved"],
+        "properties": {
+          "description": { "type": "string" },
+          "fields_involved": { "type": "array", "minItems": 2, "items": { "type": "string" } }
+        }
+      }
+    },
+    "decision_menu_steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "type"],
+        "properties": {
+          "step": { "type": "string" },
+          "type": { "enum": ["pause", "freeze", "throttle", "continue", "escalate", "rollback"] },
+          "resumption_condition": { "type": "string" }
+        }
+      }
+    }
+  }
+}
