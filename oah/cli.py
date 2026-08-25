@@ -211,7 +211,7 @@ def cmd_gaps(args):
 
 
 def cmd_design(args):
-    """S4 (partial: generation-capture + pii-governance + cost, three of nine listed
+    """S4 (partial: generation-capture + pii-governance + cost + ops, four of nine listed
     lenses) + S5's deterministic gates + S6 (partial: cost-skeptic persona
     only, one of three). Not `oah design`'s full scope per architecture.md
     -- runs what exists and says so explicitly, rather than silently
@@ -224,7 +224,9 @@ def cmd_design(args):
     both are real signal for that iteration, not a strict pipeline where
     S6 only runs after S5 is clean."""
     from oah.discovery.python_adapter import build_surface_map
-    from oah.design.lens import design_generation_capture, design_pii_governance, design_cost, LensDesignError
+    from oah.design.lens import (
+        design_generation_capture, design_pii_governance, design_cost, design_ops, LensDesignError,
+    )
     from oah.design.gates import run_gates, gates_passed
     from oah.design.panel import run_cost_skeptic, PanelReviewError
     from oah.schemas import validate
@@ -250,6 +252,7 @@ def cmd_design(args):
         ("generation-capture", design_generation_capture),
         ("pii-governance", design_pii_governance),
         ("cost", design_cost),
+        ("ops", design_ops),
     ):
         try:
             fragment = design_fn(surface_map["points"], git_sha, context=context)
@@ -304,8 +307,8 @@ def cmd_design(args):
             print(f"[{marker}] S6 cost_skeptic {f['gate']}: {f['summary']}", file=sys.stderr)
         print(f"S6 cost_skeptic: {verdict['overall'].upper()}", file=sys.stderr)
 
-    print("\nnote: only the generation-capture, pii-governance, and cost lenses (of nine) and "
-          "the cost_skeptic persona (of three) are built — this is a partial design/review, "
+    print("\nnote: only the generation-capture, pii-governance, cost, and ops lenses (of nine) "
+          "and the cost_skeptic persona (of three) are built — this is a partial design/review, "
           "not the full S4/S6 output.", file=sys.stderr)
     return 0 if (s5_passed and s6_passed) else 1
 
@@ -319,7 +322,9 @@ def cmd_event_schema(args):
     produce a fragment (e.g. missing credentials) is a warning, not fatal
     -- the schema is built from whichever lenses did produce one."""
     from oah.discovery.python_adapter import build_surface_map
-    from oah.design.lens import design_generation_capture, design_pii_governance, design_cost, LensDesignError
+    from oah.design.lens import (
+        design_generation_capture, design_pii_governance, design_cost, design_ops, LensDesignError,
+    )
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
 
     git_sha = _git_sha(args.target)
@@ -337,6 +342,7 @@ def cmd_event_schema(args):
         ("generation-capture", design_generation_capture),
         ("pii-governance", design_pii_governance),
         ("cost", design_cost),
+        ("ops", design_ops),
     ):
         try:
             fragment = design_fn(surface_map["points"], git_sha)
@@ -362,8 +368,8 @@ def cmd_event_schema(args):
     else:
         print(json.dumps(schema, indent=2))
 
-    print(f"\nnote: only generation-capture's, pii-governance's, and cost's attributes are "
-          f"included (3 of 9 S4 lenses built) — this is a partial event schema.", file=sys.stderr)
+    print(f"\nnote: only generation-capture's, pii-governance's, cost's, and ops's attributes "
+          f"are included (4 of 9 S4 lenses built) — this is a partial event schema.", file=sys.stderr)
     return 0
 
 
@@ -376,7 +382,9 @@ def cmd_dtos(args):
     from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
-    from oah.design.lens import design_generation_capture, design_pii_governance, design_cost, LensDesignError
+    from oah.design.lens import (
+        design_generation_capture, design_pii_governance, design_cost, design_ops, LensDesignError,
+    )
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
     from oah.design.dto_generator import generate_dtos, DtoGenerationError
 
@@ -395,6 +403,7 @@ def cmd_dtos(args):
         ("generation-capture", design_generation_capture),
         ("pii-governance", design_pii_governance),
         ("cost", design_cost),
+        ("ops", design_ops),
     ):
         try:
             fragment = design_fn(surface_map["points"], git_sha)
@@ -441,8 +450,8 @@ def cmd_dtos(args):
 
     print(f"\nnote: rollout_step is ordered by gap priority only (p0 first) — a stand-in for "
           f"real rollout_plan.md workflow-criticality ordering, not built yet. Only "
-          f"generation-capture's, pii-governance's, and cost's attributes are covered "
-          f"(3 of 9 S4 lenses).", file=sys.stderr)
+          f"generation-capture's, pii-governance's, cost's, and ops's attributes are covered "
+          f"(4 of 9 S4 lenses).", file=sys.stderr)
     return 0
 
 
@@ -455,7 +464,9 @@ def cmd_readiness(args):
     from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
-    from oah.design.lens import design_generation_capture, design_pii_governance, design_cost, LensDesignError
+    from oah.design.lens import (
+        design_generation_capture, design_pii_governance, design_cost, design_ops, LensDesignError,
+    )
     from oah.design.gates import run_gates
     from oah.design.panel import run_cost_skeptic, PanelReviewError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
@@ -490,6 +501,7 @@ def cmd_readiness(args):
             ("generation-capture", design_generation_capture),
             ("pii-governance", design_pii_governance),
             ("cost", design_cost),
+            ("ops", design_ops),
         ):
             try:
                 fragment = design_fn(surface_map["points"], git_sha, context=context)
