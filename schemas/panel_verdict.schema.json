@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/panel_verdict.schema.json",
+  "title": "S6 adversarial design panel — one persona's verdict",
+  "description": "architecture.md S6: 'Findings are categorized verdicts, not prose.' One document per persona per review pass; S6 runs one or more personas against the current draft design (whatever S4 design fragments exist) and merges their verdicts.",
+  "type": "object",
+  "required": ["schema_version", "persona", "repo_git_sha", "overall", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "persona": { "enum": ["sre", "security", "cost_skeptic"] },
+    "repo_git_sha": { "type": "string" },
+    "overall": {
+      "enum": ["pass", "pass_with_findings", "fail"],
+      "description": "pass: no findings at error severity. pass_with_findings: only warning-severity findings. fail: at least one error-severity finding -- architecture.md: 'Design iterates S4->S6 until pass.'"
+    },
+    "findings": {
+      "type": "array",
+      "description": "Empty array is a valid, meaningful result (nothing wrong found), not omitted.",
+      "items": {
+        "type": "object",
+        "required": ["category", "severity", "gate", "summary", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Persona-specific category, e.g. 'sampling_policy', 'cardinality', 'collector_failure_mode' for cost_skeptic/SRE; 'injection_surface', 'data_flow' for security"
+          },
+          "severity": { "enum": ["error", "warning"] },
+          "gate": { "type": "string", "description": "Short stable identifier for this specific check, e.g. cs-sampling-not-percentile-sized" },
+          "summary": { "type": "string" },
+          "evidence": {
+            "type": "array", "items": { "type": "string" },
+            "description": "What in the design (signal names, surface point IDs) grounds this finding -- a categorized verdict traces to something concrete, not a vibe"
+          },
+          "recommendation": { "type": "string" }
+        }
+      }
+    }
+  }
+}

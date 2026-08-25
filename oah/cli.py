@@ -211,14 +211,18 @@ def cmd_gaps(args):
 
 
 def cmd_design(args):
-    """S4 (partial: generation-capture only, the one lens built so far) +
-    S5's deterministic gates. Not `oah design`'s full scope per
-    architecture.md -- eight more lenses and S6's adversarial panel aren't
-    built yet; this runs what exists and says so, rather than silently
-    producing an incomplete design as if it were complete."""
+    """S4 (partial: generation-capture only, one of nine listed lenses) +
+    S5's deterministic gates + S6 (partial: cost-skeptic persona only, one
+    of three). Not `oah design`'s full scope per architecture.md -- runs
+    what exists and says so explicitly, rather than silently producing an
+    incomplete design as if it were complete. architecture.md: 'Design
+    iterates S4->S6 until pass' -- S6 runs on whatever fragment S4 produced
+    regardless of S5's own verdict, since both are real signal for that
+    iteration, not a strict pipeline where S6 only runs after S5 is clean."""
     from oah.discovery.python_adapter import build_surface_map
     from oah.design.lens import design_generation_capture, LensDesignError
     from oah.design.gates import run_gates, gates_passed
+    from oah.design.panel import run_cost_skeptic, PanelReviewError
     from oah.schemas import validate
 
     git_sha = _git_sha(args.target)
@@ -249,9 +253,23 @@ def cmd_design(args):
 
     point_ids = [p["id"] for p in surface_map["points"] if p["kind"] == "llm_generation"]
     findings = run_gates(fragment, surface_map_point_ids=point_ids)
-    passed = gates_passed(findings)
+    s5_passed = gates_passed(findings)
 
-    output = {"design_fragment": fragment, "gate_findings": [f.__dict__ for f in findings], "gates_passed": passed}
+    panel_error = None
+    verdict = None
+    try:
+        verdict = run_cost_skeptic([fragment], git_sha, context=context)
+    except PanelReviewError as e:
+        panel_error = str(e)
+
+    s6_passed = verdict is None or verdict["overall"] != "fail"
+
+    output = {
+        "design_fragment": fragment,
+        "gate_findings": [f.__dict__ for f in findings],
+        "gates_passed": s5_passed,
+        "panel_verdicts": [verdict] if verdict else [],
+    }
     if args.output:
         Path(args.output).write_text(json.dumps(output, indent=2) + "\n")
         print(f"Wrote {args.output}")
@@ -261,11 +279,21 @@ def cmd_design(args):
     for f in findings:
         if not f.passed:
             marker = "ERROR" if f.severity == "error" else "WARN"
-            print(f"[{marker}] {f.gate}: {f.reason}", file=sys.stderr)
-    print(f"\nS5 gates: {'PASSED' if passed else 'FAILED'}", file=sys.stderr)
-    print("note: only the generation-capture lens is built (architecture.md names 9 total) — "
-          "this is a partial design, not the full S4 output.", file=sys.stderr)
-    return 0 if passed else 1
+            print(f"[{marker}] S5 {f.gate}: {f.reason}", file=sys.stderr)
+    print(f"S5 gates: {'PASSED' if s5_passed else 'FAILED'}", file=sys.stderr)
+
+    if panel_error:
+        print(f"S6 cost-skeptic panel did not run: {panel_error}", file=sys.stderr)
+    elif verdict is not None:
+        for f in verdict["findings"]:
+            marker = "ERROR" if f["severity"] == "error" else "WARN"
+            print(f"[{marker}] S6 cost_skeptic {f['gate']}: {f['summary']}", file=sys.stderr)
+        print(f"S6 cost_skeptic: {verdict['overall'].upper()}", file=sys.stderr)
+
+    print("\nnote: only the generation-capture lens (of nine) and the cost_skeptic persona "
+          "(of three) are built — this is a partial design/review, not the full S4/S6 output.",
+          file=sys.stderr)
+    return 0 if (s5_passed and s6_passed) else 1
 
 
 def cmd_interview(args):
