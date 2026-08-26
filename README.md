@@ -1,8 +1,9 @@
 # Observability Agentic Harness (OAH) — Agentic Observability Pipeline
 
-> **Status: pre-alpha / design stage.** This repository currently contains the product
-> design, artifact schemas, skill drafts, and roadmap. No runnable pipeline yet.
-> Follow [ROADMAP.md](ROADMAP.md) for progress.
+> **Status: pre-alpha.** S1–S9 (surface mapping through the production readiness
+> report) are implemented and tested — see [Installation](#installation) below to
+> run them. S10–S11 (applying instrumentation and dynamically validating it) are
+> not built yet. Follow [ROADMAP.md](ROADMAP.md) for progress.
 
 OAH is an agentic harness that **builds LLM observability into an existing product**
 (or produces observability requirements for a product being designed). Given access to
@@ -88,13 +89,64 @@ agent-executed pipeline with human gates.
 Detailed stage-by-stage description: [docs/architecture.md](docs/architecture.md).
 Target telemetry domain model: [docs/event-model.md](docs/event-model.md).
 
-## Planned CLI
+## Installation
+
+### From PyPI
+
+```bash
+pip install oah
+oah doctor .
+```
+
+### Local development (venv)
+
+```bash
+git clone https://github.com/arno49/observability-agentic-harness.git
+cd observability-agentic-harness
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+
+oah doctor .                       # sanity check
+python -m pytest tests/ -q         # run the test suite
+```
+
+`pip install -e ".[dev]"` is an editable install: changes to `oah/` take effect
+immediately without reinstalling. Drop `[dev]` if you only want to run the CLI, not
+the test suite.
+
+S1–S9 need Python ≥ 3.10. The LLM-driven stages (everything past `map
+--no-disambiguate`/`inventory`/`gaps`/`interview`) also need an `ANTHROPIC_API_KEY`
+(or another provider supported by [LiteLLM](https://www.litellm.ai/)) in the
+environment — see [Requirements](#requirements-planned) below.
+
+## CLI
+
+Implemented today (S1–S9):
 
 ```
-oah doctor                          # check credentials, backends, repo access
-oah estimate --repo ./product       # scope & cost estimate — spends nothing
-oah map --repo ./product            # S1–S3 only: surface map + gap report (standalone audit)
-oah design --repo ./product         # through S9: architecture + plan, no code changes
+oah doctor <target>                              # check credentials, backends, repo access
+oah estimate <target>                            # scope & cost estimate — spends nothing
+oah map <target> [-o out.json] [--no-disambiguate]     # S1: surface map (standalone audit)
+oah inventory <target> [-o out.json]              # S2: existing telemetry inventory
+oah interview <target> [-o context.yaml]          # S3: interactive owner interview
+oah gaps <target> [--context context.yaml] [-o out.json]        # S3: gap model
+oah design <target> [--context context.yaml] [-o out.json]      # S4 lenses + S5 gates + S6 panel
+oah event-schema <target> [--context context.yaml] [-o out.json]  # S7: event schema
+oah dtos <target> [--context context.yaml] [-o out.json]          # S8: implementation DTOs
+oah readiness <target> [--context context.yaml] [-o out.json]     # S9: readiness report
+```
+
+`--no-disambiguate` on `map`, plus `doctor`/`estimate`/`inventory`/`interview`/`gaps`,
+run with no LLM credential required. `design`, `event-schema`, `dtos`, and `readiness`
+call the S4 lens skills and need an API credential.
+
+`oah map` is intentionally a standalone deliverable: a one-shot observability audit of
+a codebase has value even if you never proceed to instrumentation.
+
+Planned, not yet built (S10–S11):
+
+```
 oah instrument --repo ./product     # S10, --mode report-only|fix
 oah validate --repo ./product       # S11
 oah scan --repo ./product           # full run; --stop-after s9 for analysis-only
@@ -104,12 +156,10 @@ oah check-drift --repo ./product    # cheap staleness check against DTOs' retest
                                      # no full pipeline re-run
 ```
 
-> ⚠️ Following VVAH's convention and warning: a full run in fix mode **edits source
-> files in the target repo**. `--mode report-only` and `--stop-after s9` are the
-> non-mutating paths. Every applied change lands as an individual commit/PR for review.
-
-`oah map` is intentionally a standalone deliverable: a one-shot observability audit of
-a codebase has value even if you never proceed to instrumentation.
+> ⚠️ Following VVAH's convention and warning: a full run in fix mode will **edit source
+> files in the target repo**. `--mode report-only` and `--stop-after s9` will be the
+> non-mutating paths. Every applied change is planned to land as an individual
+> commit/PR for review.
 
 ## Design principles
 
@@ -157,14 +207,15 @@ ROADMAP.md     milestones, epics, spikes
 
 ## Requirements (planned)
 
-- Python ≥ 3.11
+- Python ≥ 3.10 (S1–S9, implemented today)
 - Models are configured per stage role through a [LiteLLM](https://www.litellm.ai/)
   abstraction layer — any provider or a local model (Ollama/vLLM) for skill stages;
-  light-tier defaults for high-volume stages. The agentic stages S10–S11 require an
-  Anthropic credential (Claude Code login or `ANTHROPIC_API_KEY`) — mirroring
+  light-tier defaults for high-volume stages. S4's lens skills (and everything that
+  depends on them: `design`, `event-schema`, `dtos`, `readiness`) need an
+  `ANTHROPIC_API_KEY` (or another LiteLLM-supported provider) today. The planned
+  agentic stages S10–S11 will additionally require the `claude` CLI — mirroring
   VVAH's Anthropic-only remediation/validation constraint. Enterprise deployments
   behind a private gateway supported via base-URL override + mTLS.
-- The `claude` CLI for agentic stages (S10–S11)
 
 ## Limitations (read before you trust output)
 

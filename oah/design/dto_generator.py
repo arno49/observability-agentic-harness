@@ -7,14 +7,14 @@ auto-scoring third"), not the model (SKILL.md itself instructs the model
 not to set this field).
 """
 import json
-from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from oah._resources import resolve_dir
 from oah.llm_client import missing_credentials
 from oah.schemas import validate as validate_shared_schema
 
-SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
+SKILLS_DIR = resolve_dir("skills")
 SKILL_NAME = "s8-dto-generator"
 DEFAULT_MODEL = "claude-sonnet-5"  # SP8: frontier default
 

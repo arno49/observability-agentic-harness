@@ -15,13 +15,13 @@ docs/SKILLS.md documents as the skill of record.
 """
 import json
 import re
-from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from oah._resources import resolve_dir
 from oah.llm_client import missing_credentials  # noqa: F401 (re-exported — see that module's docstring)
 
-SKILL_PATH = Path(__file__).parent.parent.parent / "skills" / "s1-surface-mapper"
+SKILL_PATH = resolve_dir("skills") / "s1-surface-mapper"
 DEFAULT_MODEL = "claude-sonnet-5"  # SP8: frontier default for S1 disambiguation, not light tier
 
 # Found by adversarial review: SKILL.md states, as a Hard rule, "Never

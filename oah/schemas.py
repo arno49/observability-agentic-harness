@@ -6,11 +6,12 @@ function every stage's output goes through before the next stage is allowed
 to read it.
 """
 import json
-from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-SCHEMAS_DIR = Path(__file__).parent.parent / "schemas"
+from oah._resources import resolve_dir
+
+SCHEMAS_DIR = resolve_dir("schemas")
 
 
 class SchemaValidationError(Exception):

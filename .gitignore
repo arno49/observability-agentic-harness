@@ -16,5 +16,9 @@ runs/
 .idea/
 .vscode/
 
+# build-time snapshot of schemas/ + skills/ for packaging (scripts/sync_package_data.py) --
+# never hand-edited; regenerated fresh from the real source of truth before every build
+oah/_bundled/
+
 # personal notes / source material not meant for the public repo
 private/

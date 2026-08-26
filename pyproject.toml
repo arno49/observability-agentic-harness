@@ -28,5 +28,11 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["oah*"]
 
+# estimate_constants.json ships as-is; _bundled/ is scripts/sync_package_data.py's
+# build-time snapshot of the repo-root schemas/ + skills/ directories (see
+# oah/_resources.py) -- absent in a dev checkout, present in a built wheel/sdist.
+[tool.setuptools.package-data]
+oah = ["estimate_constants.json", "_bundled/**/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

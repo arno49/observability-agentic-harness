@@ -7,13 +7,13 @@ response validated against the skill's own output schema before being
 accepted, every real failure mode raises rather than being papered over.
 """
 import json
-from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
+from oah._resources import resolve_dir
 from oah.llm_client import missing_credentials
 
-SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
+SKILLS_DIR = resolve_dir("skills")
 DEFAULT_MODEL = "claude-sonnet-5"  # SP8: frontier default
 
 
