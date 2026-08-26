@@ -141,7 +141,7 @@ each stage needs beyond that.
 
 ## CLI
 
-Implemented today (S1–S9, S10 — both modes, S11's R4 slice):
+Implemented today (S1–S9, S10 — both modes, S11's R4 slice, E9's backend configs):
 
 ```
 oah doctor <target>                              # check credentials, backends, repo access
@@ -157,9 +157,10 @@ oah readiness <target> [--context context.yaml] [-o out.json] [--model MODEL]   
 oah instrument <target> --dtos implementation_dto.json [-o out.json] [--run-id ID]        # S10 report-only
 oah instrument <target> --dtos implementation_dto.json --mode fix --readiness readiness_report.json  # S10 fix
 oah validate <target> --dtos implementation_dto.json --instrument-report instrument_report.json [-o out.json]  # S11, R4
+oah backend-config <target> --backend {otel-only,langfuse} [-o output_dir]  # E9: collector config
 ```
 
-`--no-disambiguate` on `map`, plus `doctor`/`estimate`/`inventory`/`interview`/`gaps`/`validate`,
+`--no-disambiguate` on `map`, plus `doctor`/`estimate`/`inventory`/`interview`/`gaps`/`validate`/`backend-config`,
 need neither the `[llm]`/`[agent]` extras nor an API credential — `validate`'s R4
 slice is pure static file reads, no LLM or agent call at all. `design`,
 `event-schema`, `dtos`, and `readiness` (and `map` without `--no-disambiguate`) call
@@ -190,6 +191,18 @@ product, so the verdict is fixed at `needs_review` (R4's own stated ceiling, nev
 `validated`). R1–R3 (a real running product, an OTLP collector, live traffic, the
 agentic audit panel, actual TCR) aren't built — see
 [Requirements](#requirements-planned) and `ROADMAP.md`'s E6 entry.
+
+`oah backend-config` generates a real `otel-collector-config.yaml` for either
+`otel-only` (a vendor-neutral floor, exports to the collector's own `debug`
+exporter) or `langfuse` (self-hosted Langfuse accepts OTLP directly over HTTP —
+verified against Langfuse's own docs, not assumed). Fully deterministic, no
+LLM/agent call at all. `--backend` is a **manual choice today** — constraint-driven
+selection from `context.yaml` (`architecture.md`'s S7) needs S7's LLM-driven
+`architecture.md`-prose synthesis, which isn't built yet (`oah event-schema` is
+S7's only built piece, and it's the deterministic merge only). For `langfuse`,
+the command also points you at Langfuse's own `docker-compose.yml` — deliberately
+not vendored here, since Langfuse maintains that file themselves and a local copy
+would drift.
 
 `oah map` is intentionally a standalone deliverable: a one-shot observability audit of
 a codebase has value even if you never proceed to instrumentation.

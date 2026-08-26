@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from oah.backend_targets import SUPPORTED_BACKENDS
 from oah.doctor import run as run_doctor, format_report
 from oah.estimate import estimate as run_estimate
 from oah.state_db import open_state_db
@@ -975,6 +976,38 @@ def cmd_validate(args):
     return 0
 
 
+def cmd_backend_config(args):
+    """E9 -- deterministic backend target config generation, no LLM or
+    agent call at all (see oah/backend_targets.py's module docstring).
+    --backend is a manual choice today, not yet constraint-driven from
+    context.yaml -- that needs S7's LLM-driven architecture.md synthesis,
+    which isn't built yet."""
+    from oah.backend_targets import generate_collector_config, generate_compose_note
+
+    git_sha = _git_sha(args.target)
+    if git_sha is None:
+        print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
+        return 1
+
+    config_yaml = generate_collector_config(args.backend)
+
+    if args.output_dir:
+        output_path = Path(args.output_dir) / "otel-collector-config.yaml"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(config_yaml)
+        print(f"Wrote {output_path}")
+    else:
+        print(config_yaml, end="")
+
+    compose_note = generate_compose_note(args.backend)
+    if compose_note:
+        print(f"\nnote: {compose_note}", file=sys.stderr)
+    print(f"\nnote: --backend is a manual choice today, not yet constraint-driven from "
+          f"context.yaml -- that needs S7's LLM-driven architecture.md synthesis, not built yet.",
+          file=sys.stderr)
+    return 0
+
+
 def cmd_interview(args):
     """S3's owner interview — real stdin prompts, not stub data. See
     oah/interview.py's module docstring for why this is genuinely
@@ -1107,6 +1140,18 @@ def build_parser():
                              help="Path to an instrument_report.json from `oah instrument --mode fix`")
     p_validate.add_argument("-o", "--output", default=None, help="Write validation_report.json here instead of stdout")
     p_validate.set_defaults(func=cmd_validate)
+
+    p_backend_config = sub.add_parser(
+        "backend-config",
+        help="E9: generate an otel-collector-config.yaml for a chosen backend (otel-only or langfuse) -- "
+             "deterministic, no LLM/agent call, --backend is a manual choice today",
+    )
+    p_backend_config.add_argument("target", help="Path to the target repository")
+    p_backend_config.add_argument("--backend", required=True, choices=sorted(SUPPORTED_BACKENDS),
+                                   help="Which backend target to generate config for")
+    p_backend_config.add_argument("-o", "--output-dir", default=None,
+                                   help="Write otel-collector-config.yaml into this directory instead of stdout")
+    p_backend_config.set_defaults(func=cmd_backend_config)
 
     return parser
 
