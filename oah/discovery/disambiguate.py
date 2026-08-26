@@ -22,6 +22,7 @@ from oah._resources import resolve_dir
 from oah.llm_client import (  # noqa: F401 (missing_credentials re-exported — see that module's docstring)
     DEFAULT_MODEL, MissingLLMDependencyError, get_completion_fn, missing_credentials,
 )
+from oah.telemetry import llm_span
 
 SKILL_PATH = resolve_dir("skills") / "s1-surface-mapper"
 
@@ -102,21 +103,22 @@ def disambiguate(candidates, model=None, _completion_fn=None):
             raise DisambiguationError(str(e)) from e
 
     try:
-        response = completion_fn(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": json.dumps(batch, indent=2)},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "s1_disambiguation_output",
-                    "schema": output_schema,
-                    "strict": True,
+        with llm_span("s1", "disambiguate", model):
+            response = completion_fn(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": json.dumps(batch, indent=2)},
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "s1_disambiguation_output",
+                        "schema": output_schema,
+                        "strict": True,
+                    },
                 },
-            },
-        )
+            )
     except Exception as e:
         raise DisambiguationError(f"model call failed: {e}") from e
 

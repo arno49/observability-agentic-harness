@@ -1112,6 +1112,9 @@ def build_parser():
 
 
 def main(argv=None):
+    from oah.telemetry import setup_tracing
+    setup_tracing()
+
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

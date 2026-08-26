@@ -13,6 +13,7 @@ from jsonschema import Draft202012Validator
 from oah._resources import resolve_dir
 from oah.llm_client import DEFAULT_MODEL, MissingLLMDependencyError, get_completion_fn, missing_credentials
 from oah.schemas import validate as validate_shared_schema
+from oah.telemetry import llm_span
 
 SKILLS_DIR = resolve_dir("skills")
 SKILL_NAME = "s8-dto-generator"
@@ -133,17 +134,18 @@ def generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=
             raise DtoGenerationError(str(e)) from e
 
     try:
-        response = completion_fn(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": json.dumps(batch, indent=2)},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": f"{SKILL_NAME}_output", "schema": output_schema, "strict": True},
-            },
-        )
+        with llm_span("s8", "dto-generator", model):
+            response = completion_fn(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": json.dumps(batch, indent=2)},
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {"name": f"{SKILL_NAME}_output", "schema": output_schema, "strict": True},
+                },
+            )
     except Exception as e:
         raise DtoGenerationError(f"model call failed: {e}") from e
 

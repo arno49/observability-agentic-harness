@@ -194,6 +194,15 @@ agentic audit panel, actual TCR) aren't built — see
 `oah map` is intentionally a standalone deliverable: a one-shot observability audit of
 a codebase has value even if you never proceed to instrumentation.
 
+**Self-telemetry (dogfooding, E10):** every real LLM/Agent-SDK call `oah` itself makes
+(S1 disambiguation, S4 lens design, S6 panel review, S8 DTO generation, S10
+instrumentation) is wrapped in a real `opentelemetry-sdk` span — the same
+`gen_ai.*`/`oah.*` attribute shape `docs/event-model.md` defines for the products
+`oah` instruments — appended to `.oah/traces/oah.jsonl` (already gitignored). A
+failed call's exception is recorded on its span, so a failure in any of those five
+calls is reconstructable — which stage, which lens, which model, what broke — from
+that file alone.
+
 ### Choosing a model / provider
 
 Every LLM-driven command takes `--model`, a [LiteLLM model

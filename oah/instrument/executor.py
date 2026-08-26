@@ -57,6 +57,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 
 from oah._resources import resolve_dir
+from oah.telemetry import llm_span
 
 SKILLS_DIR = resolve_dir("skills")
 SKILL_NAME = "s10-instrumenter"
@@ -223,7 +224,8 @@ def _generate_patch(dto, target_repo, model=None, _agent_runner=None):
             return _patch_result(dto_id, "failed", reason=str(e))
 
     try:
-        raw = agent_runner(dto, target_repo, model)
+        with llm_span("s10", change_type, model):
+            raw = agent_runner(dto, target_repo, model)
     except Exception as e:
         return _patch_result(dto_id, "failed", reason=f"agent session failed: {e}")
 
