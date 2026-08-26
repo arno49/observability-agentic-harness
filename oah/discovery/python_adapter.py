@@ -25,6 +25,7 @@ from pathlib import Path
 import tree_sitter_python as tspython
 from tree_sitter import Language, Parser
 
+from oah import __version__ as _OAH_VERSION
 from oah.discovery.registry import (
     CONSTRUCTOR_NAMES, MODULE_TO_REGISTRY, ALL_METHOD_SUFFIXES, SUFFIX_LENGTHS,
 )
@@ -512,7 +513,7 @@ def detect_repo(repo_root):
     return resolved_points, ambiguous
 
 
-def build_surface_map(repo_root, git_sha, disambiguated=None, harness_version="0.1.0"):
+def build_surface_map(repo_root, git_sha, disambiguated=None, harness_version=_OAH_VERSION):
     """Assemble the document conforming to schemas/surface_map.schema.json.
 
     `disambiguated`, if given, is a list of skills/s1-surface-mapper's

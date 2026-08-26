@@ -1,6 +1,6 @@
 [project]
 name = "oah"
-version = "0.1.0"
+version = "0.0.1"
 description = "Observability Agentic Harness — LLM/GenAI observability instrumentation pipeline"
 readme = "README.md"
 requires-python = ">=3.10"

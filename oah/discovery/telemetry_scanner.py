@@ -17,6 +17,8 @@ from pathlib import Path
 import tree_sitter_python as tspython
 from tree_sitter import Language, Parser
 
+from oah import __version__ as _OAH_VERSION
+
 _LANGUAGE = Language(tspython.language())
 
 LOG_LEVELS = {"debug", "info", "warning", "error", "critical", "exception"}
@@ -310,7 +312,7 @@ def scan_file(path, repo_root, ids):
     }
 
 
-def build_telemetry_inventory(repo_root, git_sha, harness_version="0.1.0"):
+def build_telemetry_inventory(repo_root, git_sha, harness_version=_OAH_VERSION):
     repo_root = Path(repo_root)
     ids = Ids()
     loggers, otel_usage, metrics, error_handling = [], [], [], []
