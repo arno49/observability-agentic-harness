@@ -160,6 +160,10 @@ def cmd_estimate(args):
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
         return 1
 
+    if args.workflows is not None and args.workflows < 0:
+        print(f"error: --workflows must be >= 0, got {args.workflows}", file=sys.stderr)
+        return 1
+
     result = run_estimate(args.target, workflows=args.workflows)
     if args.json:
         print(json.dumps(result, indent=2))
@@ -722,14 +726,18 @@ def cmd_interview(args):
     """S3's owner interview — real stdin prompts, not stub data. See
     oah/interview.py's module docstring for why this is genuinely
     interactive rather than something an LLM or scanner answers."""
-    from oah.interview import run_interview
+    from oah.interview import run_interview, InterviewAborted
 
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
         return 1
 
-    context = run_interview(git_sha)
+    try:
+        context = run_interview(git_sha)
+    except InterviewAborted:
+        print("\ninterview cancelled — no context.yaml written.", file=sys.stderr)
+        return 1
     yaml_text = yaml.safe_dump(context, sort_keys=False, allow_unicode=True)
 
     # Never auto-written into the target repo (same convention as every

@@ -21,6 +21,17 @@ PII_LEVELS = ["none", "indirect", "direct"]
 APPROVAL_STATUSES = ["approved", "restricted", "unapproved"]
 
 
+class InterviewAborted(Exception):
+    """Raised when the interview is cancelled mid-way (Ctrl+D / EOF, or
+    Ctrl+C). Found by adversarial review: run_interview had no handling
+    for either, so a real Ctrl+D during `oah interview` crashed with a
+    raw traceback instead of a clean message -- the same 'error: ...'
+    treatment every other input-validation failure in this CLI already
+    gets. Callers must treat this as 'no context.yaml produced,' never
+    catch it and fabricate a partial one -- an interview stopped halfway
+    has no honest answer for the questions it never reached."""
+
+
 def _ask_str(ask, print_fn, prompt, allow_blank=False):
     while True:
         value = ask(f"{prompt}: ").strip()
@@ -120,6 +131,13 @@ def _interview_trust_boundary(ask, print_fn):
 
 
 def run_interview(repo_git_sha, ask=input, print_fn=print):
+    try:
+        return _run_interview_body(repo_git_sha, ask, print_fn)
+    except (EOFError, KeyboardInterrupt) as e:
+        raise InterviewAborted("interview cancelled before completion") from e
+
+
+def _run_interview_body(repo_git_sha, ask, print_fn):
     print_fn("OAH owner interview (S3) — architecture.md's context.yaml. Answers weight gap "
               "prioritization; there's no wrong answer, only an honest or a guessed one.\n")
 

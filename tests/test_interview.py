@@ -2,7 +2,7 @@
 `ask` injection point, not real stdin."""
 import pytest
 
-from oah.interview import run_interview
+from oah.interview import run_interview, InterviewAborted
 from oah.schemas import validate, SchemaValidationError
 
 
@@ -114,3 +114,39 @@ def test_multiple_workflows():
     ]
     context = run_interview("sha2", ask=_scripted(answers), print_fn=lambda *a: None)
     assert [w["name"] for w in context["workflows"]] == ["wf-a", "wf-b"]
+
+
+# --- Cancellation handling (found by adversarial review) -------------------
+# run_interview had no EOFError/KeyboardInterrupt handling at all -- a real
+# Ctrl+D or Ctrl+C during `oah interview` crashed with a raw traceback
+# instead of the clean error treatment every other failure in this CLI gets.
+
+def test_eof_during_interview_raises_interview_aborted():
+    def eof_ask(prompt):
+        raise EOFError()
+
+    with pytest.raises(InterviewAborted, match="cancelled"):
+        run_interview("deadbeef", ask=eof_ask, print_fn=lambda *a: None)
+
+
+def test_keyboard_interrupt_during_interview_raises_interview_aborted():
+    def interrupt_ask(prompt):
+        raise KeyboardInterrupt()
+
+    with pytest.raises(InterviewAborted, match="cancelled"):
+        run_interview("deadbeef", ask=interrupt_ask, print_fn=lambda *a: None)
+
+
+def test_eof_partway_through_interview_also_raises_cleanly():
+    """Cancelling isn't only possible on the very first prompt -- must be
+    caught no matter which question was in progress."""
+    answers = iter(["1", "support-chat", "high"])
+
+    def ask(prompt):
+        try:
+            return next(answers)
+        except StopIteration:
+            raise EOFError()
+
+    with pytest.raises(InterviewAborted):
+        run_interview("deadbeef", ask=ask, print_fn=lambda *a: None)
