@@ -66,6 +66,54 @@ def _point_ids_for_fragment(fragment, surface_map):
     return [p["id"] for p in surface_map["points"] if p["kind"] == kind]
 
 
+_ALL_PERSONA_NAMES = frozenset({"cost_skeptic", "sre", "security"})
+
+
+def _design_all_lenses(points, git_sha, lens_fns, LensDesignError, context=None):
+    """Runs every S4 lens against `points`, warning (not failing) on any
+    lens that raises. `lens_fns` must be a {lens_name: design_fn} dict
+    covering exactly LENS_TO_POINT_KIND's keys -- the assert below turns a
+    missing/extra entry into an immediate, loud crash instead of a silent
+    gap. This exists because the equivalent 4-way copy-pasted inline loop
+    (one per command) had a lens silently missing from cmd_readiness's own
+    copy three separate times this session -- each time caught only by a
+    manual grep audit after the fact, never by a test. One shared
+    implementation, called identically from every command, makes that
+    whole bug class structurally impossible instead of merely
+    well-intentioned."""
+    assert set(lens_fns) == set(LENS_TO_POINT_KIND), (
+        f"lens_fns must cover exactly LENS_TO_POINT_KIND's lenses -- got {sorted(lens_fns)}, "
+        f"expected {sorted(LENS_TO_POINT_KIND)}"
+    )
+    fragments = []
+    for lens_name, design_fn in lens_fns.items():
+        try:
+            fragment = design_fn(points, git_sha, context=context)
+        except LensDesignError as e:
+            print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
+            continue
+        if fragment:
+            fragments.append(fragment)
+    return fragments
+
+
+def _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError, context=None):
+    """Same structural fix as _design_all_lenses, for S6's three personas."""
+    assert set(persona_fns) == set(_ALL_PERSONA_NAMES), (
+        f"persona_fns must cover exactly {sorted(_ALL_PERSONA_NAMES)} -- got {sorted(persona_fns)}"
+    )
+    verdicts = []
+    for persona_name, run_fn in persona_fns.items():
+        try:
+            verdict = run_fn(fragments, git_sha, context=context)
+        except PanelReviewError as e:
+            print(f"warning: S6 {persona_name} panel did not run: {e}", file=sys.stderr)
+            continue
+        if verdict:
+            verdicts.append(verdict)
+    return verdicts
+
+
 def cmd_doctor(args):
     checks = run_doctor(args.target)
     report, all_ok = format_report(checks)
@@ -285,25 +333,18 @@ def cmd_design(args):
         print("No surface points found (or all still ambiguous) — nothing to design for.", file=sys.stderr)
         return 0
 
-    fragments = []
-    for lens_name, design_fn in (
-        ("generation-capture", design_generation_capture),
-        ("pii-governance", design_pii_governance),
-        ("cost", design_cost),
-        ("ops", design_ops),
-        ("retrieval", design_retrieval),
-        ("feedback", design_feedback),
-        ("realtime-multimodal", design_realtime_multimodal),
-        ("tracing", design_tracing),
-        ("tools", design_tools),
-    ):
-        try:
-            fragment = design_fn(surface_map["points"], git_sha, context=context)
-        except LensDesignError as e:
-            print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
-            continue
-        if fragment:
-            fragments.append(fragment)
+    lens_fns = {
+        "generation-capture": design_generation_capture,
+        "pii-governance": design_pii_governance,
+        "cost": design_cost,
+        "ops": design_ops,
+        "retrieval": design_retrieval,
+        "feedback": design_feedback,
+        "realtime-multimodal": design_realtime_multimodal,
+        "tracing": design_tracing,
+        "tools": design_tools,
+    }
+    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, context=context)
 
     if not fragments:
         print("No points of a kind any built lens covers to design for.", file=sys.stderr)
@@ -314,19 +355,8 @@ def cmd_design(args):
         findings.extend(run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map)))
     s5_passed = gates_passed(findings)
 
-    verdicts = []
-    for persona_name, run_fn in (
-        ("cost_skeptic", run_cost_skeptic),
-        ("sre", run_sre),
-        ("security", run_security),
-    ):
-        try:
-            verdict = run_fn(fragments, git_sha, context=context)
-        except PanelReviewError as e:
-            print(f"S6 {persona_name} panel did not run: {e}", file=sys.stderr)
-            continue
-        if verdict:
-            verdicts.append(verdict)
+    persona_fns = {"cost_skeptic": run_cost_skeptic, "sre": run_sre, "security": run_security}
+    verdicts = _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError, context=context)
 
     s6_passed = all(v["overall"] != "fail" for v in verdicts)
 
@@ -380,36 +410,36 @@ def cmd_event_schema(args):
         design_tools, LensDesignError,
     )
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
+    from oah.schemas import validate
 
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
         return 1
 
+    context = None
+    if args.context:
+        context_data = yaml.safe_load(Path(args.context).read_text())
+        validate("context", context_data)
+        context = context_data
+
     surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
     if not surface_map["points"]:
         print("No surface points found — nothing to build an event schema from.", file=sys.stderr)
         return 0
 
-    fragments = []
-    for lens_name, design_fn in (
-        ("generation-capture", design_generation_capture),
-        ("pii-governance", design_pii_governance),
-        ("cost", design_cost),
-        ("ops", design_ops),
-        ("retrieval", design_retrieval),
-        ("feedback", design_feedback),
-        ("realtime-multimodal", design_realtime_multimodal),
-        ("tracing", design_tracing),
-        ("tools", design_tools),
-    ):
-        try:
-            fragment = design_fn(surface_map["points"], git_sha)
-        except LensDesignError as e:
-            print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
-            continue
-        if fragment:
-            fragments.append(fragment)
+    lens_fns = {
+        "generation-capture": design_generation_capture,
+        "pii-governance": design_pii_governance,
+        "cost": design_cost,
+        "ops": design_ops,
+        "retrieval": design_retrieval,
+        "feedback": design_feedback,
+        "realtime-multimodal": design_realtime_multimodal,
+        "tracing": design_tracing,
+        "tools": design_tools,
+    }
+    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, context=context)
 
     if not fragments:
         print("No points of a kind any built lens covers to build an event schema from.", file=sys.stderr)
@@ -469,25 +499,18 @@ def cmd_dtos(args):
         print("No surface points found — nothing to generate DTOs for.", file=sys.stderr)
         return 0
 
-    fragments = []
-    for lens_name, design_fn in (
-        ("generation-capture", design_generation_capture),
-        ("pii-governance", design_pii_governance),
-        ("cost", design_cost),
-        ("ops", design_ops),
-        ("retrieval", design_retrieval),
-        ("feedback", design_feedback),
-        ("realtime-multimodal", design_realtime_multimodal),
-        ("tracing", design_tracing),
-        ("tools", design_tools),
-    ):
-        try:
-            fragment = design_fn(surface_map["points"], git_sha, context=context)
-        except LensDesignError as e:
-            print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
-            continue
-        if fragment:
-            fragments.append(fragment)
+    lens_fns = {
+        "generation-capture": design_generation_capture,
+        "pii-governance": design_pii_governance,
+        "cost": design_cost,
+        "ops": design_ops,
+        "retrieval": design_retrieval,
+        "feedback": design_feedback,
+        "realtime-multimodal": design_realtime_multimodal,
+        "tracing": design_tracing,
+        "tools": design_tools,
+    }
+    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, context=context)
 
     if not fragments:
         print("No points of a kind any built lens covers to generate DTOs for.", file=sys.stderr)
@@ -579,25 +602,18 @@ def cmd_readiness(args):
     dtos = {"schema_version": "0.1.0", "dtos": []}
 
     if surface_map["points"]:
-        fragments = []
-        for lens_name, design_fn in (
-            ("generation-capture", design_generation_capture),
-            ("pii-governance", design_pii_governance),
-            ("cost", design_cost),
-            ("ops", design_ops),
-            ("retrieval", design_retrieval),
-            ("feedback", design_feedback),
-            ("realtime-multimodal", design_realtime_multimodal),
-            ("tracing", design_tracing),
-            ("tools", design_tools),
-        ):
-            try:
-                fragment = design_fn(surface_map["points"], git_sha, context=context)
-            except LensDesignError as e:
-                print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
-                continue
-            if fragment:
-                fragments.append(fragment)
+        lens_fns = {
+            "generation-capture": design_generation_capture,
+            "pii-governance": design_pii_governance,
+            "cost": design_cost,
+            "ops": design_ops,
+            "retrieval": design_retrieval,
+            "feedback": design_feedback,
+            "realtime-multimodal": design_realtime_multimodal,
+            "tracing": design_tracing,
+            "tools": design_tools,
+        }
+        fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, context=context)
 
         if fragments:
             gate_findings = [
@@ -605,18 +621,8 @@ def cmd_readiness(args):
                 for f in run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map))
             ]
 
-            for persona_name, run_fn in (
-                ("cost_skeptic", run_cost_skeptic),
-                ("sre", run_sre),
-                ("security", run_security),
-            ):
-                try:
-                    verdict = run_fn(fragments, git_sha, context=context)
-                except PanelReviewError as e:
-                    print(f"warning: S6 {persona_name} panel did not run: {e}", file=sys.stderr)
-                    continue
-                if verdict:
-                    panel_verdicts.append(verdict)
+            persona_fns = {"cost_skeptic": run_cost_skeptic, "sre": run_sre, "security": run_security}
+            panel_verdicts = _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError, context=context)
 
             try:
                 event_schema = build_event_schema(fragments, git_sha)
@@ -720,7 +726,7 @@ def build_parser():
                               help="Write context.yaml here instead of stdout (never auto-written into the target repo)")
     p_interview.set_defaults(func=cmd_interview)
 
-    p_design = sub.add_parser("design", help="S4 (generation-capture only so far) + S5 gates")
+    p_design = sub.add_parser("design", help="S4 (all nine lenses) + S5 gates + S6 panel (all three personas)")
     p_design.add_argument("target", help="Path to the target repository")
     p_design.add_argument("-o", "--output", default=None, help="Write the design fragment + gate findings here instead of stdout")
     p_design.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
@@ -728,6 +734,7 @@ def build_parser():
 
     p_event_schema = sub.add_parser("event-schema", help="S7 (partial): deterministic event_schema.json merge")
     p_event_schema.add_argument("target", help="Path to the target repository")
+    p_event_schema.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_event_schema.add_argument("-o", "--output", default=None, help="Write event_schema.json here instead of stdout")
     p_event_schema.set_defaults(func=cmd_event_schema)
 
