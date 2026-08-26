@@ -593,3 +593,74 @@ async def handle(response):
             pass
 """)
     assert resolved[0]["sync_nature"] == "async"
+
+
+# --- Regression tests for bugs found by adversarial review of the tool_use
+# --- dispatch detector and is_async threading (this session's own code
+# --- review, not from an external report).
+
+def test_negated_tool_use_comparison_not_misdetected(tmp_path):
+    """`!=` was being misdetected as `==` -- _is_tool_use_dispatch_check
+    checked operand shape but never the actual operator token, so a
+    comparison_operator's structurally-identical shape for `!=` passed
+    the same check as `==`."""
+    resolved, ambiguous = _detect(tmp_path, """
+def handle(block):
+    if block.type != "tool_use":
+        return "not a tool call"
+""")
+    assert resolved == []
+    assert ambiguous == []
+
+
+def test_tool_use_check_inside_and_compound_condition_detected(tmp_path):
+    """`if block.type == "tool_use" and x:` -- the comparison is nested
+    inside a boolean_operator, not a direct child of if_statement, so the
+    original direct-child-only lookup silently missed it."""
+    resolved, _ = _detect(tmp_path, """
+def handle(block, x):
+    if block.type == "tool_use" and x:
+        pass
+""")
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "tool_call"
+
+
+def test_tool_use_check_wrapped_in_parentheses_detected(tmp_path):
+    resolved, _ = _detect(tmp_path, """
+def handle(block):
+    if (block.type == "tool_use"):
+        pass
+""")
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "tool_call"
+
+
+def test_tool_use_check_behind_or_not_detected():
+    """`if x or block.type == "tool_use":` -- the block can run because
+    `x` is true, independent of tool_use, so this must NOT be treated as
+    a guaranteed dispatch site the way an `and`-chain is."""
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        resolved, ambiguous = _detect(Path(tmp), """
+def handle(block, x):
+    if x or block.type == "tool_use":
+        pass
+""")
+        assert resolved == []
+
+
+def test_call_inside_lambda_nested_in_async_def_marked_sync_not_inherited(tmp_path):
+    """Python has no `async lambda` -- a lambda body is always
+    synchronous. Before the dedicated lambda branch, this call silently
+    inherited the enclosing async function's is_async=True."""
+    resolved, _ = _detect(tmp_path, """
+import anthropic
+client = anthropic.Anthropic()
+
+async def outer():
+    fn = lambda: client.messages.create(model="x")
+    return fn()
+""")
+    assert resolved[0]["sync_nature"] == "sync"

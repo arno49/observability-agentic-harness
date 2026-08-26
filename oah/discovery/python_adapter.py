@@ -185,19 +185,37 @@ def _is_dot_type_attribute(node, src):
     return attr is not None and _text(attr, src) == "type"
 
 
+_COMPARISON_OPERATOR_TOKENS = {"<", ">", "==", ">=", "<=", "<>", "!=", "in", "not in", "is", "is not"}
+
+
+def _comparison_operator_token(comparison_node):
+    """The actual operator token (`==`, `!=`, `in`, ...) -- tree-sitter
+    exposes it as an anonymous child, so `named_children` alone (just the
+    two operands) can't distinguish `==` from `!=`; checking operand
+    shape without this let `block.type != "tool_use"` be misdetected as
+    a tool_use dispatch check (found by adversarial review)."""
+    for c in comparison_node.children:
+        if c.type in _COMPARISON_OPERATOR_TOKENS:
+            return c.type
+    return None
+
+
 def _is_tool_use_dispatch_check(comparison_node, src):
     """True if comparison_node is `<expr>.type == "tool_use"` in either
-    operand order. This is a structurally different detection strategy
-    from every registry-based `_match_suffix` check above: there is no
-    outbound SDK call to match a client-constructor-plus-method-suffix
-    against, because a tool_use dispatch site is application-defined
-    logic reacting to a response's own content, not a call into a
+    operand order, with the operator actually verified as `==` (not
+    `!=`/`is not`/etc). This is a structurally different detection
+    strategy from every registry-based `_match_suffix` check above: there
+    is no outbound SDK call to match a client-constructor-plus-method-
+    suffix against, because a tool_use dispatch site is application-
+    defined logic reacting to a response's own content, not a call into a
     client. "tool_use" is Anthropic's own real content-block-type string
     (per the Messages API's response shape), so a comparison against it
     is the actual, real signal -- not receiver-resolved (no constructor
     tracking possible here), so treated as a real but lower-confidence
     detection than a resolved-receiver signature match."""
     if comparison_node.type != "comparison_operator":
+        return False
+    if _comparison_operator_token(comparison_node) != "==":
         return False
     operands = comparison_node.named_children
     if len(operands) != 2:
@@ -206,6 +224,35 @@ def _is_tool_use_dispatch_check(comparison_node, src):
     is_string = lambda n: n.type == "string" and _string_content(n, src) == "tool_use"
     return ((is_string(a) and _is_dot_type_attribute(b, src)) or
             (is_string(b) and _is_dot_type_attribute(a, src)))
+
+
+def _boolean_operator_token(boolean_node):
+    for c in boolean_node.children:
+        if c.type in ("and", "or"):
+            return c.type
+    return None
+
+
+def _condition_implies_tool_use(node, src):
+    """Recursively True if `node` (an if/elif condition expression)
+    structurally guarantees `<expr>.type == "tool_use"` whenever the
+    guarded block runs. Handles the three real-world wrapper shapes a
+    bare `_is_tool_use_dispatch_check` on the direct child misses (found
+    by adversarial review): parenthesization, and `and`-chains (an `and`
+    operand's block only runs when ALL operands are true, so the
+    tool_use check anywhere in the chain still guarantees it). `or` is
+    deliberately NOT recursed into -- the block can run when the *other*
+    operand is true instead, so an `or` branch does not guarantee
+    tool_use, and treating it as if it did would be a false positive."""
+    if node.type == "comparison_operator":
+        return _is_tool_use_dispatch_check(node, src)
+    if node.type == "parenthesized_expression":
+        inner = node.named_children
+        return len(inner) == 1 and _condition_implies_tool_use(inner[0], src)
+    if node.type == "boolean_operator" and _boolean_operator_token(node) == "and":
+        operands = node.named_children
+        return len(operands) == 2 and any(_condition_implies_tool_use(o, src) for o in operands)
+    return False
 
 
 class KnownNames:
@@ -310,9 +357,23 @@ def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local
                         resolved_points, ambiguous, rel_path, next_id, imports, is_async=new_is_async)
             continue
 
+        if child.type == "lambda":
+            # Python has no `async lambda` syntax -- a lambda body is
+            # always synchronous, the same is_async=False treatment as a
+            # plain `def`. Without this dedicated branch, a lambda fell
+            # through to the generic recursive call below and silently
+            # inherited the *enclosing* function's is_async, so a call
+            # inside `lambda: client.messages.create(...)` defined inside
+            # an `async def` was wrongly marked "async" (found by
+            # adversarial review) even though invoking that lambda never
+            # runs inside the outer coroutine's task automatically.
+            _walk_calls(child, src, src_lines, resolver, known, class_name, symbol, local_scope,
+                        resolved_points, ambiguous, rel_path, next_id, imports, is_async=False)
+            continue
+
         if child.type in ("if_statement", "elif_clause"):
-            comparison = next((c for c in child.children if c.type == "comparison_operator"), None)
-            if comparison is not None and _is_tool_use_dispatch_check(comparison, src):
+            condition = child.child_by_field_name("condition")
+            if condition is not None and _condition_implies_tool_use(condition, src):
                 line = _line(child)
                 candidate_id = f"sp-{next_id[0]:04d}"
                 resolved_points.append(_drop_none({
