@@ -1,12 +1,15 @@
 # Observability Agentic Harness (OAH) — Agentic Observability Pipeline
 
 > **Status: pre-alpha.** S1–S9 (surface mapping through the production readiness
-> report) and S10 (instrument, both `report-only` and `fix` modes) are implemented
-> and tested — see [Installation](#installation) below to run them. Both cover 4 of
+> report), S10 (instrument, both `report-only` and `fix` modes), and S11's `R4`
+> slice (static validation) are implemented and tested — see
+> [Installation](#installation) below to run them. S10 covers 4 of
 > `implementation_dto.schema.json`'s 13 change types; `fix` mode requires a recorded
 > S9 `ready`/`ready_with_conditions` decision and commits one DTO at a time with
-> automatic rollback on any failure. S11 (dynamic validation) is not built yet.
-> Follow [ROADMAP.md](ROADMAP.md) for progress.
+> automatic rollback on any failure. S11's `R1`–`R3` (running the product, real OTLP
+> capture, the agentic audit panel) are not built yet — `R4` never claims more than
+> "this attribute name appears in the code." Follow [ROADMAP.md](ROADMAP.md) for
+> progress.
 
 OAH is an agentic harness that **builds LLM observability into an existing product**
 (or produces observability requirements for a product being designed). Given access to
@@ -138,7 +141,7 @@ each stage needs beyond that.
 
 ## CLI
 
-Implemented today (S1–S9, plus S10 — both modes):
+Implemented today (S1–S9, S10 — both modes, S11's R4 slice):
 
 ```
 oah doctor <target>                              # check credentials, backends, repo access
@@ -153,16 +156,19 @@ oah dtos <target> [--context context.yaml] [-o out.json] [--model MODEL]        
 oah readiness <target> [--context context.yaml] [-o out.json] [--model MODEL]     # S9: readiness report
 oah instrument <target> --dtos implementation_dto.json [-o out.json] [--run-id ID]        # S10 report-only
 oah instrument <target> --dtos implementation_dto.json --mode fix --readiness readiness_report.json  # S10 fix
+oah validate <target> --dtos implementation_dto.json --instrument-report instrument_report.json [-o out.json]  # S11, R4
 ```
 
-`--no-disambiguate` on `map`, plus `doctor`/`estimate`/`inventory`/`interview`/`gaps`,
-need neither the `[llm]` extra nor an API credential. `design`, `event-schema`,
-`dtos`, and `readiness` (and `map` without `--no-disambiguate`) call the S4 lens
-skills and need both — see [Installation](#installation) above. `instrument` needs
-the separate `[agent]` extra instead (Claude Agent SDK, Anthropic-only — see
-[Choosing a model / provider](#choosing-a-model--provider) below) and covers only 4
-of `implementation_dto.schema.json`'s 13 `change.type` values; an unsupported type
-is reported `status: "unsupported"` per DTO, never silently skipped.
+`--no-disambiguate` on `map`, plus `doctor`/`estimate`/`inventory`/`interview`/`gaps`/`validate`,
+need neither the `[llm]`/`[agent]` extras nor an API credential — `validate`'s R4
+slice is pure static file reads, no LLM or agent call at all. `design`,
+`event-schema`, `dtos`, and `readiness` (and `map` without `--no-disambiguate`) call
+the S4 lens skills and need `[llm]` — see [Installation](#installation) above.
+`instrument` needs the separate `[agent]` extra instead (Claude Agent SDK,
+Anthropic-only — see [Choosing a model / provider](#choosing-a-model--provider)
+below) and covers only 4 of `implementation_dto.schema.json`'s 13 `change.type`
+values; an unsupported type is reported `status: "unsupported"` per DTO, never
+silently skipped.
 
 `--mode report-only` (the default) proposes a diff (or a stated refusal, matching a
 DTO whose anchor doesn't match the real file) for each DTO — **never writes to the
@@ -175,6 +181,15 @@ DTO's rollback restores its file to `HEAD`, which would discard your own uncommi
 changes if the tree wasn't already clean). Any failure past verification —
 syntax-invalid agent output, a rejected `git commit` — rolls back that one DTO
 cleanly and is recorded as `status: "failed"`, never a half-applied file.
+
+`oah validate` is [`docs/validation.md`](docs/validation.md)'s degradation ladder,
+**R4 only**: for each DTO `oah instrument --mode fix` actually applied, does
+`change.file` contain every expected attribute name at or after the DTO's own
+anchor line? A code-level presence check, nothing more — it never runs the target
+product, so the verdict is fixed at `needs_review` (R4's own stated ceiling, never
+`validated`). R1–R3 (a real running product, an OTLP collector, live traffic, the
+agentic audit panel, actual TCR) aren't built — see
+[Requirements](#requirements-planned) and `ROADMAP.md`'s E6 entry.
 
 `oah map` is intentionally a standalone deliverable: a one-shot observability audit of
 a codebase has value even if you never proceed to instrumentation.
@@ -213,10 +228,10 @@ misleading "ANTHROPIC_API_KEY is not set."
 agent tooling), so it's Anthropic-only — pass a Claude model name/alias if you
 want something other than the default, not a `provider/model` string.
 
-Planned, not yet built (the remaining 9 DTO change types, S11):
+Planned, not yet built (the remaining 9 DTO change types; S11's R1–R3, OTLP capture,
+and agentic panel):
 
 ```
-oah validate --repo ./product       # S11
 oah scan --repo ./product           # full run; --stop-after s9 for analysis-only
 oah resume <run_id>                 # continue a crashed or session-limit-terminated run
                                      # from its last completed unit of work
@@ -288,7 +303,8 @@ ROADMAP.md     milestones, epics, spikes
 - `pip install "oah[agent]"` plus an Anthropic credential for `oah instrument` (S10,
   both `report-only` and `fix`) — a separate axis from `[llm]`: the Claude Agent SDK
   specifically, not LiteLLM-routed, mirroring VVAH's Anthropic-only remediation
-  constraint. S11 will need the same when it lands. `fix` mode additionally needs a
+  constraint. `oah validate`'s `R4` slice needs neither extra (pure static file
+  reads); `R1`–`R3`, when they land, will. `fix` mode additionally needs a
   git repository with a clean working tree in the target, and a `readiness_report.json`
   recommending `ready` or `ready_with_conditions`.
 

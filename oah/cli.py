@@ -900,6 +900,81 @@ def cmd_instrument(args):
     return 1 if summary["failed"] else 0
 
 
+def cmd_validate(args):
+    """S11, R4 (static-only) -- see oah/validate/checker.py's module
+    docstring for exactly what this claims (a code-level attribute-name
+    presence check, at or after each DTO's own anchor) and what it
+    explicitly doesn't (R1-R3: running the product, real OTLP capture,
+    the agentic audit panel -- none of that exists yet). Ladder rung and
+    verdict are both fixed at 'R4'/'needs_review' for this phase; no
+    checkpointing -- this does no LLM/agent call and is cheap enough to
+    always re-run in full."""
+    from oah.validate.checker import check_dto_static
+    from oah.schemas import validate, SchemaValidationError
+
+    git_sha = _git_sha(args.target)
+    if git_sha is None:
+        print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
+        return 1
+
+    try:
+        dtos_data = json.loads(Path(args.dtos).read_text())
+    except OSError as e:
+        print(f"error: could not read --dtos file {args.dtos!r}: {e}", file=sys.stderr)
+        return 1
+    except json.JSONDecodeError as e:
+        print(f"error: --dtos file {args.dtos!r} is not valid JSON: {e}", file=sys.stderr)
+        return 1
+    try:
+        validate("implementation_dto", dtos_data)
+    except SchemaValidationError as e:
+        print(f"error: --dtos file {args.dtos!r} does not match implementation_dto.schema.json: {e}", file=sys.stderr)
+        return 1
+
+    try:
+        instrument_data = json.loads(Path(args.instrument_report).read_text())
+    except OSError as e:
+        print(f"error: could not read --instrument-report file {args.instrument_report!r}: {e}", file=sys.stderr)
+        return 1
+    except json.JSONDecodeError as e:
+        print(f"error: --instrument-report file {args.instrument_report!r} is not valid JSON: {e}", file=sys.stderr)
+        return 1
+    try:
+        validate("instrument_report", instrument_data)
+    except SchemaValidationError as e:
+        print(f"error: --instrument-report file {args.instrument_report!r} does not match "
+              f"instrument_report.schema.json: {e}", file=sys.stderr)
+        return 1
+
+    instrument_by_id = {r["dto_id"]: r for r in instrument_data["results"]}
+    results = [
+        check_dto_static(dto, instrument_by_id.get(dto["id"]), args.target)
+        for dto in dtos_data["dtos"]
+    ]
+
+    summary = {"total": len(results), "present": 0, "absent": 0, "skipped": 0}
+    for r in results:
+        summary[r["status"]] += 1
+    report = {
+        "schema_version": "0.1.0", "repo_git_sha": git_sha,
+        "ladder_rung": "R4", "verdict": "needs_review",
+        "results": results, "summary": summary,
+    }
+    validate("validation_report", report)
+
+    if args.output:
+        Path(args.output).write_text(json.dumps(report, indent=2) + "\n")
+        print(f"Wrote {args.output}")
+    else:
+        print(json.dumps(report, indent=2))
+
+    print(f"\nladder_rung: R4  verdict: needs_review (this phase's ceiling -- static-only, "
+          f"no product execution, no runtime evidence)", file=sys.stderr)
+    print(f"S11 R4: {summary['present']} present, {summary['absent']} absent, "
+          f"{summary['skipped']} skipped", file=sys.stderr)
+    return 0
+
+
 def cmd_interview(args):
     """S3's owner interview — real stdin prompts, not stub data. See
     oah/interview.py's module docstring for why this is genuinely
@@ -1020,6 +1095,18 @@ def build_parser():
                                     "'ready_with_conditions' (architecture.md)")
     p_instrument.add_argument("--model", default=None, help=_AGENT_MODEL_HELP)
     p_instrument.set_defaults(func=cmd_instrument)
+
+    p_validate = sub.add_parser(
+        "validate",
+        help="S11, R4 only: static check that each applied DTO's expected attribute names appear in "
+             "the code -- no product execution, verdict capped at needs_review",
+    )
+    p_validate.add_argument("target", help="Path to the target repository")
+    p_validate.add_argument("--dtos", required=True, help="Path to an implementation_dto.json from `oah dtos`")
+    p_validate.add_argument("--instrument-report", required=True,
+                             help="Path to an instrument_report.json from `oah instrument --mode fix`")
+    p_validate.add_argument("-o", "--output", default=None, help="Write validation_report.json here instead of stdout")
+    p_validate.set_defaults(func=cmd_validate)
 
     return parser
 

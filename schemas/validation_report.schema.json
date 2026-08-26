@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/validation_report.schema.json",
+  "title": "S11 validation report",
+  "description": "docs/validation.md's degradation ladder. R4 only in this phase (static schema conformance of code-level emission points -- 'needs_review, never validated' per the ladder table, a hard ceiling for this rung, not situational). R1-R3 (running the product, a real OTLP collector, real traffic, the agentic audit panel) all need real target execution, not attempted here -- ladder_rung and verdict grow when they land, not silently redefined.",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "ladder_rung", "verdict", "results", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "ladder_rung": { "const": "R4" },
+    "verdict": { "const": "needs_review" },
+    "results": {
+      "type": "array",
+      "description": "One entry per DTO in the input implementation_dto.json, in the same order. Empty array is valid (no DTOs given).",
+      "items": {
+        "type": "object",
+        "required": ["dto_id", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "dto_id": { "type": "string" },
+          "status": {
+            "enum": ["present", "absent", "skipped"],
+            "description": "present: every expected_events[].required_attributes string was found in change.file at or after change.anchor -- a code-level presence claim only, not a runtime guarantee. absent: at least one was missing (missing_attributes names which). skipped: this DTO was never applied by S10 (status != 'applied' in the instrument report, or missing from it entirely) -- nothing to check, never silently omitted from results."
+          },
+          "missing_attributes": {
+            "type": ["array", "null"], "items": { "type": "string" },
+            "description": "Present only when status is 'absent'; null otherwise."
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "description": "Required context for 'skipped' (why this DTO has no applied code to check); null otherwise."
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total", "present", "absent", "skipped"],
+      "additionalProperties": false,
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "present": { "type": "integer", "minimum": 0 },
+        "absent": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
