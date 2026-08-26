@@ -10,6 +10,7 @@ batch response) — not whether the live Anthropic API itself behaves as
 documented, which no unit test can verify without a real key.
 """
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -43,6 +44,13 @@ def test_missing_credentials_detected_without_a_call(monkeypatch):
     assert missing_credentials() is not None
     with pytest.raises(DisambiguationError, match="ANTHROPIC_API_KEY"):
         # No _completion_fn override -> real credential check path runs.
+        disambiguate([CANDIDATE])
+
+
+def test_missing_litellm_extra_wrapped_as_disambiguation_error(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+    monkeypatch.setitem(sys.modules, "litellm", None)
+    with pytest.raises(DisambiguationError, match=r"pip install 'oah\[llm\]'"):
         disambiguate([CANDIDATE])
 
 

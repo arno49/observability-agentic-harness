@@ -19,10 +19,11 @@ import re
 from jsonschema import Draft202012Validator
 
 from oah._resources import resolve_dir
-from oah.llm_client import missing_credentials  # noqa: F401 (re-exported — see that module's docstring)
+from oah.llm_client import (  # noqa: F401 (missing_credentials re-exported — see that module's docstring)
+    DEFAULT_MODEL, MissingLLMDependencyError, get_completion_fn, missing_credentials,
+)
 
 SKILL_PATH = resolve_dir("skills") / "s1-surface-mapper"
-DEFAULT_MODEL = "claude-sonnet-5"  # SP8: frontier default for S1 disambiguation, not light tier
 
 # Found by adversarial review: SKILL.md states, as a Hard rule, "Never
 # emit secrets, keys, or environment values ... in any field, including
@@ -84,19 +85,21 @@ def disambiguate(candidates, model=None, _completion_fn=None):
     if not candidates:
         return []
 
-    reason = missing_credentials()
+    model = model or DEFAULT_MODEL
+    reason = missing_credentials(model)
     if reason and _completion_fn is None:
         raise DisambiguationError(reason)
 
-    model = model or DEFAULT_MODEL
     system_prompt = _load_skill_instructions()
     output_schema = _load_output_schema()
     batch = {"schema_version": "0.1.0", "candidates": candidates}
 
     completion_fn = _completion_fn
     if completion_fn is None:
-        import litellm
-        completion_fn = litellm.completion
+        try:
+            completion_fn = get_completion_fn()
+        except MissingLLMDependencyError as e:
+            raise DisambiguationError(str(e)) from e
 
     try:
         response = completion_fn(

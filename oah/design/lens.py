@@ -11,10 +11,9 @@ import json
 from jsonschema import Draft202012Validator
 
 from oah._resources import resolve_dir
-from oah.llm_client import missing_credentials
+from oah.llm_client import DEFAULT_MODEL, MissingLLMDependencyError, get_completion_fn, missing_credentials
 
 SKILLS_DIR = resolve_dir("skills")
-DEFAULT_MODEL = "claude-sonnet-5"  # SP8: frontier default
 
 
 class LensDesignError(Exception):
@@ -48,11 +47,11 @@ def design_lens(skill_name, points, repo_git_sha, context=None, model=None, _com
         return None
 
     skill_dir = SKILLS_DIR / skill_name
-    reason = missing_credentials()
+    model = model or DEFAULT_MODEL
+    reason = missing_credentials(model)
     if reason and _completion_fn is None:
         raise LensDesignError(reason)
 
-    model = model or DEFAULT_MODEL
     system_prompt = _load_skill_instructions(skill_dir)
     output_schema = _load_output_schema(skill_dir)
     batch = {"schema_version": "0.1.0", "repo_git_sha": repo_git_sha, "points": points}
@@ -61,8 +60,10 @@ def design_lens(skill_name, points, repo_git_sha, context=None, model=None, _com
 
     completion_fn = _completion_fn
     if completion_fn is None:
-        import litellm
-        completion_fn = litellm.completion
+        try:
+            completion_fn = get_completion_fn()
+        except MissingLLMDependencyError as e:
+            raise LensDesignError(str(e)) from e
 
     try:
         response = completion_fn(

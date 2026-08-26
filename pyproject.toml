@@ -9,13 +9,22 @@ dependencies = [
     "jsonschema>=4.20",
     "tree-sitter>=0.23",
     "tree-sitter-python>=0.23",
-    "litellm>=1.50",
     "pyyaml>=6.0",
 ]
 
+# litellm is optional: only S1 disambiguation and S4 design (design/event-schema/
+# dtos/readiness) need it, and its transitive dependency tree (openai, boto3,
+# tiktoken, huggingface-hub, aiohttp, pydantic, ...) is large enough that forcing
+# it on every install -- including the fully-deterministic doctor/estimate/map
+# --no-disambiguate/inventory/gaps/interview path -- wasn't worth it. See
+# oah/llm_client.py's get_completion_fn().
 [project.optional-dependencies]
+llm = [
+    "litellm>=1.50",
+]
 dev = [
     "pytest>=8.0",
+    "oah[llm]",
 ]
 
 [project.scripts]

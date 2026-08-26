@@ -1,6 +1,7 @@
 """Regression tests for oah.design.panel — mocked, same reasoning as
 test_disambiguate.py / test_design_lens.py."""
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -87,6 +88,13 @@ def test_schema_invalid_response_raises():
 def test_missing_credentials_detected_without_a_call(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(PanelReviewError, match="ANTHROPIC_API_KEY"):
+        run_cost_skeptic([FRAGMENT], "deadbeef")
+
+
+def test_missing_litellm_extra_wrapped_as_panel_review_error(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+    monkeypatch.setitem(sys.modules, "litellm", None)
+    with pytest.raises(PanelReviewError, match=r"pip install 'oah\[llm\]'"):
         run_cost_skeptic([FRAGMENT], "deadbeef")
 
 

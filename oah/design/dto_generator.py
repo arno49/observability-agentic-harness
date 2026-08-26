@@ -11,12 +11,11 @@ import json
 from jsonschema import Draft202012Validator
 
 from oah._resources import resolve_dir
-from oah.llm_client import missing_credentials
+from oah.llm_client import DEFAULT_MODEL, MissingLLMDependencyError, get_completion_fn, missing_credentials
 from oah.schemas import validate as validate_shared_schema
 
 SKILLS_DIR = resolve_dir("skills")
 SKILL_NAME = "s8-dto-generator"
-DEFAULT_MODEL = "claude-sonnet-5"  # SP8: frontier default
 
 # architecture.md S7: "first workflow = most critical one" -- the primary
 # rollout ordering key. Lower rank rolls out first. A gap whose point had
@@ -114,11 +113,11 @@ def generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=
     if not points:
         return None
 
-    reason = missing_credentials()
+    model = model or DEFAULT_MODEL
+    reason = missing_credentials(model)
     if reason and _completion_fn is None:
         raise DtoGenerationError(reason)
 
-    model = model or DEFAULT_MODEL
     system_prompt = _load_skill_instructions()
     output_schema = _load_output_schema()
     batch = {
@@ -128,8 +127,10 @@ def generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=
 
     completion_fn = _completion_fn
     if completion_fn is None:
-        import litellm
-        completion_fn = litellm.completion
+        try:
+            completion_fn = get_completion_fn()
+        except MissingLLMDependencyError as e:
+            raise DtoGenerationError(str(e)) from e
 
     try:
         response = completion_fn(

@@ -98,6 +98,21 @@ pip install oah
 oah doctor .
 ```
 
+`doctor`, `estimate`, `map --no-disambiguate`, `inventory`, `gaps`, and `interview`
+work out of the box — no LLM credential, no extra dependency. `map`'s
+disambiguation pass and `design`/`event-schema`/`dtos`/`readiness` call an LLM via
+[LiteLLM](https://www.litellm.ai/), whose own dependency tree (openai, boto3,
+tiktoken, huggingface-hub, aiohttp, pydantic, ...) is sizeable enough that it's an
+opt-in extra, not a default install:
+
+```bash
+pip install "oah[llm]"
+export ANTHROPIC_API_KEY=...        # or another LiteLLM-supported provider's credential
+```
+
+Calling an LLM-driven command without the extra installed fails with a clean
+`pip install 'oah[llm]'` message, not a raw import error.
+
 ### Local development (venv)
 
 ```bash
@@ -105,20 +120,18 @@ git clone https://github.com/arno49/observability-agentic-harness.git
 cd observability-agentic-harness
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e ".[dev]"            # dev pulls in [llm] too, so the full test suite runs
 
 oah doctor .                       # sanity check
 python -m pytest tests/ -q         # run the test suite
 ```
 
 `pip install -e ".[dev]"` is an editable install: changes to `oah/` take effect
-immediately without reinstalling. Drop `[dev]` if you only want to run the CLI, not
-the test suite.
+immediately without reinstalling. If you only want to run the CLI's deterministic
+commands, `pip install -e .` alone is enough; add `[llm]` for the LLM-driven ones.
 
-S1–S9 need Python ≥ 3.10. The LLM-driven stages (everything past `map
---no-disambiguate`/`inventory`/`gaps`/`interview`) also need an `ANTHROPIC_API_KEY`
-(or another provider supported by [LiteLLM](https://www.litellm.ai/)) in the
-environment — see [Requirements](#requirements-planned) below.
+S1–S9 need Python ≥ 3.10 — see [Requirements](#requirements-planned) below for what
+each stage needs beyond that.
 
 ## CLI
 
@@ -127,22 +140,52 @@ Implemented today (S1–S9):
 ```
 oah doctor <target>                              # check credentials, backends, repo access
 oah estimate <target>                            # scope & cost estimate — spends nothing
-oah map <target> [-o out.json] [--no-disambiguate]     # S1: surface map (standalone audit)
+oah map <target> [-o out.json] [--no-disambiguate] [--model MODEL]  # S1: surface map (standalone audit)
 oah inventory <target> [-o out.json]              # S2: existing telemetry inventory
 oah interview <target> [-o context.yaml]          # S3: interactive owner interview
 oah gaps <target> [--context context.yaml] [-o out.json]        # S3: gap model
-oah design <target> [--context context.yaml] [-o out.json]      # S4 lenses + S5 gates + S6 panel
-oah event-schema <target> [--context context.yaml] [-o out.json]  # S7: event schema
-oah dtos <target> [--context context.yaml] [-o out.json]          # S8: implementation DTOs
-oah readiness <target> [--context context.yaml] [-o out.json]     # S9: readiness report
+oah design <target> [--context context.yaml] [-o out.json] [--model MODEL]      # S4 lenses + S5 gates + S6 panel
+oah event-schema <target> [--context context.yaml] [-o out.json] [--model MODEL]  # S7: event schema
+oah dtos <target> [--context context.yaml] [-o out.json] [--model MODEL]          # S8: implementation DTOs
+oah readiness <target> [--context context.yaml] [-o out.json] [--model MODEL]     # S9: readiness report
 ```
 
 `--no-disambiguate` on `map`, plus `doctor`/`estimate`/`inventory`/`interview`/`gaps`,
-run with no LLM credential required. `design`, `event-schema`, `dtos`, and `readiness`
-call the S4 lens skills and need an API credential.
+need neither the `[llm]` extra nor an API credential. `design`, `event-schema`,
+`dtos`, and `readiness` (and `map` without `--no-disambiguate`) call the S4 lens
+skills and need both — see [Installation](#installation) above.
 
 `oah map` is intentionally a standalone deliverable: a one-shot observability audit of
 a codebase has value even if you never proceed to instrumentation.
+
+### Choosing a model / provider
+
+Every LLM-driven command takes `--model`, a [LiteLLM model
+string](https://docs.litellm.ai/docs/providers) — any provider LiteLLM supports
+works, not just Anthropic. Credentials/endpoints are each provider's own env vars,
+read by LiteLLM itself, not by `oah`:
+
+```bash
+# Default -- Anthropic, claude-sonnet-5
+export ANTHROPIC_API_KEY=...
+oah design ./product
+
+# A different Anthropic-compatible or third-party cloud model
+export OPENAI_API_KEY=...
+oah design ./product --model openai/gpt-4o
+
+# A local model via Ollama -- no API key, just a reachable endpoint
+ollama pull llama3
+oah design ./product --model ollama/llama3
+# non-default OLLAMA_API_BASE (default is http://localhost:11434):
+export OLLAMA_API_BASE=http://localhost:11434
+```
+
+`--model` is only pre-flight-checked for credentials when it's the default
+(`claude-sonnet-5`) — `ANTHROPIC_API_KEY` isn't demanded for a call that was never
+going to use Anthropic. Point any other model at a bad credential or unreachable
+endpoint and that provider's own error surfaces from the live call, not a
+misleading "ANTHROPIC_API_KEY is not set."
 
 Planned, not yet built (S10–S11):
 
@@ -208,14 +251,16 @@ ROADMAP.md     milestones, epics, spikes
 ## Requirements (planned)
 
 - Python ≥ 3.10 (S1–S9, implemented today)
-- Models are configured per stage role through a [LiteLLM](https://www.litellm.ai/)
-  abstraction layer — any provider or a local model (Ollama/vLLM) for skill stages;
-  light-tier defaults for high-volume stages. S4's lens skills (and everything that
-  depends on them: `design`, `event-schema`, `dtos`, `readiness`) need an
-  `ANTHROPIC_API_KEY` (or another LiteLLM-supported provider) today. The planned
-  agentic stages S10–S11 will additionally require the `claude` CLI — mirroring
-  VVAH's Anthropic-only remediation/validation constraint. Enterprise deployments
-  behind a private gateway supported via base-URL override + mTLS.
+- `pip install oah` alone is enough for `doctor`, `estimate`, `map --no-disambiguate`,
+  `inventory`, `gaps`, and `interview` — fully deterministic, no LLM credential.
+- `pip install "oah[llm]"` plus an `ANTHROPIC_API_KEY` (or another provider
+  [LiteLLM](https://www.litellm.ai/) supports) for `map`'s disambiguation pass and
+  S4's lens skills (`design`, `event-schema`, `dtos`, `readiness`) — any provider or
+  a local model (Ollama/vLLM) works via LiteLLM's abstraction layer, light-tier
+  defaults for high-volume stages. The planned agentic stages S10–S11 will
+  additionally require the `claude` CLI — mirroring VVAH's Anthropic-only
+  remediation/validation constraint. Enterprise deployments behind a private
+  gateway supported via base-URL override + mTLS.
 
 ## Limitations (read before you trust output)
 

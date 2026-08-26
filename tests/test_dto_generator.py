@@ -1,5 +1,6 @@
 """Regression tests for oah.design.dto_generator (S8)."""
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -190,6 +191,13 @@ def test_rollout_step_in_model_output_is_rejected_by_schema():
 def test_missing_credentials_detected_without_a_call(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(DtoGenerationError, match="ANTHROPIC_API_KEY"):
+        generate_dtos(EVENT_SCHEMA, POINTS, GAPS, "deadbeef")
+
+
+def test_missing_litellm_extra_wrapped_as_dto_generation_error(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+    monkeypatch.setitem(sys.modules, "litellm", None)
+    with pytest.raises(DtoGenerationError, match=r"pip install 'oah\[llm\]'"):
         generate_dtos(EVENT_SCHEMA, POINTS, GAPS, "deadbeef")
 
 

@@ -60,6 +60,16 @@ def _load_context(path):
 
 
 # Which surface_map.json point `kind` each built S4 lens targets. S5's
+_MODEL_HELP = (
+    "LiteLLM model string to use instead of the default (claude-sonnet-5). "
+    "Examples: openai/gpt-4o (needs OPENAI_API_KEY), ollama/llama3 (local, needs "
+    "OLLAMA_API_BASE if not on the default port), vertex_ai/gemini-... -- see "
+    "https://docs.litellm.ai/docs/providers for the full model-string catalog and "
+    "each provider's own credential/endpoint env vars. Only the default model's "
+    "ANTHROPIC_API_KEY is pre-checked; any other model's own auth error surfaces "
+    "from the live call itself."
+)
+
 # check_every_surface_point_has_decision gate needs, per fragment, the
 # full set of points that fragment is expected to cover -- that set
 # differs by lens now that retrieval is a second target kind alongside
@@ -96,7 +106,7 @@ def _point_ids_for_fragment(fragment, surface_map):
 _ALL_PERSONA_NAMES = frozenset({"cost_skeptic", "sre", "security"})
 
 
-def _design_all_lenses(points, git_sha, lens_fns, LensDesignError, context=None):
+def _design_all_lenses(points, git_sha, lens_fns, LensDesignError, context=None, model=None):
     """Runs every S4 lens against `points`, warning (not failing) on any
     lens that raises. `lens_fns` must be a {lens_name: design_fn} dict
     covering exactly LENS_TO_POINT_KIND's keys -- the assert below turns a
@@ -115,7 +125,7 @@ def _design_all_lenses(points, git_sha, lens_fns, LensDesignError, context=None)
     fragments = []
     for lens_name, design_fn in lens_fns.items():
         try:
-            fragment = design_fn(points, git_sha, context=context)
+            fragment = design_fn(points, git_sha, context=context, model=model)
         except LensDesignError as e:
             print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
             continue
@@ -124,7 +134,7 @@ def _design_all_lenses(points, git_sha, lens_fns, LensDesignError, context=None)
     return fragments
 
 
-def _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError, context=None):
+def _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError, context=None, model=None):
     """Same structural fix as _design_all_lenses, for S6's three personas."""
     assert set(persona_fns) == set(_ALL_PERSONA_NAMES), (
         f"persona_fns must cover exactly {sorted(_ALL_PERSONA_NAMES)} -- got {sorted(persona_fns)}"
@@ -132,7 +142,7 @@ def _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError, context
     verdicts = []
     for persona_name, run_fn in persona_fns.items():
         try:
-            verdict = run_fn(fragments, git_sha, context=context)
+            verdict = run_fn(fragments, git_sha, context=context, model=model)
         except PanelReviewError as e:
             print(f"warning: S6 {persona_name} panel did not run: {e}", file=sys.stderr)
             continue
@@ -230,12 +240,13 @@ def cmd_map(args):
             if db.is_checkpointed(run_id, "s1", "disambiguate"):
                 disambiguated = db.get_checkpoint_result(run_id, "s1", "disambiguate")
             else:
-                reason = missing_credentials()
+                model = getattr(args, "model", None)
+                reason = missing_credentials(model)
                 if reason:
                     disambiguation_error = reason
                 else:
                     try:
-                        disambiguated = disambiguate(still_ambiguous)
+                        disambiguated = disambiguate(still_ambiguous, model=model)
                         db.checkpoint(run_id, "s1", "disambiguate", disambiguated, _now())
                     except DisambiguationError as e:
                         disambiguation_error = str(e)
@@ -401,7 +412,9 @@ def cmd_design(args):
         "tracing": design_tracing,
         "tools": design_tools,
     }
-    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, context=context)
+    model = getattr(args, "model", None)
+    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError,
+                                    context=context, model=model)
 
     if not fragments:
         print("No points of a kind any built lens covers to design for.", file=sys.stderr)
@@ -413,7 +426,7 @@ def cmd_design(args):
     s5_passed = gates_passed(findings)
 
     persona_fns = {"cost_skeptic": run_cost_skeptic, "sre": run_sre, "security": run_security}
-    verdicts = _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError, context=context)
+    verdicts = _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError, context=context, model=model)
 
     s6_passed = all(v["overall"] != "fail" for v in verdicts)
 
@@ -498,7 +511,9 @@ def cmd_event_schema(args):
         "tracing": design_tracing,
         "tools": design_tools,
     }
-    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, context=context)
+    model = getattr(args, "model", None)
+    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError,
+                                    context=context, model=model)
 
     if not fragments:
         print("No points of a kind any built lens covers to build an event schema from.", file=sys.stderr)
@@ -571,7 +586,9 @@ def cmd_dtos(args):
         "tracing": design_tracing,
         "tools": design_tools,
     }
-    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, context=context)
+    model = getattr(args, "model", None)
+    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError,
+                                    context=context, model=model)
 
     if not fragments:
         print("No points of a kind any built lens covers to generate DTOs for.", file=sys.stderr)
@@ -593,7 +610,7 @@ def cmd_dtos(args):
     gaps = [g for g in gap_model["gaps"] if g["id"] in relevant_gap_ids]
 
     try:
-        dtos = generate_dtos(event_schema, points, gaps, git_sha, context=context)
+        dtos = generate_dtos(event_schema, points, gaps, git_sha, context=context, model=model)
     except DtoGenerationError as e:
         print(f"error: DTO generation failed: {e}", file=sys.stderr)
         return 1
@@ -664,6 +681,7 @@ def cmd_readiness(args):
                      "summary": {"attribute_count": 0, "otel_genai_count": 0, "oah_extension_count": 0, "lenses_included": []}}
     dtos = {"schema_version": "0.1.0", "dtos": []}
 
+    model = getattr(args, "model", None)
     if surface_map["points"]:
         lens_fns = {
             "generation-capture": design_generation_capture,
@@ -676,7 +694,8 @@ def cmd_readiness(args):
             "tracing": design_tracing,
             "tools": design_tools,
         }
-        fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, context=context)
+        fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError,
+                                        context=context, model=model)
 
         if fragments:
             gate_findings = [
@@ -685,7 +704,8 @@ def cmd_readiness(args):
             ]
 
             persona_fns = {"cost_skeptic": run_cost_skeptic, "sre": run_sre, "security": run_security}
-            panel_verdicts = _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError, context=context)
+            panel_verdicts = _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError,
+                                                context=context, model=model)
 
             try:
                 event_schema = build_event_schema(fragments, git_sha)
@@ -699,7 +719,8 @@ def cmd_readiness(args):
             gaps_for_dtos = [g for g in gap_model["gaps"] if g["id"] in relevant_gap_ids]
             if points:
                 try:
-                    generated = generate_dtos(event_schema, points, gaps_for_dtos, git_sha, context=context)
+                    generated = generate_dtos(event_schema, points, gaps_for_dtos, git_sha,
+                                               context=context, model=model)
                     if generated:
                         dtos = generated
                 except DtoGenerationError as e:
@@ -773,6 +794,7 @@ def build_parser():
     p_map.add_argument("--run-id", default=None, help="Resume this run_id if already checkpointed, else start it")
     p_map.add_argument("--no-disambiguate", action="store_true",
                         help="Skip the LLM disambiguation pass; leave ambiguous candidates unresolved")
+    p_map.add_argument("--model", default=None, help=_MODEL_HELP)
     p_map.set_defaults(func=cmd_map)
 
     p_inventory = sub.add_parser("inventory", help="S2 existing telemetry inventory")
@@ -797,12 +819,14 @@ def build_parser():
     p_design.add_argument("target", help="Path to the target repository")
     p_design.add_argument("-o", "--output", default=None, help="Write the design fragment + gate findings here instead of stdout")
     p_design.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
+    p_design.add_argument("--model", default=None, help=_MODEL_HELP)
     p_design.set_defaults(func=cmd_design)
 
     p_event_schema = sub.add_parser("event-schema", help="S7 (partial): deterministic event_schema.json merge")
     p_event_schema.add_argument("target", help="Path to the target repository")
     p_event_schema.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_event_schema.add_argument("-o", "--output", default=None, help="Write event_schema.json here instead of stdout")
+    p_event_schema.add_argument("--model", default=None, help=_MODEL_HELP)
     p_event_schema.set_defaults(func=cmd_event_schema)
 
     p_dtos = sub.add_parser("dtos", help="S8 (partial): implementation_dto.json generation")
@@ -811,12 +835,14 @@ def build_parser():
                          help="Path to a context.yaml from `oah interview` -- enables real "
                               "workflow-criticality rollout_step ordering (architecture.md S7)")
     p_dtos.add_argument("-o", "--output", default=None, help="Write implementation_dto.json here instead of stdout")
+    p_dtos.add_argument("--model", default=None, help=_MODEL_HELP)
     p_dtos.set_defaults(func=cmd_dtos)
 
     p_readiness = sub.add_parser("readiness", help="S9: production readiness report (deterministic assembly)")
     p_readiness.add_argument("target", help="Path to the target repository")
     p_readiness.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_readiness.add_argument("-o", "--output", default=None, help="Write readiness_report.json here instead of stdout")
+    p_readiness.add_argument("--model", default=None, help=_MODEL_HELP)
     p_readiness.set_defaults(func=cmd_readiness)
 
     return parser

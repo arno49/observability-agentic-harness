@@ -2,6 +2,7 @@
 test_disambiguate.py: no live API key in this environment, so
 _completion_fn stands in for litellm.completion throughout."""
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -84,6 +85,13 @@ def test_schema_invalid_response_raises():
 def test_missing_credentials_detected_without_a_call(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(LensDesignError, match="ANTHROPIC_API_KEY"):
+        design_generation_capture([POINT], "deadbeef")
+
+
+def test_missing_litellm_extra_wrapped_as_lens_design_error(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+    monkeypatch.setitem(sys.modules, "litellm", None)
+    with pytest.raises(LensDesignError, match=r"pip install 'oah\[llm\]'"):
         design_generation_capture([POINT], "deadbeef")
 
 

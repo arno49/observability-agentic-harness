@@ -50,11 +50,18 @@ def _check_jsonschema():
 
 
 def _check_litellm():
+    """litellm is the optional `llm` extra (pip install oah[llm]) -- not
+    installed is reported ok=True, same non-blocking spirit as
+    _check_llm_credentials below: doctor, estimate, map --no-disambiguate,
+    inventory, gaps, and interview all work without it; only S1
+    disambiguation and S4 design need it."""
     try:
         import litellm  # noqa: F401
         return Check("litellm", True, "importable")
-    except ImportError as e:
-        return Check("litellm", False, str(e))
+    except ImportError:
+        return Check("litellm", True,
+                      "optional, not installed (needed for S1 disambiguation and S4 design): "
+                      "pip install 'oah[llm]'")
 
 
 def _check_llm_credentials():

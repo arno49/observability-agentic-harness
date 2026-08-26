@@ -50,6 +50,30 @@ def test_design_end_to_end_with_mocked_lens_call(tmp_path):
     assert all(f["passed"] for f in result["gate_findings"] if f["severity"] == "error")
 
 
+def test_model_flag_reaches_the_lens_call(tmp_path):
+    """--model isn't just accepted and dropped -- _design_all_lenses must
+    actually pass it through to every lens_fn call."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text(
+        "import anthropic\nclient = anthropic.Anthropic()\n"
+        "response = client.messages.create(model='x')\n"
+    )
+    _init_git_repo(target)
+
+    seen_models = []
+
+    def fake_design_generation_capture(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+        seen_models.append(model)
+        return None  # no fragment needed -- this test only cares what it was called with
+
+    args = argparse.Namespace(target=str(target), output=None, context=None, model="openai/gpt-4o")
+    with patch("oah.design.lens.design_generation_capture", side_effect=fake_design_generation_capture):
+        cmd_design(args)
+
+    assert seen_models == ["openai/gpt-4o"]
+
+
 def test_design_reports_gate_failures_with_nonzero_exit(tmp_path):
     target = tmp_path / "target_repo"
     target.mkdir()
