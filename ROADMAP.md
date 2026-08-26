@@ -146,6 +146,47 @@ either a real running product or its test suite, i.e. executing hostile-repo
 content, a materially bigger security surface (T1) that SP3's own findings
 say is fragile even before considering safety.
 
+**R2 sandbox mechanism landed** (2026-08-26): `oah/validate/sandbox.py`
+(`run_in_sandbox`) and `oah/validate/pytest_runner.py`
+(`detect_pytest_suite`/`run_pytest_suite`) — the execution primitive R2
+needs, built and proven standalone, **not yet wired into `oah validate`**
+(that's a separate follow-up: `validation_report.schema.json`'s
+`ladder_rung`/`verdict` are still R4-only `const`s, need to become `enum`s
+covering R2/`validated`; also needs an opt-in `--dynamic` flag since running
+a target's tests is materially riskier than R4's static check). Per the
+user's explicit choice, isolation is Docker-based: a throwaway image built
+once from the target repo (`COPY . /repo` at `docker build` time; the
+running container has no bind mount back to the host at all), then run with
+`--network none`, bounded `--memory`/`--cpus`/`--pids-limit`, and a wall-clock
+timeout, with unconditional `docker rm -f`/`docker image rm -f` cleanup in a
+`finally` block regardless of how the run ended. A real finding shaped the
+design: dependency installation (`pip install`) genuinely needs network,
+which conflicts with running the target's own test code network-isolated —
+resolved by splitting `run_in_sandbox` into a `setup_script` (baked into the
+image as a `RUN` instruction at `docker build` time, has network) and the
+run-time `script` (network-isolated), so installs happen before any target
+code executes, never during. `pytest_runner`'s own install path is grounded
+in `docs/runnability-matrix.md`'s real `beacon` finding: try
+`pip install -e ".[dev]"` first, fall back to `pip install -r requirements.txt`
++ `pip install pytest` (no editable install) on failure. Four honest
+outcomes only: `passed`, `failed` (with pytest's own parsed pass/fail counts
+when its summary line is parseable, never fabricated), `install_failed`,
+`no_tests_found` (never spins up a container for a repo with nothing to
+test). Proven against real containers in `tests/test_sandbox_docker.py`, not
+assumed from the flags: a real passing suite, a real failing suite, a real
+network-escape attempt (`socket.create_connection` to `8.8.8.8`) actually
+blocked, a real timeout kill leaving no container behind, and cleanup
+confirmed via real `docker image ls`/`docker ps -a` calls before and after —
+this file skips cleanly (not a failure) wherever no Docker daemon is
+reachable, but runs for real in this environment and, since GitHub-hosted
+`ubuntu-latest` runners ship Docker preinstalled, in CI too. Explicitly not
+attempted: distinguishing a real test suite from a decoy (`claude-engineer`'s
+`test.py` case from the runnability matrix — a hard, likely
+unsolvable-in-general problem); non-Python targets (S1 itself doesn't detect
+surface points outside Python yet); R1 (live traffic against a running
+product) and R3 (generated smoke) — both bigger asks than R2 even with
+sandboxing solved.
+
 ### E7 — Reference corpus & skill evals
 Curate open-source LLM apps across architectures (simple RAG chat, multi-agent
 system, queue-based pipeline) and, once SP10 lands, across languages (Python first;
