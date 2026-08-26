@@ -70,6 +70,17 @@ _MODEL_HELP = (
     "from the live call itself."
 )
 
+# Deliberately NOT _MODEL_HELP: S10 goes through the Claude Agent SDK, not
+# LiteLLM (architecture.md: Anthropic-pinned, a non-Anthropic role is refused
+# rather than degraded) -- a LiteLLM-provider model string like openai/gpt-4o
+# doesn't apply here, so this needs its own accurate wording.
+_AGENT_MODEL_HELP = (
+    "Claude Agent SDK model name/alias to use instead of the default "
+    "(claude-sonnet-5), e.g. a specific dated model ID. Anthropic-only -- "
+    "S10 is pinned to the Claude Agent SDK (architecture.md), unlike every "
+    "LiteLLM-routed stage's --model."
+)
+
 # check_every_surface_point_has_decision gate needs, per fragment, the
 # full set of points that fragment is expected to cover -- that set
 # differs by lens now that retrieval is a second target kind alongside
@@ -743,6 +754,95 @@ def cmd_readiness(args):
     return 0
 
 
+def cmd_instrument(args):
+    """S10, report-only mode only -- see oah/instrument/executor.py's
+    module docstring for exactly what's covered (4 of
+    implementation_dto.schema.json's 13 change.type values) and what
+    isn't (fix mode: real edits, git commit-per-DTO, rollback). Never
+    writes to the target repo in this mode. Checkpoints per applied DTO
+    via the same state_db.py S1's disambiguation resume path already
+    uses -- stage_id="s10", unit_id=dto["id"], per that module's own
+    docstring naming this exact usage."""
+    from oah.instrument.executor import apply_dto_report_only
+    from oah.schemas import validate, SchemaValidationError
+
+    git_sha = _git_sha(args.target)
+    if git_sha is None:
+        print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
+        return 1
+
+    try:
+        dtos_data = json.loads(Path(args.dtos).read_text())
+    except OSError as e:
+        print(f"error: could not read --dtos file {args.dtos!r}: {e}", file=sys.stderr)
+        return 1
+    except json.JSONDecodeError as e:
+        print(f"error: --dtos file {args.dtos!r} is not valid JSON: {e}", file=sys.stderr)
+        return 1
+    try:
+        validate("implementation_dto", dtos_data)
+    except SchemaValidationError as e:
+        print(f"error: --dtos file {args.dtos!r} does not match implementation_dto.schema.json: {e}", file=sys.stderr)
+        return 1
+
+    dtos = dtos_data["dtos"]
+    if not dtos:
+        print("No DTOs in --dtos file -- nothing to instrument.", file=sys.stderr)
+        return 0
+
+    model = getattr(args, "model", None)
+    run_id = getattr(args, "run_id", None) or f"run-{uuid.uuid4().hex[:12]}"
+
+    # Same resume pattern as cmd_map: reload an existing run_id's own
+    # manifest rather than overwriting started_at/stages_completed --
+    # otherwise --run-id resume would silently discard prior progress
+    # recorded by a crashed or budget-limited earlier attempt.
+    if rm.manifest_path(run_id).is_file():
+        manifest = rm.load(run_id)
+    else:
+        manifest = rm.new_manifest(run_id, args.target, git_sha, _now(), primary_language="python")
+        rm.save(manifest)
+
+    with open_state_db(args.target) as db:
+        db.create_run(run_id, args.target, git_sha, manifest["started_at"])
+        results = []
+        for dto in dtos:
+            if db.is_checkpointed(run_id, "s10", dto["id"]):
+                results.append(db.get_checkpoint_result(run_id, "s10", dto["id"]))
+                continue
+            result = apply_dto_report_only(dto, args.target, model=model)
+            db.checkpoint(run_id, "s10", dto["id"], result, _now())
+            results.append(result)
+        db.mark_run_status(run_id, "completed", _now())
+
+    summary = {"total": len(results), "applied": 0, "refused": 0, "unsupported": 0, "failed": 0}
+    for r in results:
+        summary[r["status"]] += 1
+    report = {
+        "schema_version": "0.1.0", "repo_git_sha": git_sha, "mode": "report-only",
+        "results": results, "summary": summary,
+    }
+    validate("instrument_report", report)
+
+    rm.mark_stage_completed(manifest, "s10")
+    manifest["completed_at"] = _now()
+    rm.save(manifest)
+
+    if args.output:
+        Path(args.output).write_text(json.dumps(report, indent=2) + "\n")
+        print(f"Wrote {args.output}")
+    else:
+        print(json.dumps(report, indent=2))
+
+    print(f"\nrun_id: {run_id}  (manifest: {rm.manifest_path(run_id)})", file=sys.stderr)
+    print(f"S10 report-only: {summary['applied']} applied, {summary['refused']} refused, "
+          f"{summary['unsupported']} unsupported, {summary['failed']} failed", file=sys.stderr)
+    print("\nnote: report-only mode only -- no fix mode yet, nothing was written to the target "
+          "repo. Only 4 of 13 change.type values are supported; see oah/instrument/executor.py.",
+          file=sys.stderr)
+    return 1 if summary["failed"] else 0
+
+
 def cmd_interview(args):
     """S3's owner interview — real stdin prompts, not stub data. See
     oah/interview.py's module docstring for why this is genuinely
@@ -844,6 +944,19 @@ def build_parser():
     p_readiness.add_argument("-o", "--output", default=None, help="Write readiness_report.json here instead of stdout")
     p_readiness.add_argument("--model", default=None, help=_MODEL_HELP)
     p_readiness.set_defaults(func=cmd_readiness)
+
+    p_instrument = sub.add_parser(
+        "instrument",
+        help="S10, report-only mode only: verify + propose diffs for 4 of 13 DTO change types, never writes to the target repo",
+    )
+    p_instrument.add_argument("target", help="Path to the target repository")
+    p_instrument.add_argument("--dtos", required=True, help="Path to an implementation_dto.json from `oah dtos`")
+    p_instrument.add_argument("-o", "--output", default=None, help="Write instrument_report.json here instead of stdout")
+    p_instrument.add_argument("--run-id", default=None, help="Resume this run_id if already checkpointed, else start it")
+    p_instrument.add_argument("--mode", choices=["report-only"], default="report-only",
+                               help="Only report-only is built so far -- fix mode (real edits/commits) is not yet implemented")
+    p_instrument.add_argument("--model", default=None, help=_AGENT_MODEL_HELP)
+    p_instrument.set_defaults(func=cmd_instrument)
 
     return parser
 

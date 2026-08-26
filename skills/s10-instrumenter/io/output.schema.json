@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s10-instrumenter/output.schema.json",
+  "title": "S10 instrumenter (report-only) — output",
+  "description": "One verdict for the single DTO given as input. patched_content is present only when status is 'applied' -- the FULL proposed content of change.file after the edit, never actually written to disk. The caller computes the actual diff itself (Python difflib against the real file it already read) rather than trusting a model-formatted unified diff string, which is why this asks for the whole file, not a patch. reason is required when status is 'refused'.",
+  "type": "object",
+  "required": ["dto_id", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "dto_id": { "type": "string" },
+    "status": { "enum": ["applied", "refused"] },
+    "patched_content": { "type": ["string", "null"] },
+    "reason": { "type": ["string", "null"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "applied" } } },
+      "then": { "required": ["patched_content"], "properties": { "patched_content": { "type": "string" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "refused" } } },
+      "then": { "required": ["reason"], "properties": { "reason": { "type": "string" } } }
+    }
+  ]
+}

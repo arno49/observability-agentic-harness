@@ -18,13 +18,22 @@ dependencies = [
 # it on every install -- including the fully-deterministic doctor/estimate/map
 # --no-disambiguate/inventory/gaps/interview path -- wasn't worth it. See
 # oah/llm_client.py's get_completion_fn().
+#
+# claude-agent-sdk is a separate, Anthropic-pinned axis (architecture.md: S10/S11
+# require the Agent SDK's file-mutation/agent tooling specifically, refused for
+# any other provider rather than degraded) -- its own extra, not folded into
+# `llm`, since nothing LiteLLM-based needs it and vice versa.
 [project.optional-dependencies]
 llm = [
     "litellm>=1.50",
 ]
+agent = [
+    "claude-agent-sdk>=0.2",
+]
 dev = [
     "pytest>=8.0",
     "oah[llm]",
+    "oah[agent]",
 ]
 
 [project.scripts]

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s10-instrumenter/input.schema.json",
+  "title": "S10 instrumenter (report-only) — input",
+  "description": "One implementation_dto.json entry (schemas/implementation_dto.schema.json's dtos[] item shape), restricted to the four change.type values this phase supports. The target repository itself is not part of this JSON input -- it's made available to the agent session via a scoped Read tool at the DTO's own change.file.",
+  "type": "object",
+  "required": ["schema_version", "dto"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "dto": {
+      "type": "object",
+      "required": ["id", "change", "expected_events"],
+      "properties": {
+        "id": { "type": "string" },
+        "change": {
+          "type": "object",
+          "required": ["type", "file"],
+          "properties": {
+            "type": { "enum": ["wrap_call", "add_decorator", "insert_span", "propagate_context"] },
+            "file": { "type": "string" },
+            "anchor": { "type": "string" },
+            "preconditions": { "type": "array", "items": { "type": "string" } },
+            "description": { "type": "string" }
+          }
+        },
+        "expected_events": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["event_type"],
+            "properties": {
+              "event_type": { "type": "string" },
+              "required_attributes": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

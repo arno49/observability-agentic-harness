@@ -2,8 +2,10 @@
 
 > **Status: pre-alpha.** S1–S9 (surface mapping through the production readiness
 > report) are implemented and tested — see [Installation](#installation) below to
-> run them. S10–S11 (applying instrumentation and dynamically validating it) are
-> not built yet. Follow [ROADMAP.md](ROADMAP.md) for progress.
+> run them. S10 (instrument) has landed in **report-only mode only**: 4 of
+> `implementation_dto.schema.json`'s 13 change types, never writes to the target
+> repo. `fix` mode and S11 (dynamic validation) are not built yet. Follow
+> [ROADMAP.md](ROADMAP.md) for progress.
 
 OAH is an agentic harness that **builds LLM observability into an existing product**
 (or produces observability requirements for a product being designed). Given access to
@@ -135,7 +137,7 @@ each stage needs beyond that.
 
 ## CLI
 
-Implemented today (S1–S9):
+Implemented today (S1–S9, plus S10 report-only):
 
 ```
 oah doctor <target>                              # check credentials, backends, repo access
@@ -148,12 +150,20 @@ oah design <target> [--context context.yaml] [-o out.json] [--model MODEL]      
 oah event-schema <target> [--context context.yaml] [-o out.json] [--model MODEL]  # S7: event schema
 oah dtos <target> [--context context.yaml] [-o out.json] [--model MODEL]          # S8: implementation DTOs
 oah readiness <target> [--context context.yaml] [-o out.json] [--model MODEL]     # S9: readiness report
+oah instrument <target> --dtos implementation_dto.json [-o out.json] [--run-id ID]  # S10, report-only only
 ```
 
 `--no-disambiguate` on `map`, plus `doctor`/`estimate`/`inventory`/`interview`/`gaps`,
 need neither the `[llm]` extra nor an API credential. `design`, `event-schema`,
 `dtos`, and `readiness` (and `map` without `--no-disambiguate`) call the S4 lens
-skills and need both — see [Installation](#installation) above.
+skills and need both — see [Installation](#installation) above. `instrument` needs
+the separate `[agent]` extra instead (Claude Agent SDK, Anthropic-only — see
+[Choosing a model / provider](#choosing-a-model--provider) below) and covers only 4
+of `implementation_dto.schema.json`'s 13 `change.type` values; an unsupported type
+is reported `status: "unsupported"` per DTO, never silently skipped. It **never
+writes to the target repo** — report-only mode proposes a diff (or a stated refusal,
+matching a DTO whose anchor doesn't match the real file) for each DTO, nothing more;
+`fix` mode (real edits, git commit-per-DTO) isn't built yet.
 
 `oah map` is intentionally a standalone deliverable: a one-shot observability audit of
 a codebase has value even if you never proceed to instrumentation.
@@ -187,10 +197,15 @@ going to use Anthropic. Point any other model at a bad credential or unreachable
 endpoint and that provider's own error surfaces from the live call, not a
 misleading "ANTHROPIC_API_KEY is not set."
 
-Planned, not yet built (S10–S11):
+`oah instrument`'s `--model` is a different axis, not a LiteLLM string:
+`architecture.md` pins S10 to the Claude Agent SDK specifically (file-mutation/
+agent tooling), so it's Anthropic-only — pass a Claude model name/alias if you
+want something other than the default, not a `provider/model` string.
+
+Planned, not yet built (S10 fix mode, the remaining 9 DTO change types, S11):
 
 ```
-oah instrument --repo ./product     # S10, --mode report-only|fix
+oah instrument <target> --dtos ... --mode fix   # S10 fix mode: real edits, commit per DTO
 oah validate --repo ./product       # S11
 oah scan --repo ./product           # full run; --stop-after s9 for analysis-only
 oah resume <run_id>                 # continue a crashed or session-limit-terminated run
@@ -257,10 +272,12 @@ ROADMAP.md     milestones, epics, spikes
   [LiteLLM](https://www.litellm.ai/) supports) for `map`'s disambiguation pass and
   S4's lens skills (`design`, `event-schema`, `dtos`, `readiness`) — any provider or
   a local model (Ollama/vLLM) works via LiteLLM's abstraction layer, light-tier
-  defaults for high-volume stages. The planned agentic stages S10–S11 will
-  additionally require the `claude` CLI — mirroring VVAH's Anthropic-only
-  remediation/validation constraint. Enterprise deployments behind a private
-  gateway supported via base-URL override + mTLS.
+  defaults for high-volume stages. Enterprise deployments behind a private gateway
+  supported via base-URL override + mTLS.
+- `pip install "oah[agent]"` plus an Anthropic credential for `oah instrument` (S10)
+  — a separate axis from `[llm]`: the Claude Agent SDK specifically, not
+  LiteLLM-routed, mirroring VVAH's Anthropic-only remediation constraint. `fix`
+  mode and S11 will need the same when they land.
 
 ## Limitations (read before you trust output)
 

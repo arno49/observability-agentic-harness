@@ -64,6 +64,19 @@ def _check_litellm():
                       "pip install 'oah[llm]'")
 
 
+def _check_claude_agent_sdk():
+    """claude-agent-sdk is the optional `agent` extra (pip install
+    oah[agent]) -- a separate axis from `llm`/litellm (S10 is
+    Anthropic-pinned via the Agent SDK, not LiteLLM-routed). Same
+    non-blocking spirit as _check_litellm: only `oah instrument` needs it."""
+    try:
+        import claude_agent_sdk  # noqa: F401
+        return Check("claude_agent_sdk", True, "importable")
+    except ImportError:
+        return Check("claude_agent_sdk", True,
+                      "optional, not installed (needed for S10 instrument): pip install 'oah[agent]'")
+
+
 def _check_llm_credentials():
     """Informational, not blocking — oah map --no-disambiguate, oah
     estimate, oah inventory, and oah gaps all work without it; only S1's
@@ -111,6 +124,7 @@ def run(target_path=None):
         _check_tree_sitter(),
         _check_jsonschema(),
         _check_litellm(),
+        _check_claude_agent_sdk(),
         _check_llm_credentials(),
         _check_schemas_dir(),
     ]
