@@ -363,6 +363,80 @@ repo (not a hand-built fixture) reaching `validated` hasn't been
 attempted. The `add_dependency` DTO-type gap (named two phases ago) also
 remains open and unrelated to this phase.
 
+**R1's execution mechanism landed** (2026-08-26): `oah/validate/live_sandbox.py`'s
+`run_live_sandbox` — the largest remaining piece toward M4's own gate, and
+deliberately scoped the same way as E6 R2's own sandbox-mechanism phase:
+prove the mechanism against a synthetic fixture, not wire it into
+`oah validate` yet. Real, hard constraint stated up front rather than
+routed around: this dev environment has no `ANTHROPIC_API_KEY`, so R3
+(generated smoke) and the agentic panel — both needing a live LLM call —
+can't be attempted here regardless of how much more code gets written;
+SP3's own decision record (`docs/decisions/007-sp3-dynamic-validation-feasibility.md`)
+already found 0/6 corpus repos are even R1-capable (no compose file or
+automatable dev-server path), so a synthetic fixture is the only honest
+target for proving this mechanism, same reasoning R2's own phase already
+established.
+
+Unlike R2's `sandbox.py` (one container, `--network none`, a script that
+runs to completion), R1 needs a materially different isolation shape: two
+long-running containers — the target's own service and a real OTel
+Collector — that can talk to *each other* but nowhere else. Grounded in a
+real Docker spike run before designing against it, which caught two real
+findings: `docker network create --internal` gives a network with no
+internet route while still allowing container-to-container DNS (confirmed
+via `docker network inspect`); and the collector's `debug` exporter (the
+first thing reached for, matching R2's console-exporter precedent) prints
+a custom, non-JSON Go text format, while the `file` exporter gives clean,
+spec-compliant, line-delimited OTLP-JSON instead — but only once its
+target path already exists (`open: no such file`, a real failure hit and
+fixed with a pre-`touch`'d, bind-mounted output file, a deliberate,
+narrow exception to R2's "no bind mount" posture: the collector is OAH's
+own trusted config, not target-repo content, and the mount is directional,
+host-reads-back only).
+
+Two more real bugs surfaced only by the module's own real-Docker tests,
+not by reasoning about the design in the abstract: the readiness probe
+`run_live_sandbox` itself issues to detect when the target service is up
+is a real HTTP request against the target's real handler, which (for a
+naive target app with no separate health endpoint) gets instrumented and
+captured exactly like real traffic — one request produced two captured
+spans until fixed by tracking the collector output file's byte offset
+right after readiness succeeds, excluding anything before it. Fixing that
+with a flat 1-second sleep introduced a second, subtler bug: a 300ms poll
+interval was shorter than the target's own `OTEL_BSP_SCHEDULE_DELAY`
+(500ms) async flush cycle, so two "equal" file-size reads could land in
+the legitimate pause *between* two flush batches and falsely declare
+stability with a span still pending -- caught only by running the test
+three times in a row (a single run could still get lucky), fixed by
+polling with an interval safely longer than the flush cycle instead of a
+fixed guess.
+
+Proven for real, all in `tests/test_live_sandbox.py` (real Docker,
+`skipif` when unavailable, runs for real here and expected to in CI): a
+real request against a real running service returns the right status and
+a real captured span; multiple requests with a deliberate artificial delay
+produce real, distinguishable per-request latencies with `latency_p50_ms`/
+`latency_p95_ms` computed directly from that run's own raw samples (never
+averaged from elsewhere, per `docs/validation.md`'s own rule); killing the
+collector mid-run and confirming later requests still succeed proves the
+deterministic layer's own fail-open check (`fail_open: True`) with the
+same infrastructure, not a separate code path; Docker-unavailable and a
+target that never binds its port both resolve cleanly
+(`docker_unavailable`/`startup_failed`, never a hang); cleanup (both
+containers, the built image, the network) confirmed via real
+`docker ps -a`/`docker network ls`/`docker image ls` calls before and
+after every scenario, including the failure paths. 452 tests passing (up
+from 446), run three times in a row clean after the timing fixes, since a
+single green run doesn't prove a timing-sensitive mechanism isn't still
+flaky.
+
+**Not wired into `oah validate`** — no `event_schema.json` diffing
+(including the unknown-field/invariant checks `docs/validation.md`'s
+deterministic layer calls for), no TCR taxonomy, no `--live` CLI flag, no
+`ladder_rung: "R1"`, named as the explicit next step, not silently implied
+by this landing. R3, the agentic panel, and a real corpus-repo target all
+remain blocked exactly as stated above.
+
 ### E7 — Reference corpus & skill evals
 Curate open-source LLM apps across architectures (simple RAG chat, multi-agent
 system, queue-based pipeline) and, once SP10 lands, across languages (Python first;
