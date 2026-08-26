@@ -156,7 +156,7 @@ oah dtos <target> [--context context.yaml] [-o out.json] [--model MODEL]        
 oah readiness <target> [--context context.yaml] [-o out.json] [--model MODEL]     # S9: readiness report
 oah instrument <target> --dtos implementation_dto.json [-o out.json] [--run-id ID]        # S10 report-only
 oah instrument <target> --dtos implementation_dto.json --mode fix --readiness readiness_report.json  # S10 fix
-oah validate <target> --dtos implementation_dto.json --instrument-report instrument_report.json [-o out.json] [--dynamic]  # S11, R4 always + real R2 with --dynamic
+oah validate <target> --dtos implementation_dto.json --instrument-report instrument_report.json [-o out.json] [--dynamic] [--live --start-command CMD --port N --requests requests.json [--event-schema event_schema.json] [--setup-script SCRIPT]]  # S11, R4 always + real R2 with --dynamic + R1 mechanism with --live
 oah backend-config <target> --backend {otel-only,langfuse} [-o output_dir]  # E9: collector config
 ```
 
@@ -227,9 +227,22 @@ decides whether a run actually earned it: `ladder_rung: "R2"` /
 there's at least one DTO S10 actually applied, and every one of those DTOs'
 relevant checks came back positive. Short of that, `ladder_rung` stays `"R4"`
 — a real regression-gate failure still forces `validation_failed` regardless of
-the rest. R1/R3 (a real running product, an OTLP collector, live traffic, the
-agentic audit panel, actual TCR) aren't built — see
-[Requirements](#requirements-planned) and `ROADMAP.md`'s E6 entry.
+the rest.
+
+`--live` additionally wires E6 R1's execution mechanism in: starts the target
+as a real long-running service (`--start-command`, `--port`) alongside a real
+local OTel Collector on an internet-isolated Docker network, drives each
+`{"method", "path"}` entry in `--requests`' JSON file against it, and reports
+real captured requests/latency (`latency_p50_ms`/`latency_p95_ms`, computed
+from that run's own raw samples) plus per-DTO event assertions under
+`live_execution`. With `--event-schema`, captured spans' attribute names are
+also checked against its declared list for unknown attributes. **This does
+not move `ladder_rung`/`verdict`** — R1's own promotion rule (a real TCR
+taxonomy, a latency-vs-budget comparison, semantic `event_schema.json`
+invariant checks) isn't built yet, same "prove the mechanism, then the
+promotion rule" split R2 already went through. R3 (generated smoke) and the
+agentic audit panel aren't built — see [Requirements](#requirements-planned)
+and `ROADMAP.md`'s E6 entry.
 
 `oah backend-config` generates a real `otel-collector-config.yaml` for either
 `otel-only` (a vendor-neutral floor, exports to the collector's own `debug`

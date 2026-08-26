@@ -910,14 +910,38 @@ def cmd_validate(args):
     unconditionally, same as the R4 static check. oah/validate/verdict.py's
     compute_ladder_verdict is the one place that decides whether a run has
     actually earned ladder_rung 'R2'/verdict 'validated' -- deliberately
-    conservative, see its own module docstring for the exact rule. No
-    checkpointing -- none of these make an LLM/agent call, and even
-    --dynamic's sandbox run is cheap enough to always re-run in full."""
+    conservative, see its own module docstring for the exact rule.
+
+    An opt-in --live pass additionally starts the target as a real running
+    service alongside a real local OTel collector (E6 R1's mechanism,
+    oah/validate/live_sandbox.py) and drives --requests against it,
+    reporting real captured requests/latency/spans plus per-DTO event
+    assertions and an unknown-attribute check (oah/validate/live_diff.py)
+    under live_execution -- this does NOT move ladder_rung/verdict yet;
+    R1's own promotion rule (real TCR, a budget comparison, semantic
+    event_schema.json invariant checks) isn't built, named as the next
+    step in ROADMAP.md, not silently implied by this flag's existence.
+
+    No checkpointing -- none of these make an LLM/agent call, and even
+    --dynamic/--live's sandbox runs are cheap enough to always re-run in
+    full."""
     from oah.validate.checker import check_dto_static
     from oah.validate.dynamic import run_dynamic_validation
+    from oah.validate.event_assertion import check_dto_dynamic
+    from oah.validate.live_diff import check_unknown_attributes
+    from oah.validate.live_sandbox import run_live_sandbox
     from oah.validate.propagation_checker import check_dto_propagation
     from oah.validate.verdict import compute_ladder_verdict
     from oah.schemas import validate, SchemaValidationError
+
+    live = getattr(args, "live", False)
+    if live:
+        missing = [name for name in ("start_command", "port", "requests")
+                   if getattr(args, name, None) is None]
+        if missing:
+            print(f"error: --live requires --start-command, --port, and --requests together "
+                  f"(missing: {', '.join('--' + m.replace('_', '-') for m in missing)})", file=sys.stderr)
+            return 1
 
     git_sha = _git_sha(args.target)
     if git_sha is None:
@@ -977,12 +1001,47 @@ def cmd_validate(args):
         dtos_data["dtos"], results, event_assertions, propagation_checks, regression_gate,
     )
 
+    live_execution = None
+    if live:
+        event_schema = None
+        if args.event_schema:
+            try:
+                event_schema = json.loads(Path(args.event_schema).read_text())
+            except (OSError, json.JSONDecodeError) as e:
+                print(f"error: could not read --event-schema file {args.event_schema!r}: {e}", file=sys.stderr)
+                return 1
+        try:
+            requests_list = json.loads(Path(args.requests).read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"error: could not read --requests file {args.requests!r}: {e}", file=sys.stderr)
+            return 1
+
+        live_result = run_live_sandbox(
+            args.target, start_command=args.start_command, port=args.port, requests=requests_list,
+            setup_script=getattr(args, "setup_script", None),
+        )
+        live_event_assertions = (
+            [check_dto_dynamic(dto, live_result["spans"]) for dto in dtos_data["dtos"]]
+            if live_result["status"] == "ok" else []
+        )
+        live_execution = {
+            "status": live_result["status"],
+            "requests": live_result["requests"],
+            "latency_p50_ms": live_result["latency_p50_ms"],
+            "latency_p95_ms": live_result["latency_p95_ms"],
+            "fail_open": live_result["fail_open"],
+            "event_assertions": live_event_assertions,
+            "unknown_attributes": check_unknown_attributes(live_result["spans"], event_schema),
+            "reason": live_result["reason"],
+        }
+
     report = {
         "schema_version": "0.1.0", "repo_git_sha": git_sha,
         "ladder_rung": ladder_rung, "verdict": verdict,
         "regression_gate": regression_gate,
         "event_assertions": event_assertions,
         "propagation_checks": propagation_checks,
+        "live_execution": live_execution,
         "results": results, "summary": summary,
     }
     validate("validation_report", report)
@@ -1011,6 +1070,16 @@ def cmd_validate(args):
     print(f"propagation_checks: {propagation_counts['present']} present, "
           f"{propagation_counts['absent']} absent, {propagation_counts['skipped']} skipped, "
           f"{propagation_counts['not_applicable']} not_applicable", file=sys.stderr)
+    if live_execution is None:
+        print("live_execution: not_attempted", file=sys.stderr)
+    else:
+        print(f"live_execution: {live_execution['status']}"
+              + (f" -- {live_execution['reason']}" if live_execution["reason"] else ""), file=sys.stderr)
+        if live_execution["status"] == "ok":
+            print(f"  latency_p50_ms={live_execution['latency_p50_ms']:.1f} "
+                  f"latency_p95_ms={live_execution['latency_p95_ms']:.1f} "
+                  f"fail_open={live_execution['fail_open']} "
+                  f"unknown_attributes={live_execution['unknown_attributes']['status']}", file=sys.stderr)
     return 0
 
 
@@ -1183,6 +1252,29 @@ def build_parser():
                                   "test failure forces verdict=validation_failed) and per-DTO event_assertions "
                                   "(observed/not_observed against real captured OTel spans). Without this "
                                   "flag, behavior is unchanged (static-only). Does not change ladder_rung.")
+    p_validate.add_argument("--live", action="store_true",
+                             help="Also start the target as a real running service alongside a real local "
+                                  "OTel collector (E6 R1's mechanism) and drive --requests against it -- "
+                                  "requires Docker and --start-command/--port/--requests together. Reports "
+                                  "real captured requests/latency/spans under live_execution. Does not change "
+                                  "ladder_rung or verdict (R1's full promotion rule isn't built yet).")
+    p_validate.add_argument("--start-command", default=None,
+                             help="The target's own long-running server start command (required with --live)")
+    p_validate.add_argument("--port", type=int, default=None,
+                             help="Port the target's server listens on (required with --live)")
+    p_validate.add_argument("--requests", default=None,
+                             help="Path to a JSON file: a list of {\"method\", \"path\"} objects to drive "
+                                  "against the running target (required with --live)")
+    p_validate.add_argument("--event-schema", default=None,
+                             help="Path to an event_schema.json from `oah event-schema` -- when given with "
+                                  "--live, captured spans' attribute names are checked against it for unknown "
+                                  "attributes; omit to skip that check (reported as not_attempted)")
+    p_validate.add_argument("--setup-script", default=None,
+                             help="Optional shell script run at image-build time (has network access) before "
+                                  "--start-command runs, e.g. to install the target's own dependencies -- same "
+                                  "role as sandbox.py's own setup_script. Unlike --dynamic's pytest_runner, "
+                                  "--live has no built-in install-fallback ladder, so a target needing "
+                                  "opentelemetry-api/-sdk (or its own dependencies) to even start needs this.")
     p_validate.set_defaults(func=cmd_validate)
 
     p_backend_config = sub.add_parser(

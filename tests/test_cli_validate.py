@@ -69,9 +69,10 @@ def test_validate_end_to_end_present(tmp_path):
     assert result["verdict"] == "needs_review"
     assert result["results"][0]["status"] == "present"
     assert result["summary"] == {"total": 1, "present": 1, "absent": 0, "skipped": 0}
-    # No `dynamic` attribute on this Namespace at all -- proves the
-    # getattr(args, "dynamic", False) default matches old behavior.
+    # No `dynamic`/`live` attribute on this Namespace at all -- proves the
+    # getattr(args, ..., False) defaults match old behavior.
     assert result["regression_gate"] == {"status": "not_attempted", "reason": None}
+    assert result["live_execution"] is None
     assert result["event_assertions"] == [{"dto_id": "dto-0001", "status": "not_attempted", "reason": None}]
     assert result["propagation_checks"] == [{"dto_id": "dto-0001", "status": "not_applicable", "reason": "this checker only evaluates propagate_context DTOs"}]
 

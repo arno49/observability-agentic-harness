@@ -461,6 +461,38 @@ deterministic layer calls for), no TCR taxonomy, no `--live` CLI flag, no
 by this landing. R3, the agentic panel, and a real corpus-repo target all
 remain blocked exactly as stated above.
 
+**`--live` wired into `oah validate`** (2026-08-26): `oah/validate/live_diff.py`'s
+`check_unknown_attributes` plus new `--live`/`--start-command`/`--port`/
+`--requests`/`--event-schema`/`--setup-script` flags on `oah validate`,
+mirroring exactly the same "mechanism first, wiring second" split R2 went
+through (`sandbox.py` → `regression_gate.py`/`dynamic.py`). Real per-DTO
+event assertion against R1-captured spans reuses `oah/validate/event_assertion.py`'s
+existing `check_dto_dynamic` directly, no new per-DTO matching logic
+duplicated. A real gap surfaced only while wiring the CLI, not visible from
+the mechanism module alone: `run_live_sandbox` has no built-in install
+ladder the way `pytest_runner.py` does for `--dynamic` — without a
+`--setup-script` flag, `--live` had no way to install even
+`opentelemetry-api` before starting a target using the S10 skill's own
+taught pattern, making the flag unusable for exactly the target shape this
+whole R2/R1 effort is built around; added before it shipped, not left
+broken. Reported under a new `live_execution` report field (`status`
+mirroring `run_live_sandbox`'s own vocabulary, real captured
+`requests`/`latency_p50_ms`/`latency_p95_ms`/`fail_open`, per-DTO
+`event_assertions`, `unknown_attributes`). **`ladder_rung`/`verdict` are
+still untouched by `--live`** — R1's own promotion rule needs a real TCR
+taxonomy and a latency-vs-budget comparison (the DTO schema's own
+`estimated_overhead_ms` field is the natural, still-unused hook) plus
+`event_schema.json`'s semantic invariant checks, none built yet, named as
+the explicit next step. Proven end to end with a real Docker container
+through `cmd_validate` itself (`tests/test_cli_validate_live.py`): a real
+target instrumented per the S10 skill's own pattern reports real captured
+requests, real latency, and `event_assertions: observed`; a deliberately
+mismatched `event_schema.json` correctly flags a real
+`unknown_attributes_found`. 461 tests passing (up from 453), the new
+real-Docker files run twice in a row clean, matching the same
+"a single green run doesn't prove a real-Docker mechanism isn't flaky"
+discipline the R1 mechanism phase itself established.
+
 ### E7 — Reference corpus & skill evals
 Curate open-source LLM apps across architectures (simple RAG chat, multi-agent
 system, queue-based pipeline) and, once SP10 lands, across languages (Python first;

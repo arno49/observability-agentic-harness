@@ -4,7 +4,7 @@
   "title": "S11 validation report",
   "description": "docs/validation.md's degradation ladder. ladder_rung/verdict are computed by oah/validate/verdict.py's compute_ladder_verdict, the one place this decision is made -- see its own module docstring for the exact rule. Short version: ladder_rung is 'R2'/verdict 'validated' only when --dynamic ran, the regression gate passed, there is at least one DTO S10 actually applied, and every one of those DTOs' relevant checks came back positive (event_assertions 'observed' for ordinary DTOs, propagation_checks 'present' for propagate_context DTOs) -- matching the ladder table's own definition of R2 as BOTH checks together, not either alone. Anything short of that stays 'R4' (static-only ceiling, or --dynamic ran but didn't fully earn R2), 'needs_review' -- except a real regression_gate failure, which is 'validation_failed' regardless of the static/propagation results. regression_gate wires E6 R2's sandbox mechanism into the deterministic layer's own step 1 ('instrumentation must not break the product') independent of ladder_rung. R1/R3 (running the product live, a real OTLP collector, real traffic, the agentic audit panel) all need real target execution beyond the test suite, not attempted here -- ladder_rung and verdict grow further when they land, not silently redefined.",
   "type": "object",
-  "required": ["schema_version", "repo_git_sha", "ladder_rung", "verdict", "regression_gate", "event_assertions", "propagation_checks", "results", "summary"],
+  "required": ["schema_version", "repo_git_sha", "ladder_rung", "verdict", "regression_gate", "event_assertions", "propagation_checks", "live_execution", "results", "summary"],
   "additionalProperties": false,
   "properties": {
     "schema_version": { "const": "0.1.0" },
@@ -70,6 +70,70 @@
             "type": ["string", "null"],
             "description": "Explains 'skipped'/'absent'; null for 'not_applicable'/'present'."
           }
+        }
+      }
+    },
+    "live_execution": {
+      "type": ["object", "null"],
+      "description": "E6 R1's execution mechanism (oah/validate/live_sandbox.py) wired via `oah validate --live`: a real running target service alongside a real local OTel collector, real driven traffic. null when --live wasn't passed at all. Does NOT move ladder_rung/verdict -- R1's own promotion rule (real TCR, a budget comparison, semantic event_schema.json invariant checks) isn't built yet, see ROADMAP.md's E6 entry.",
+      "required": ["status", "requests", "latency_p50_ms", "latency_p95_ms", "fail_open", "event_assertions", "unknown_attributes", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": ["docker_unavailable", "build_failed", "startup_failed", "ok"],
+          "description": "Mirrors live_sandbox.run_live_sandbox's own status vocabulary directly. Only 'ok' has real requests/latency/spans data attached."
+        },
+        "requests": {
+          "type": "array",
+          "description": "One entry per item in --requests, in order -- real per-request outcome from the live run.",
+          "items": {
+            "type": "object",
+            "required": ["path", "status_code", "latency_ms"],
+            "additionalProperties": false,
+            "properties": {
+              "path": { "type": "string" },
+              "status_code": { "type": ["integer", "null"] },
+              "latency_ms": { "type": ["number", "null"] }
+            }
+          }
+        },
+        "latency_p50_ms": { "type": ["number", "null"] },
+        "latency_p95_ms": { "type": ["number", "null"] },
+        "fail_open": {
+          "type": ["boolean", "null"],
+          "description": "null unless a fail-open check was requested; see live_sandbox.run_live_sandbox's own kill_collector_after_request (not yet exposed via the CLI this phase)."
+        },
+        "event_assertions": {
+          "type": "array",
+          "description": "One entry per DTO in the input implementation_dto.json, in the same order -- reuses oah/validate/event_assertion.py's check_dto_dynamic directly against spans captured by the live run. Empty when live_execution.status != 'ok' (nothing real to assert against) or when no DTOs were given.",
+          "items": {
+            "type": "object",
+            "required": ["dto_id", "status", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "dto_id": { "type": "string" },
+              "status": { "enum": ["observed", "not_observed"] },
+              "reason": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "unknown_attributes": {
+          "type": "object",
+          "description": "oah/validate/live_diff.py's check_unknown_attributes: do captured spans carry any attribute name event_schema.json doesn't declare?",
+          "required": ["status", "unknown", "reason"],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": ["not_attempted", "clean", "unknown_attributes_found"],
+              "description": "not_attempted: --event-schema wasn't given. clean: every captured attribute name is declared. unknown_attributes_found: at least one wasn't -- see 'unknown'."
+            },
+            "unknown": { "type": "array", "items": { "type": "string" } },
+            "reason": { "type": ["string", "null"] }
+          }
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "description": "Explains a non-'ok' status; null for 'ok'."
         }
       }
     },
