@@ -241,9 +241,21 @@ def cmd_map(args):
                 args.target, git_sha=git_sha, disambiguated=disambiguated
             )
 
-        rm.mark_stage_completed(manifest, "s1")
-        manifest["completed_at"] = _now()
-        db.mark_run_status(run_id, "completed", manifest["completed_at"])
+        # Found by adversarial review: this used to mark s1 "completed" in
+        # both the run manifest and the state DB unconditionally, even when
+        # disambiguation never ran (missing credentials, a raised
+        # DisambiguationError) or candidates are still unresolved --
+        # run_manifest.json is documented as a provenance/audit record, and
+        # an audit record that claims a stage finished when it didn't is
+        # exactly the "confirmed"-overclaiming pattern already found and
+        # fixed elsewhere in readiness_report.py this session.
+        s1_fully_resolved = not disambiguation_error and not still_ambiguous
+        if s1_fully_resolved:
+            rm.mark_stage_completed(manifest, "s1")
+            manifest["completed_at"] = _now()
+            db.mark_run_status(run_id, "completed", manifest["completed_at"])
+        else:
+            db.mark_run_status(run_id, "incomplete")
 
     rm.save(manifest)
     surface_map = scan_result["surface_map"] if disambiguated is None else surface_map

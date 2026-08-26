@@ -97,3 +97,87 @@ def test_disambiguation_checkpointed_independently_from_scan(tmp_path, monkeypat
     assert call_count["n"] == 1  # unchanged -- reused the checkpoint
 
     assert json.loads((tmp_path / "sm1.json").read_text()) == json.loads((tmp_path / "sm2.json").read_text())
+
+
+# --- Run-manifest honesty (found by adversarial review) --------------------
+# cmd_map used to mark "s1" completed in both run_manifest.json and the
+# state DB unconditionally, even when disambiguation never actually
+# resolved every candidate -- an audit record (run_manifest.json's own
+# documented purpose) that claims a stage finished when it didn't.
+
+def test_manifest_not_marked_complete_when_disambiguation_credentials_missing(tmp_path, monkeypatch):
+    from oah import run_manifest as rm
+
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text(
+        "import anthropic\n"
+        "clients = {'primary': anthropic.Anthropic()}\n"
+        "response = clients['primary'].messages.create(model='x')\n"
+    )
+    _init_git_repo(target)
+    monkeypatch.chdir(tmp_path)
+
+    args = argparse.Namespace(
+        target=str(target), output=str(tmp_path / "sm.json"),
+        run_id="no-creds-run", no_disambiguate=False,
+    )
+    with patch("oah.discovery.disambiguate.missing_credentials", return_value="ANTHROPIC_API_KEY is not set"):
+        rc = cmd_map(args)
+
+    assert rc == 0
+    manifest = rm.load("no-creds-run")
+    assert "s1" not in manifest["stages_completed"]
+    assert manifest["completed_at"] is None
+
+
+def test_manifest_not_marked_complete_when_no_disambiguate_flag_leaves_candidates_unresolved(tmp_path, monkeypatch):
+    from oah import run_manifest as rm
+
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text(
+        "import anthropic\n"
+        "clients = {'primary': anthropic.Anthropic()}\n"
+        "response = clients['primary'].messages.create(model='x')\n"
+    )
+    _init_git_repo(target)
+    monkeypatch.chdir(tmp_path)
+
+    args = argparse.Namespace(
+        target=str(target), output=str(tmp_path / "sm.json"),
+        run_id="skip-disambig-run", no_disambiguate=True,
+    )
+    rc = cmd_map(args)
+
+    assert rc == 0
+    manifest = rm.load("skip-disambig-run")
+    assert "s1" not in manifest["stages_completed"]
+    assert manifest["completed_at"] is None
+
+
+def test_manifest_marked_complete_when_no_ambiguous_candidates_exist(tmp_path, monkeypatch):
+    """The common, simple case (nothing ambiguous at all) must still mark
+    s1 complete -- this fix must not regress the honest-and-true case."""
+    from oah import run_manifest as rm
+
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text(
+        "import anthropic\n"
+        "client = anthropic.Anthropic()\n"
+        "response = client.messages.create(model='x')\n"
+    )
+    _init_git_repo(target)
+    monkeypatch.chdir(tmp_path)
+
+    args = argparse.Namespace(
+        target=str(target), output=str(tmp_path / "sm.json"),
+        run_id="clean-run", no_disambiguate=False,
+    )
+    rc = cmd_map(args)
+
+    assert rc == 0
+    manifest = rm.load("clean-run")
+    assert "s1" in manifest["stages_completed"]
+    assert manifest["completed_at"] is not None
