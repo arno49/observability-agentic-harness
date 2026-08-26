@@ -9,8 +9,9 @@
   "properties": {
     "schema_version": { "const": "0.1.0" },
     "lens": {
-      "enum": ["tracing", "generation-capture", "retrieval", "tools", "feedback",
-               "pii-governance", "cost", "realtime-multimodal", "ops"]
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Was a closed nine-lens enum; opened to any well-formed identifier (docs/decisions/011) so a second domain pack's own lens roster validates without a schema edit. Real membership is the loaded pack's lenses[].lens values -- enforced structurally in oah/cli.py (only a pack-declared lens is ever invoked), not by this schema."
     },
     "repo_git_sha": { "type": "string" },
     "failure_mode": {
@@ -37,7 +38,11 @@
             "required": ["kind"],
             "description": "S5: 'event fields map to OTel GenAI semantic conventions or declared oah.* extensions.'",
             "properties": {
-              "kind": { "enum": ["otel_genai", "oah_extension"] },
+              "kind": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "description": "Was a closed ('otel_genai', 'oah_extension') enum; opened to any well-formed identifier (docs/decisions/011). Real membership is the loaded pack's attribute_kind_values -- checked by oah/design/gates.py's fields_map_to_otel_or_extension gate, not this schema."
+              },
               "attribute": { "type": "string", "description": "e.g. gen_ai.usage.input_tokens, or oah.retrieval.truncated" }
             }
           },

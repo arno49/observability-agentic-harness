@@ -19,8 +19,9 @@
         "properties": {
           "id": { "type": "string" },
           "kind": {
-            "enum": ["llm_generation", "retrieval", "tool_call", "agent_loop", "queue_producer",
-                     "queue_consumer", "guardrail", "human_review_hook", "feedback_ingest", "realtime_session"]
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Was a closed ten-kind enum; opened to any well-formed identifier (docs/decisions/011) -- see surface_map.schema.json's kind field for why."
           },
           "file": { "type": "string" },
           "line": { "type": "integer" },

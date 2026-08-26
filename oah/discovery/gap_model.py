@@ -13,22 +13,31 @@ point with no hint, or a hint that matches nothing in context.yaml, keeps
 the coverage-only baseline priority and correctly omits priority_drivers
 rather than guessing.
 """
+from oah.domains.loader import load_pack
+
 PROXIMITY_LINES = 15  # a logger call site within this many lines of a
                        # surface point counts as "partial" coverage — a
                        # heuristic, not a claim the log line actually
                        # captures anything about that specific call.
 
-# S1 currently detects five surface_map point kinds (llm_generation,
-# retrieval, feedback_ingest, realtime_session, tool_call) -- the
-# dimension mapping below has five entries for that reason, not an
-# oversight; extend as S1/S4's kind vocabulary grows.
-KIND_TO_DIMENSION = {
-    "llm_generation": "generation_capture",
-    "retrieval": "retrieval",
-    "feedback_ingest": "feedback",
-    "realtime_session": "realtime_multimodal",
-    "tool_call": "tools",
-}
+
+def kind_to_dimension(pack):
+    """{kind: dimension} for every point kind the pack owns -- replaces
+    the literal KIND_TO_DIMENSION dict (E13, docs/decisions/011). A kind
+    absent from the pack behaves exactly as an unmapped kind always has
+    here: build_gap_model's own `continue` skips it, silently, same as
+    before extraction -- turning that into a loud error is a real,
+    visible behavior change and a deliberately deferred follow-up, not
+    done in this pass."""
+    return {pk["kind"]: pk["dimension"] for pk in pack["point_kinds"]}
+
+
+# Default: the genai pack's own mapping, so a caller that doesn't pass
+# `pack` to build_gap_model gets byte-identical behavior to before
+# extraction (five entries, since S1 currently only detects five
+# surface_map point kinds -- extend the pack as S1/S4's kind vocabulary
+# grows, not this module).
+KIND_TO_DIMENSION = kind_to_dimension(load_pack("genai"))
 
 # status -> criticality -> priority. p0 reserved for the most severe case
 # (dark coverage on a workflow the owner called critical); a covered point
@@ -84,12 +93,16 @@ def classify_coverage(point, telemetry_inventory):
     return "dark", []
 
 
-def build_gap_model(surface_map, telemetry_inventory, context=None, harness_version="0.1.0"):
+def build_gap_model(surface_map, telemetry_inventory, context=None, harness_version="0.1.0", pack=None):
+    """`pack`, if given, supplies the kind->dimension mapping (a loaded
+    domain_pack.schema.json manifest); omitted means the genai pack's own
+    mapping, byte-identical to this module's pre-extraction behavior."""
+    kind_to_dim = kind_to_dimension(pack) if pack is not None else KIND_TO_DIMENSION
     gaps = []
     dark = partial = covered = 0
 
     for i, point in enumerate(surface_map["points"], start=1):
-        dimension = KIND_TO_DIMENSION.get(point["kind"])
+        dimension = kind_to_dim.get(point["kind"])
         if dimension is None:
             continue  # a kind with no known dimension mapping yet — not a gap this pass can classify
 

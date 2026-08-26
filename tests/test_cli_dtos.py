@@ -37,7 +37,7 @@ def test_dtos_end_to_end_with_mocked_lens_and_generator(tmp_path):
             }],
         }
 
-    def fake_generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=None, _completion_fn=None):
+    def fake_generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=None, _completion_fn=None, pack=None):
         point_id = points[0]["id"]
         gap_id = gaps[0]["id"]
         return {
@@ -100,7 +100,7 @@ def test_dtos_passes_context_through_to_generate_dtos(tmp_path):
 
     captured = {}
 
-    def fake_generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=None, _completion_fn=None):
+    def fake_generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=None, _completion_fn=None, pack=None):
         captured["context"] = context
         point_id = points[0]["id"]
         gap_id = gaps[0]["id"]

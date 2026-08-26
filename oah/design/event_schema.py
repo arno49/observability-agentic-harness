@@ -15,6 +15,9 @@ same underlying `maps_to.attribute` with disagreeing `kind` or
 `sensitivity_tier`. That's not this module's call to silently resolve —
 raised as a real error, not merged by picking one arbitrarily.
 """
+from oah.domains.loader import load_pack
+
+_GENAI_PACK = load_pack("genai")
 
 
 class EventSchemaConflictError(Exception):
@@ -24,7 +27,7 @@ class EventSchemaConflictError(Exception):
     around judgment calls."""
 
 
-def build_event_schema(design_fragments, repo_git_sha, semconv_pin=None):
+def build_event_schema(design_fragments, repo_git_sha, semconv_pin=None, pack=None):
     by_attribute = {}
 
     for fragment in design_fragments:
@@ -73,14 +76,23 @@ def build_event_schema(design_fragments, repo_git_sha, semconv_pin=None):
             "surface_point_ids": sorted(attr["surface_point_ids"]),
         })
 
+    # Replaces the two literal otel_genai_count/oah_extension_count keys
+    # (docs/decisions/011): one {value}_count key per the loaded pack's own
+    # attribute_kind_values. `pack` omitted means the genai pack, whose two
+    # values (otel_genai, oah_extension) produce byte-identical key names to
+    # before extraction.
+    kind_counts = {
+        f"{value}_count": sum(1 for a in attributes if a["kind"] == value)
+        for value in (pack or _GENAI_PACK)["attribute_kind_values"]
+    }
+
     result = {
         "schema_version": "0.1.0",
         "repo_git_sha": repo_git_sha,
         "attributes": attributes,
         "summary": {
             "attribute_count": len(attributes),
-            "otel_genai_count": sum(1 for a in attributes if a["kind"] == "otel_genai"),
-            "oah_extension_count": sum(1 for a in attributes if a["kind"] == "oah_extension"),
+            **kind_counts,
             "lenses_included": sorted({lens for a in attributes for lens in a["source_lenses"]}),
         },
     }

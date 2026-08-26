@@ -22,6 +22,8 @@ in general.
 """
 from dataclasses import dataclass, field
 
+from oah.domains.loader import load_pack
+
 
 @dataclass
 class Finding:
@@ -31,12 +33,7 @@ class Finding:
     severity: str = "error"  # "error" blocks progression; "warning" doesn't
 
 
-# Naming pairs where, if both appear as signal names in one fragment with no
-# consistency_assertions covering them, it's worth a human/S6 second look --
-# advisory only, per this module's stated scope boundary above.
-_ADVISORY_CONTRADICTION_PAIRS = [
-    ({"restricted", "access_denied", "access_result"}, {"needs_review"}),
-]
+_GENAI_PACK = load_pack("genai")
 
 
 def _non_trivial(s):
@@ -88,11 +85,16 @@ def check_signals_name_decision_and_role(fragment):
     return Finding("signals_name_decision_and_role", True, "every signal names a decision and a role")
 
 
-def check_fields_map_to_otel_or_extension(fragment):
+def check_fields_map_to_otel_or_extension(fragment, pack=None):
+    """maps_to.kind's valid values are the loaded pack's own
+    attribute_kind_values (docs/decisions/011) -- replaces the literal
+    ('otel_genai', 'oah_extension') tuple. `pack` omitted means the genai
+    pack, byte-identical to before extraction."""
+    valid_kinds = set((pack or _GENAI_PACK)["attribute_kind_values"])
     bad = []
     for s in fragment.get("signals", []):
         maps_to = s.get("maps_to", {})
-        if maps_to.get("kind") not in ("otel_genai", "oah_extension") or not _non_trivial(maps_to.get("attribute")):
+        if maps_to.get("kind") not in valid_kinds or not _non_trivial(maps_to.get("attribute")):
             bad.append(s["name"])
     if bad:
         return Finding(
@@ -128,13 +130,18 @@ def check_consistency_assertions_referential_integrity(fragment):
     return Finding("consistency_assertions_referential_integrity", True, "all assertions reference real signals")
 
 
-def check_advisory_possible_missing_consistency_assertion(fragment):
+def check_advisory_possible_missing_consistency_assertion(fragment, pack=None):
+    """Word-pair lexicon is the loaded pack's own advisory_contradiction_pairs
+    (docs/decisions/011) -- replaces the literal module-level list. `pack`
+    omitted means the genai pack, byte-identical to before extraction."""
     signal_names = {s["name"] for s in fragment.get("signals", [])}
     covered_pairs = set()
     for a in fragment.get("consistency_assertions", []):
         covered_pairs.add(frozenset(a["fields_involved"]))
 
-    for group_a, group_b in _ADVISORY_CONTRADICTION_PAIRS:
+    contradiction_pairs = [(set(p["left"]), set(p["right"]))
+                            for p in (pack or _GENAI_PACK).get("advisory_contradiction_pairs", [])]
+    for group_a, group_b in contradiction_pairs:
         matches_a = {n for n in signal_names if any(k in n for k in group_a)}
         matches_b = {n for n in signal_names if any(k in n for k in group_b)}
         for a in matches_a:
@@ -205,12 +212,22 @@ _NEEDS_POINT_IDS = {
     check_latency_budget_declared_per_point,
 }
 
+# Gates that read pack-declared vocabulary (docs/decisions/011) -- given the
+# loaded pack as a keyword arg, defaulting to genai inside each gate when
+# run_gates itself is called with pack=None.
+_NEEDS_PACK = {
+    check_fields_map_to_otel_or_extension,
+    check_advisory_possible_missing_consistency_assertion,
+}
 
-def run_gates(fragment, surface_map_point_ids):
+
+def run_gates(fragment, surface_map_point_ids, pack=None):
     findings = []
     for gate in ALL_GATES:
         if gate in _NEEDS_POINT_IDS:
             findings.append(gate(fragment, surface_map_point_ids))
+        elif gate in _NEEDS_PACK:
+            findings.append(gate(fragment, pack=pack))
         else:
             findings.append(gate(fragment))
     return findings

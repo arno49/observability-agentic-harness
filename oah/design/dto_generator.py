@@ -11,6 +11,7 @@ import json
 from jsonschema import Draft202012Validator
 
 from oah._resources import resolve_dir
+from oah.domains.loader import load_pack
 from oah.llm_client import DEFAULT_MODEL, MissingLLMDependencyError, get_completion_fn, missing_credentials
 from oah.schemas import validate as validate_shared_schema
 from oah.telemetry import llm_span
@@ -26,22 +27,27 @@ SKILL_NAME = "s8-dto-generator"
 _CRITICALITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 _UNKNOWN_WORKFLOW_RANK = 4
 
-# architecture.md S7: "tracing + generation capture first, feedback loop
-# second, auto-scoring third." Only three dimension names are named by
-# that rule; schemas/gap_model.schema.json's dimension enum has no
-# auto_scoring member yet (no lens/point-kind produces one), so rank 2
-# ("auto-scoring third") is never actually reachable today -- stated here,
-# not silently assumed. Every other real dimension (retrieval, tools,
-# pii_governance, cost, operations, error_taxonomy, self_telemetry,
-# realtime_multimodal) gets the stated default rank between the two
-# named tiers, not a fabricated
-# more-specific one architecture.md never assigned it.
-_DIMENSION_ROLLOUT_RANK = {
-    "tracing": 0,
-    "generation_capture": 0,
-    "feedback": 2,
-}
 _DEFAULT_DIMENSION_RANK = 1
+
+
+def dimension_rollout_rank(pack):
+    """{dimension: rollout_rank} from the loaded pack's point_kinds
+    (docs/decisions/011) -- replaces the literal _DIMENSION_ROLLOUT_RANK
+    dict. architecture.md S7: 'tracing + generation capture first, feedback
+    loop second, auto-scoring third' -- the genai pack's own point_kinds
+    reproduce the two reachable ranks (generation_capture: 0, feedback: 2)
+    exactly; 'tracing' has no point kind (it's cross-cutting, not tied to
+    one) so its rank-0 entry was already unreachable before extraction (no
+    gap ever has dimension='tracing') and isn't reproduced here -- dropping
+    genuinely dead code, not a behavior change on any real gap."""
+    return {pk["dimension"]: pk.get("rollout_rank", _DEFAULT_DIMENSION_RANK) for pk in pack["point_kinds"]}
+
+
+_GENAI_PACK = load_pack("genai")
+# Default: byte-identical to the pre-extraction literal for every reachable
+# dimension (generation_capture: 0, feedback: 2, everything else the stated
+# default of 1).
+_DIMENSION_ROLLOUT_RANK = dimension_rollout_rank(_GENAI_PACK)
 
 # Gap priority (p0 first) as the final tiebreak -- meaningful on its own
 # (severity + coverage status) even without context.yaml, so it still
@@ -76,7 +82,7 @@ def _workflow_criticality_rank(workflow_name, context):
     return _UNKNOWN_WORKFLOW_RANK
 
 
-def _assign_rollout_steps(dtos, gaps_by_id, context=None):
+def _assign_rollout_steps(dtos, gaps_by_id, context=None, pack=None):
     """Deterministic, real workflow-criticality-and-dimension ordering
     (architecture.md S7), not a gap-priority-only stand-in: groups by
     workflow criticality first (most critical workflow's DTOs all roll
@@ -84,6 +90,8 @@ def _assign_rollout_steps(dtos, gaps_by_id, context=None):
     same-criticality workflows don't interleave), then by the named
     dimension tiering, then gap priority, then dto id for full
     determinism given the same inputs."""
+    dimension_rank = dimension_rollout_rank(pack) if pack is not None else _DIMENSION_ROLLOUT_RANK
+
     def sort_key(dto):
         gap = gaps_by_id.get(dto["gap_id"])
         workflow_name = gap.get("workflow") if gap else None
@@ -92,7 +100,7 @@ def _assign_rollout_steps(dtos, gaps_by_id, context=None):
         return (
             _workflow_criticality_rank(workflow_name, context),
             workflow_name or "",
-            _DIMENSION_ROLLOUT_RANK.get(dimension, _DEFAULT_DIMENSION_RANK),
+            dimension_rank.get(dimension, _DEFAULT_DIMENSION_RANK),
             _PRIORITY_RANK.get(priority, 9999),
             dto["id"],
         )
@@ -102,7 +110,7 @@ def _assign_rollout_steps(dtos, gaps_by_id, context=None):
     return dtos
 
 
-def generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=None, _completion_fn=None):
+def generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=None, _completion_fn=None, pack=None):
     """Returns a dict conforming to schemas/implementation_dto.schema.json
     (the real, shared schema — rollout_step included, assigned here, not
     by the model). `context` (context.yaml, if an interview has run) is
@@ -170,7 +178,7 @@ def generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=
                 )
 
     gaps_by_id = {g["id"]: g for g in gaps}
-    parsed["dtos"] = _assign_rollout_steps(parsed["dtos"], gaps_by_id, context=context)
+    parsed["dtos"] = _assign_rollout_steps(parsed["dtos"], gaps_by_id, context=context, pack=pack)
 
     validate_shared_schema("implementation_dto", parsed)
     return parsed

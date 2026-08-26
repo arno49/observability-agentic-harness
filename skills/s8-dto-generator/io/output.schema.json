@@ -42,8 +42,11 @@
               "required": ["event_type"],
               "additionalProperties": false,
               "properties": {
-                "event_type": { "enum": ["trace", "span", "generation", "retrieval_span", "tool_span",
-                                          "guardrail_span", "feedback_event", "degradation_event", "escalation_event"] },
+                "event_type": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$",
+                  "description": "Was a closed nine-value, GenAI-shaped enum, duplicated from schemas/implementation_dto.schema.json; opened to any well-formed identifier (docs/decisions/011) so the two stay in sync by construction instead of by hand -- both now defer real membership to the loaded pack's event_types."
+                },
                 "required_attributes": { "type": "array", "items": { "type": "string" } },
                 "consistency_assertions": { "type": "array", "items": { "type": "string" } },
                 "parented_under": { "type": "string" }

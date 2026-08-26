@@ -1,0 +1,176 @@
+{
+  "dtos": {
+    "dtos": [
+      {
+        "change": {
+          "anchor": "run",
+          "file": "chat.py",
+          "type": "wrap_call"
+        },
+        "expected_events": [
+          {
+            "event_type": "generation",
+            "required_attributes": [
+              "gen_ai.usage.input_tokens"
+            ]
+          }
+        ],
+        "gap_id": "gap-0001",
+        "id": "dto-0001",
+        "risk": "low",
+        "rollout_step": 1,
+        "surface_point_ids": [
+          "sp-0001"
+        ]
+      }
+    ],
+    "schema_version": "0.1.0"
+  },
+  "event_schema": {
+    "attributes": [
+      {
+        "deprecated_by": null,
+        "kind": "otel_genai",
+        "name": "gen_ai.usage.input_tokens",
+        "sensitivity_tier": "internal",
+        "source_lenses": [
+          "generation-capture"
+        ],
+        "stability": "development",
+        "surface_point_ids": [
+          "sp-0001"
+        ]
+      }
+    ],
+    "repo_git_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "schema_version": "0.1.0",
+    "summary": {
+      "attribute_count": 1,
+      "lenses_included": [
+        "generation-capture"
+      ],
+      "oah_extension_count": 0,
+      "otel_genai_count": 1
+    }
+  },
+  "gap_model": {
+    "gaps": [
+      {
+        "dimension": "generation_capture",
+        "existing_telemetry_refs": [
+          "log-0001",
+          "log-0002"
+        ],
+        "id": "gap-0001",
+        "priority": "p2",
+        "rationale": "llm_generation call site at chat.py:16 is partial for generation_capture \u2014 a logger call exists nearby, but proximity is not proof of coverage",
+        "status": "partial",
+        "surface_point_ids": [
+          "sp-0001"
+        ]
+      }
+    ],
+    "repo_git_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "schema_version": "0.1.0",
+    "summary": {
+      "covered_points": 0,
+      "dark_points": 0,
+      "estimated_tcr_current": 0.0,
+      "partial_points": 1
+    }
+  },
+  "gate_findings": [
+    {
+      "gate": "every_surface_point_has_decision",
+      "passed": true,
+      "reason": "every surface point covered",
+      "severity": "error"
+    },
+    {
+      "gate": "no_phantom_surface_points",
+      "passed": true,
+      "reason": "no signal references a point outside the input batch",
+      "severity": "error"
+    },
+    {
+      "gate": "signals_name_decision_and_role",
+      "passed": true,
+      "reason": "every signal names a decision and a role",
+      "severity": "error"
+    },
+    {
+      "gate": "fields_map_to_otel_or_extension",
+      "passed": true,
+      "reason": "every signal maps to a concrete attribute",
+      "severity": "error"
+    },
+    {
+      "gate": "pii_masked_above_tier",
+      "passed": true,
+      "reason": "no unmasked PII above declared tier",
+      "severity": "error"
+    },
+    {
+      "gate": "consistency_assertions_referential_integrity",
+      "passed": true,
+      "reason": "all assertions reference real signals",
+      "severity": "error"
+    },
+    {
+      "gate": "advisory_possible_missing_consistency_assertion",
+      "passed": true,
+      "reason": "no obvious uncovered pair found",
+      "severity": "error"
+    },
+    {
+      "gate": "latency_budget_declared_per_point",
+      "passed": true,
+      "reason": "every surface point has a declared latency budget",
+      "severity": "error"
+    },
+    {
+      "gate": "failure_mode_fail_open",
+      "passed": true,
+      "reason": "failure_mode is fail_open",
+      "severity": "error"
+    },
+    {
+      "gate": "decision_menu_resumption_paired",
+      "passed": true,
+      "reason": "every pause/freeze/throttle step has a resumption condition",
+      "severity": "error"
+    }
+  ],
+  "surface_map": {
+    "coverage_stats": {
+      "files_scanned": 1,
+      "points_llm_disambiguated": 0,
+      "points_total": 1
+    },
+    "generated_by": {
+      "harness_version": "0.0.2",
+      "skill_versions": {
+        "s1-surface-mapper": "0.1.0"
+      }
+    },
+    "points": [
+      {
+        "confidence": 0.95,
+        "detection": "signature",
+        "file": "chat.py",
+        "framework": "anthropic-sdk",
+        "id": "sp-0001",
+        "kind": "llm_generation",
+        "line": 16,
+        "notes": "receiver 'client' resolved via import/assignment/annotation tracking",
+        "sync_nature": "sync"
+      }
+    ],
+    "repo": {
+      "git_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "path": "<fixture>",
+      "primary_language": "python"
+    },
+    "schema_version": "0.1.0"
+  }
+}

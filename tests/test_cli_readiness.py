@@ -42,7 +42,7 @@ def test_readiness_end_to_end_with_mocked_lens_and_panel(tmp_path):
         return {"schema_version": "0.1.0", "persona": "cost_skeptic", "repo_git_sha": repo_git_sha,
                 "overall": "pass", "findings": []}
 
-    def fake_generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=None, _completion_fn=None):
+    def fake_generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=None, _completion_fn=None, pack=None):
         point_id = points[0]["id"]
         gap_id = gaps[0]["id"]
         return {

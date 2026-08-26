@@ -19,10 +19,14 @@ import re
 from jsonschema import Draft202012Validator
 
 from oah._resources import resolve_dir
+from oah.domains.loader import load_pack
+from oah.domains.validate import is_known_kind, known_kinds
 from oah.llm_client import (  # noqa: F401 (missing_credentials re-exported — see that module's docstring)
     DEFAULT_MODEL, MissingLLMDependencyError, get_completion_fn, missing_credentials,
 )
 from oah.telemetry import llm_span
+
+_GENAI_PACK = load_pack("genai")
 
 SKILL_PATH = resolve_dir("skills") / "s1-surface-mapper"
 
@@ -74,10 +78,17 @@ def _load_output_schema():
     return json.loads((SKILL_PATH / "io" / "output.schema.json").read_text())
 
 
-def disambiguate(candidates, model=None, _completion_fn=None):
+def disambiguate(candidates, model=None, _completion_fn=None, pack=None):
     """candidates: list matching skills/s1-surface-mapper/io/input.schema.json's
     `candidates` items. Returns a list matching that skill's
     io/output.schema.json `results` items.
+
+    `pack` (a loaded domain_pack.schema.json manifest, omitted meaning the
+    genai pack) supplies the valid `kind` vocabulary a result is checked
+    against after schema validation -- io/output.schema.json's own `kind`
+    enum was relaxed to an open string (docs/decisions/011), so this is the
+    one place that lost real protection against a hallucinated kind and
+    needs it re-added at runtime instead.
 
     `_completion_fn` is an injection point for tests (a stand-in for
     litellm.completion) — never used in real invocations, where it's None
@@ -154,5 +165,16 @@ def disambiguate(candidates, model=None, _completion_fn=None):
                     f"('never emit secrets, keys, or environment values'); investigate the "
                     f"model response rather than retrying blindly."
                 )
+
+    active_pack = pack if pack is not None else _GENAI_PACK
+    for result in parsed["results"]:
+        kind = result.get("kind")
+        if kind is not None and not is_known_kind(active_pack, kind):
+            raise DisambiguationError(
+                f"result for candidate_id={result.get('candidate_id')!r} has kind={kind!r}, "
+                f"which is not one of pack {active_pack['name']!r}'s declared point kinds "
+                f"({sorted(known_kinds(active_pack))}) -- refusing to merge a hallucinated kind "
+                f"into surface_map.json."
+            )
 
     return parsed["results"]

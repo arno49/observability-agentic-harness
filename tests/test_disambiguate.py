@@ -85,6 +85,22 @@ def test_valid_response_parsed_and_returned():
     assert results[0]["kind"] == "llm_generation"
 
 
+def test_hallucinated_kind_outside_pack_vocabulary_rejected():
+    """io/output.schema.json's kind field was a closed ten-value enum
+    before E13 (docs/decisions/011); opening it to any well-formed
+    identifier means the schema itself can no longer catch a hallucinated
+    kind, so disambiguate() must check it against the loaded pack's real
+    vocabulary at runtime instead -- this is the regression test for that
+    added check, not just the removed schema constraint."""
+    def fake_completion(**kwargs):
+        return _fake_response({"schema_version": "0.1.0", "results": [
+            {"candidate_id": "c1", "kind": "not_a_real_kind", "confidence": 0.9, "detection": "llm_disambiguation"},
+        ]})
+
+    with pytest.raises(DisambiguationError, match="not one of pack 'genai'"):
+        disambiguate([CANDIDATE], _completion_fn=fake_completion)
+
+
 def test_schema_invalid_response_raises_not_silently_accepted():
     def fake_completion(**kwargs):
         # Missing required "detection" field.

@@ -1,0 +1,91 @@
+{
+  "schema_version": "0.1.0",
+  "name": "genai",
+  "version": "0.1.0",
+  "description": "The GenAI domain pack: LLM-application observability. Extracted (E13, docs/decisions/011) from sixteen literals scattered across oah/cli.py, oah/design/gates.py, oah/discovery/gap_model.py, oah/discovery/registry.py and five schemas -- this manifest is the seam that extraction introduced, re-expressing this pack's existing behavior with zero change to it. Scoped to exactly what KIND_TO_DIMENSION and LENS_TO_POINT_KIND covered before extraction; surface_map.schema.json's other five kinds (agent_loop, queue_producer, queue_consumer, guardrail, human_review_hook) are not yet owned by any pack and are deliberately left out here rather than added with a guessed dimension.",
+
+  "point_kinds": [
+    { "kind": "llm_generation", "dimension": "generation_capture", "rollout_rank": 0, "detected_by": "registry" },
+    { "kind": "retrieval", "dimension": "retrieval", "detected_by": "registry" },
+    { "kind": "feedback_ingest", "dimension": "feedback", "rollout_rank": 2, "detected_by": "registry" },
+    { "kind": "realtime_session", "dimension": "realtime_multimodal", "detected_by": "registry" },
+    { "kind": "tool_call", "dimension": "tools", "detected_by": "structural_pattern" }
+  ],
+
+  "registries": [
+    {
+      "framework": "anthropic-sdk",
+      "surface_kind": "llm_generation",
+      "sdk_module": "anthropic",
+      "constructor_names": ["Anthropic", "AsyncAnthropic"],
+      "method_suffixes": [["messages", "create"], ["messages", "stream"]],
+      "detector_shape": "receiver_method_suffix",
+      "confidence_note": "Suffix match on the last two attribute-chain segments (not the full dotted path) -- resolves client.beta.prompt_caching.messages.create correctly without enumerating every beta-namespace prefix by hand. Grounded in the SP1 spike's real 3-repo corpus (docs/decisions/003), 100% recall."
+    },
+    {
+      "framework": "pinecone-sdk",
+      "surface_kind": "retrieval",
+      "sdk_module": "pinecone",
+      "constructor_names": ["Index"],
+      "method_suffixes": [["query"]],
+      "detector_shape": "receiver_method_suffix",
+      "confidence_note": "The classic pre-v3 Pinecone SDK shape (pinecone.Index(...).query(...)), a direct single-hop constructor call. Deliberately NOT the v3+ Pinecone() client-object SDK, which needs multi-hop receiver tracking this adapter doesn't do yet -- a stated, current scope boundary."
+    },
+    {
+      "framework": "langsmith-sdk",
+      "surface_kind": "feedback_ingest",
+      "sdk_module": "langsmith",
+      "constructor_names": ["Client"],
+      "method_suffixes": [["create_feedback"]],
+      "detector_shape": "receiver_method_suffix",
+      "confidence_note": "create_feedback is LangSmith's own real method name for binding user/reviewer verdicts to a trace/run ID -- architecture.md's feedback lens description verbatim."
+    },
+    {
+      "framework": "livekit-sdk",
+      "surface_kind": "realtime_session",
+      "sdk_module": "livekit.rtc",
+      "constructor_names": ["Room"],
+      "method_suffixes": [["connect"]],
+      "detector_shape": "receiver_method_suffix",
+      "confidence_note": "Grounded in LiveKit's public SDK docs/quickstart shape, not independently verified against a live corpus the way the anthropic registry was. connect is a more generic verb than pinecone's query, so this registry raises the ambiguous-candidate rate the most of the four -- accepted, not free."
+    },
+    {
+      "framework": "anthropic-sdk",
+      "surface_kind": "tool_call",
+      "detector_shape": "structural_pattern",
+      "content_signal": { "attribute_path": ["type"], "equals_value": "tool_use" },
+      "confidence_note": "\"tool_use\" is Anthropic's own real content-block-type string (the Messages API's response shape) -- a structurally different detection strategy from every registry-based check above, since a tool_use dispatch site is application-defined logic reacting to a response's own content, not a call into a client. Not receiver-resolved, so treated as real but lower-confidence than a resolved-receiver signature match."
+    }
+  ],
+
+  "lenses": [
+    { "lens": "generation-capture", "skill": "s4-generation-capture", "target_kinds": ["llm_generation"], "emits": ["design_fragment"] },
+    { "lens": "pii-governance", "skill": "s4-pii-governance", "target_kinds": ["llm_generation"], "emits": ["design_fragment"] },
+    { "lens": "cost", "skill": "s4-cost", "target_kinds": ["llm_generation"], "emits": ["design_fragment"] },
+    { "lens": "ops", "skill": "s4-ops", "target_kinds": ["llm_generation"], "emits": ["design_fragment"] },
+    { "lens": "retrieval", "skill": "s4-retrieval", "target_kinds": ["retrieval"], "emits": ["design_fragment"] },
+    { "lens": "feedback", "skill": "s4-feedback", "target_kinds": ["feedback_ingest"], "emits": ["design_fragment"] },
+    { "lens": "realtime-multimodal", "skill": "s4-realtime-multimodal", "target_kinds": ["realtime_session"], "emits": ["design_fragment"] },
+    { "lens": "tracing", "skill": "s4-tracing", "target_kinds": null, "emits": ["design_fragment"] },
+    { "lens": "tools", "skill": "s4-tools", "target_kinds": ["tool_call"], "emits": ["design_fragment"] }
+  ],
+
+  "semconv_namespaces": [
+    {
+      "namespace": "gen_ai",
+      "stability": "development",
+      "pin": "not yet pinned to a specific commit/tag -- see docs/decisions/001-sp6-otel-genai-semconv-maturity.md (Option B: pin every run, treat the whole namespace as Development until a first Stable attribute or tagged release lands)",
+      "schema_url": ""
+    }
+  ],
+
+  "event_types": ["trace", "span", "generation", "retrieval_span", "tool_span", "guardrail_span", "feedback_event", "degradation_event", "escalation_event"],
+
+  "attribute_kind_values": ["otel_genai", "oah_extension"],
+
+  "advisory_contradiction_pairs": [
+    { "left": ["restricted", "access_denied", "access_result"], "right": ["needs_review"] }
+  ],
+
+  "gates": []
+}

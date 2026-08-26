@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/arno49/observability-agentic-harness/schemas/domain_pack.schema.json",
+  "title": "Domain pack manifest",
+  "description": "Declares everything that is domain-specific about one OAH pipeline run. Extracted from the sixteen places the GenAI domain was hardwired into pipeline core (see docs/decisions/011). Pipeline core reads this manifest instead of holding literals: surface-point vocabulary, S1 registries, kind->dimension mapping, lens roster, semconv namespaces, DTO event types, and the advisory-gate lexicon. A pack is data (domains/<name>/pack.json) plus, where a detector needs real logic rather than a constructor/method-suffix match, code under oah/domains/<name>/. Adding a domain must not require editing oah/cli.py, oah/design/gates.py, or any schema under schemas/.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "name", "version", "point_kinds", "lenses", "semconv_namespaces"],
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Pack identifier, e.g. 'genai' or 'service'. Matches the directory name under domains/."
+    },
+
+    "version": { "type": "string" },
+
+    "description": { "type": "string" },
+
+    "point_kinds": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The surface_map.json point kinds this pack owns. Replaces the closed enum at surface_map.schema.json:33. Core validates a point's kind against the union of loaded packs' vocabularies, not a literal list. A kind a pack does not list here is simply not this pack's -- it is not the same as a kind this pack names but cannot yet detect (see detected_by: declared_undetected).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "dimension", "detected_by"],
+        "properties": {
+          "kind": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "dimension": {
+            "type": "string",
+            "description": "Gap-model dimension this kind rolls up to. Replaces KIND_TO_DIMENSION in oah/discovery/gap_model.py and the closed enum at gap_model.schema.json:25."
+          },
+          "rollout_rank": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "S8 ordering hint; replaces _DIMENSION_ROLLOUT_RANK in oah/design/dto_generator.py. Omitted means the existing default of 1."
+          },
+          "detected_by": {
+            "type": "string",
+            "enum": ["registry", "structural_pattern", "declared_undetected"],
+            "description": "How S1 finds this kind. 'declared_undetected' is honest vocabulary for a kind the pack names but cannot yet detect; core must report such kinds in run_manifest.json rather than let them look covered."
+          }
+        }
+      }
+    },
+
+    "registries": {
+      "type": "array",
+      "description": "S1 signature registries contributed by this pack. Two detector shapes exist today, and this array carries both: a receiver/method-suffix chain (sdk_module + constructor_names + method_suffixes, the shape oah/discovery/registry.py already used before extraction), and a structural content-signal match (content_signal + detector_name, the shape the tool_use-dispatch detector in oah/discovery/python_adapter.py used before extraction -- a comparison of some expression's attribute against a literal value, not a resolved receiver+method call). sdk_module must be unique across ALL loaded packs -- MODULE_TO_REGISTRY assumes it.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["framework", "surface_kind", "detector_shape"],
+        "properties": {
+          "framework": { "type": "string" },
+          "surface_kind": { "type": "string" },
+          "sdk_module": { "type": "string", "description": "Required for receiver_method_suffix/module_function_call shapes; absent for structural_pattern (a content-signal match has no resolved import to key on)." },
+          "constructor_names": { "type": "array", "items": { "type": "string" } },
+          "method_suffixes": {
+            "type": "array",
+            "items": { "type": "array", "items": { "type": "string" } }
+          },
+          "detector_shape": {
+            "type": "string",
+            "enum": ["receiver_method_suffix", "module_function_call", "decorator_registration", "base_class_method", "structural_pattern"],
+            "description": "Which detection mechanism the language adapter must run. receiver_method_suffix and module_function_call are both driven by constructor_names/method_suffixes/sdk_module (oah/discovery/python_adapter.py's MODULE_TO_REGISTRY dispatch). structural_pattern is driven by content_signal + detector_name instead -- a real per-domain matcher, not pure data, so the pack must also ship the code under oah/domains/<name>/detectors.py. decorator_registration is NOT implemented by any adapter today and is the single largest S1 gap for a web-framework-shaped pack; see SP12."
+          },
+          "content_signal": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Data for detector_shape: structural_pattern. Names the comparison the adapter's structural matcher looks for -- e.g. `<expr>.type == \"tool_use\"` is attribute_path: [\"type\"], equals_value: \"tool_use\".",
+            "properties": {
+              "attribute_path": { "type": "array", "items": { "type": "string" } },
+              "equals_value": { "type": "string" }
+            }
+          },
+          "detector_name": {
+            "type": "string",
+            "description": "Name of the function under oah/domains/<name>/detectors.py the adapter dispatches to for a structural_pattern registry entry. Required when detector_shape is structural_pattern."
+          },
+          "emits_kind": {
+            "type": "string",
+            "description": "surface_kind this detector produces, when a structural_pattern detector's result differs from this entry's own surface_kind (kept separate because a structural match emits independently of any resolved SDK module). Omitted means use surface_kind."
+          },
+          "confidence_note": {
+            "type": "string",
+            "description": "Stated, not hidden: how this registry's shape was grounded (real corpus fixture vs SDK docs), same discipline as the livekit registry's note in registry.py."
+          }
+        }
+      }
+    },
+
+    "lenses": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Replaces LENS_TO_POINT_KIND plus the four duplicated lens_fns dicts in oah/cli.py and the closed lens enum at design_fragment.schema.json:11.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lens", "skill", "target_kinds", "emits"],
+        "properties": {
+          "lens": { "type": "string" },
+          "skill": { "type": "string", "description": "Directory under skills/." },
+          "target_kinds": {
+            "description": "Point kinds this lens designs for. null means cross-cutting -- every point, whatever its kind (today's LENS_TO_POINT_KIND['tracing'] = None).",
+            "oneOf": [
+              { "type": "null" },
+              { "type": "array", "minItems": 1, "items": { "type": "string" } }
+            ]
+          },
+          "emits": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "enum": ["design_fragment", "slo_spec", "dependency_model"] },
+            "description": "Artifact types this lens produces. Every lens emits design_fragment; a lens may emit more than one artifact type (design_lens() returns {artifact_type: parsed} keyed by these names) -- e.g. a future slo lens emitting design_fragment and slo_spec together, since an SLO specification is not expressible as a list of event attributes."
+          },
+          "reused_from": {
+            "type": "string",
+            "description": "Name of the pack this lens is reused from unchanged. Proof of the pipeline-core/domain-pack split: a lens listed here must run against this pack's points with no edit to its SKILL.md."
+          }
+        }
+      }
+    },
+
+    "semconv_namespaces": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Replaces the otel_genai literal in design_fragment.schema.json:40, event_schema.schema.json:24, oah/design/gates.py and oah/design/event_schema.py. Stability lives per namespace here and per attribute on the signal -- event_schema.schema.json's old claim that upstream attributes are 'currently always development' is true of gen_ai.* and false of http.*.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["namespace", "stability", "pin"],
+        "properties": {
+          "namespace": { "type": "string", "description": "Attribute prefix, e.g. 'http', 'db', 'messaging', 'gen_ai'." },
+          "stability": {
+            "type": "string",
+            "enum": ["stable", "development", "deprecated", "removed", "unknown"],
+            "description": "The four OTel stability stages plus 'unknown' for a namespace whose maturity this project has not verified against primary sources."
+          },
+          "pin": {
+            "type": "string",
+            "description": "Version or commit SHA the pack targets. A namespace with no tagged releases pins a commit, as the GenAI conventions must."
+          },
+          "schema_url": {
+            "type": "string",
+            "description": "OTel schema URL if the namespace publishes one. Absent means no automatic version translation is available and a versioned internal rename table is required instead."
+          }
+        }
+      }
+    },
+
+    "event_types": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Extends the S8 DTO event_type enum (implementation_dto.schema.json:44), which was GenAI-shaped before extraction (generation, retrieval_span, tool_span, ...)."
+    },
+
+    "attribute_kind_values": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Valid values for a design_fragment signal's maps_to.kind (design_fragment.schema.json:40) -- replaces the closed ('otel_genai', 'oah_extension') tuple hardcoded in oah/design/gates.py's gate 4 and the two named summary-count keys in oah/design/event_schema.py. Deliberately separate from semconv_namespaces: this is the flat discriminator vocabulary a signal's maps_to.kind is checked against, not the namespace list itself -- a pack with several semconv namespaces still only needs as many attribute_kind_values as it actually uses as a maps_to.kind discriminator (today's genai pack: exactly ['otel_genai', 'oah_extension'])."
+    },
+
+    "advisory_contradiction_pairs": {
+      "type": "array",
+      "description": "Lexicon for the advisory gate at oah/design/gates.py, whose word pairs were drawn from the pii-governance/retrieval vocabulary before extraction. Warning severity, so a pack with an empty list loses a hint, not a gate.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["left", "right"],
+        "properties": {
+          "left": { "type": "array", "items": { "type": "string" } },
+          "right": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+
+    "gates": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Names of S5 gates this pack adds on top of the domain-neutral ten. Eight of the current ten need no change; see docs/decisions/011."
+    },
+
+    "auto_instrumentation_baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What the ecosystem already emits for this domain without any source edit. Core uses it to refuse to generate a DTO whose only effect is to re-emit a signal auto-instrumentation already provides.",
+      "properties": {
+        "mechanism": { "type": "array", "items": { "type": "string" } },
+        "covered_signals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["attribute", "stability", "source"],
+            "properties": {
+              "attribute": { "type": "string" },
+              "stability": { "type": "string", "enum": ["stable", "development", "deprecated", "removed", "unknown"] },
+              "source": { "type": "string" },
+              "caveat": { "type": "string", "description": "Condition under which the baseline does NOT hold." }
+            }
+          }
+        }
+      }
+    }
+  }
+}

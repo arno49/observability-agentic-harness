@@ -31,7 +31,9 @@
         "properties": {
           "id": { "type": "string", "description": "Stable ID, e.g. sp-0042; referenced by gap model and DTOs" },
           "kind": {
-            "enum": ["llm_generation", "retrieval", "tool_call", "agent_loop", "queue_producer", "queue_consumer", "guardrail", "human_review_hook", "feedback_ingest", "realtime_session"]
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Was a closed enum of ten GenAI-pack point kinds; opened to any well-formed identifier (docs/decisions/011) so a second domain pack's own kinds validate without a schema edit. Real membership -- is this kind one THIS pack declares -- is checked against the loaded domain_pack.schema.json manifest at runtime (oah/domains/validate.py), not here."
           },
           "file": { "type": "string" },
           "line": { "type": "integer", "minimum": 1 },

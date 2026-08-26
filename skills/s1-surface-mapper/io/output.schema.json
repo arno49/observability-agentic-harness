@@ -19,11 +19,10 @@
             "description": "Echoes the input candidate this entry classifies"
           },
           "kind": {
-            "description": "null means: genuinely none of these — a correct rejection, not a missing answer",
-            "enum": [
-              "llm_generation", "retrieval", "tool_call", "agent_loop",
-              "queue_producer", "queue_consumer", "guardrail",
-              "human_review_hook", "feedback_ingest", "realtime_session", null
+            "description": "null means: genuinely none of these — a correct rejection, not a missing answer. Was a closed ten-kind enum; opened to any well-formed identifier or null (docs/decisions/011) -- oah/discovery/disambiguate.py checks a non-null result against the loaded pack's real declared kinds at runtime and refuses to merge a hallucinated one, since this schema alone can no longer catch that.",
+            "oneOf": [
+              { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+              { "type": "null" }
             ]
           },
           "framework": {

@@ -26,7 +26,11 @@
             "type": "object",
             "required": ["kind"],
             "properties": {
-              "kind": { "enum": ["otel_genai", "oah_extension"] },
+              "kind": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "description": "Was a closed ('otel_genai', 'oah_extension') enum, duplicated from schemas/design_fragment.schema.json; opened to any well-formed identifier (docs/decisions/011) so the two stay in sync by construction. Real membership is the loaded pack's attribute_kind_values."
+              },
               "attribute": { "type": "string" }
             }
           },

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Snapshots schemas/ and skills/ into oah/_bundled/ before a wheel/sdist
-build, so a real `pip install oah` (no repo checkout on the target machine)
-still has its schema and skill data. See oah/_resources.py for the runtime
-side of this: it prefers the repo-root directories (dev/editable install)
-and falls back to this bundled copy only when those aren't present.
+"""Snapshots schemas/, skills/ and domains/ into oah/_bundled/ before a
+wheel/sdist build, so a real `pip install oah` (no repo checkout on the
+target machine) still has its schema, skill and domain-pack data. See
+oah/_resources.py for the runtime side of this: it prefers the repo-root
+directories (dev/editable install) and falls back to this bundled copy only
+when those aren't present.
 
 Run this before `python -m build` -- .github/workflows/publish-pypi.yml
 does so automatically. oah/_bundled/ is gitignored: it's a build artifact,
@@ -34,3 +35,4 @@ if __name__ == "__main__":
         shutil.rmtree(BUNDLED_DIR)
     sync("schemas")
     sync("skills")
+    sync("domains")

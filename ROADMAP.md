@@ -752,6 +752,56 @@ kind and one lens loads and runs S1→S9 end to end with **no edit under `oah/` 
 `schemas/`** — that last clause is the whole point of the epic and the only one
 that proves the seam exists. *Depends on:* nothing. *Blocks:* E12.
 
+**Landed** (2026-08-26). `schemas/domain_pack.schema.json` + `oah/domains/loader.py`
+(pure, deterministic, validates against that schema, no LLM call) +
+`domains/genai/pack.json` (the real manifest — 5 point kinds, 5 S1 registries, 9
+lenses, one semconv namespace). Wired through: `oah/discovery/registry.py` derives
+`REGISTRIES`/`MODULE_TO_REGISTRY`/etc. from the loaded pack instead of four literal
+dicts; `oah/discovery/python_adapter.py`'s structural-pattern detector (the
+`tool_use`-dispatch check) is now driven by pack-declared `content_signal` data
+(`attribute_path`/`equals_value`) instead of a hardcoded string, closing a second
+coupling this session's research found beyond the original sixteen (it lived
+outside `registry.py` entirely); `oah/discovery/gap_model.py`'s `KIND_TO_DIMENSION`
+is pack-derived; `oah/cli.py`'s four duplicated `lens_fns` dict literals collapse
+into one `_lens_fns_for_pack` helper (dispatch by `getattr` on the lens module,
+convention-based); `oah/design/gates.py`'s gate 4 and the advisory word-pair list
+read from the pack's new `attribute_kind_values`/`advisory_contradiction_pairs`
+fields; `oah/design/event_schema.py`'s summary counts and `oah/design/dto_generator.py`'s
+rollout ranks are pack-derived. Verified byte-identical with a real golden-snapshot
+test (`tests/test_e13_domain_pack_snapshot.py`, new — no such harness existed
+before) driving real S1/S3/S5/S7 against the `naive-memory` corpus fixture with S4/S8's
+model calls mocked. The throwaway-pack proof
+(`tests/test_domain_pack_loader.py`) drives a synthetic pack's point through real
+S3/S5/S7/S8 with zero edits under `oah/` or `schemas/` — scoped explicitly to those
+stages, not S1's tree-sitter walk, which still reads pack-derived *process-global*
+constants rather than being re-parameterized per call (a real, separate cost with
+no second real pack yet to justify it; see the epic's own plan for why).
+
+Two deliberate deviations from this entry's own text above, both to hold "zero
+behaviour change" as the harder constraint: `otel_genai` was **not** renamed to
+`otel_semconv` (that would change a real field value in every `design_fragment.json`,
+failing byte-identical) — the pack instead declares its own
+`attribute_kind_values: ["otel_genai", "oah_extension"]`, keeping today's literal
+values as pack data rather than renaming them; per-attribute stability already
+lived on `event_schema.json`'s `attributes[].stability` field before this epic
+(only the schema's prose claimed "always development" too strongly), so nothing
+needed to move. `lenses[].emits` ships in the manifest (forward-looking, for E12's
+slo lens) but `oah/design/lens.py`'s `design_lens()` still returns a bare
+`design_fragment` — extending its return contract to `{artifact_type: parsed}` was
+scoped out as unnecessary risk with zero current consumer; E12 does that when the
+slo lens actually needs a second artifact type.
+
+The moment of opening `surface_map.schema.json`'s closed `kind` enum (and its
+three duplicates, plus `dimension`, `lens`, `maps_to.kind` ×2 more skill-schema
+copies research found beyond the ADR's original list, and `event_type` ×2 copies)
+to a pattern-constrained string removed real protection against a hallucinated
+value from S1's live LLM disambiguation pass — the one place that mattered, since
+every other kind/lens/attribute-kind value is enforced structurally by
+construction elsewhere. `oah/discovery/disambiguate.py` now checks a
+non-null disambiguated `kind` against the loaded pack's real vocabulary at
+runtime (`oah/domains/validate.py`) and refuses to merge a hallucinated one,
+with a real regression test for exactly that failure mode.
+
 ### E12 — Service domain pack *(rewritten; was "second domain pack, stub")*
 Proves — or disproves — the pipeline-core/domain-pack split from README's "Why"
 against one concrete non-AI domain: ordinary request-driven services. The domain

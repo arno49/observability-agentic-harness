@@ -41,7 +41,11 @@
               "type": "object",
               "required": ["event_type"],
               "properties": {
-                "event_type": { "enum": ["trace", "span", "generation", "retrieval_span", "tool_span", "guardrail_span", "feedback_event", "degradation_event", "escalation_event"] },
+                "event_type": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*$",
+                  "description": "Was a closed nine-value, GenAI-shaped enum; opened to any well-formed identifier (docs/decisions/011) so a second domain pack's own event_types validate without a schema edit. Real membership is the loaded pack's event_types."
+                },
                 "required_attributes": { "type": "array", "items": { "type": "string" } },
                 "consistency_assertions": {
                   "type": "array",

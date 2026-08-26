@@ -21,10 +21,14 @@
         "additionalProperties": false,
         "properties": {
           "name": { "type": "string" },
-          "kind": { "enum": ["otel_genai", "oah_extension"] },
+          "kind": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Was a closed ('otel_genai', 'oah_extension') enum; opened to any well-formed identifier (docs/decisions/011). Real membership is the loaded pack's attribute_kind_values."
+          },
           "stability": {
             "enum": ["development", "stable", "deprecated"],
-            "description": "oah_extension attributes start development and are promoted deliberately, never automatically. otel_genai attributes inherit upstream stability -- currently always development per SP6's live check, stamped here rather than looked up fresh every time a schema is read."
+            "description": "oah_extension attributes start development and are promoted deliberately, never automatically. An upstream-namespace attribute inherits ITS namespace's own declared stability (the loaded pack's semconv_namespaces[].stability), stamped here rather than looked up fresh every time a schema is read -- stability lives per namespace and per attribute, not per pack (docs/decisions/011): true that gen_ai.* is currently always development (SP6's live check) and false of e.g. the stable HTTP conventions a different pack might target."
           },
           "deprecated_by": {
             "type": ["string", "null"],

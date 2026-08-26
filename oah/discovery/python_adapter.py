@@ -28,6 +28,7 @@ from tree_sitter import Language, Parser
 from oah import __version__ as _OAH_VERSION
 from oah.discovery.registry import (
     CONSTRUCTOR_NAMES, MODULE_TO_REGISTRY, ALL_METHOD_SUFFIXES, SUFFIX_LENGTHS,
+    STRUCTURAL_PATTERN_REGISTRIES,
 )
 
 _LANGUAGE = Language(tspython.language())
@@ -175,15 +176,19 @@ def _string_content(string_node, src):
     return None
 
 
-def _is_dot_type_attribute(node, src):
-    """True for an attribute access ending in `.type` (e.g. `block.type`,
-    `chunk.type`) -- deliberately not receiver-resolved, since the "tool_use"
-    string literal itself is the signal, not which SDK the receiver came
-    from (see _is_tool_use_dispatch_check's own docstring)."""
-    if node.type != "attribute":
+def _is_content_signal_attribute(node, src, attribute_path):
+    """True for an attribute access whose final segment matches
+    attribute_path[-1] (e.g. attribute_path=["type"] matches `block.type`,
+    `chunk.type`) -- deliberately not receiver-resolved, since the literal
+    value itself is the signal, not which SDK the receiver came from (see
+    _is_content_signal_check's own docstring). Only the final segment is
+    checked, same as before generalization -- a pack declaring a longer
+    attribute_path only has its last segment matched, stated rather than
+    silently different."""
+    if node.type != "attribute" or not attribute_path:
         return False
     attr = node.child_by_field_name("attribute")
-    return attr is not None and _text(attr, src) == "type"
+    return attr is not None and _text(attr, src) == attribute_path[-1]
 
 
 _COMPARISON_OPERATOR_TOKENS = {"<", ">", "==", ">=", "<=", "<>", "!=", "in", "not in", "is", "is not"}
@@ -201,19 +206,21 @@ def _comparison_operator_token(comparison_node):
     return None
 
 
-def _is_tool_use_dispatch_check(comparison_node, src):
-    """True if comparison_node is `<expr>.type == "tool_use"` in either
-    operand order, with the operator actually verified as `==` (not
-    `!=`/`is not`/etc). This is a structurally different detection
-    strategy from every registry-based `_match_suffix` check above: there
-    is no outbound SDK call to match a client-constructor-plus-method-
-    suffix against, because a tool_use dispatch site is application-
-    defined logic reacting to a response's own content, not a call into a
-    client. "tool_use" is Anthropic's own real content-block-type string
-    (per the Messages API's response shape), so a comparison against it
-    is the actual, real signal -- not receiver-resolved (no constructor
-    tracking possible here), so treated as a real but lower-confidence
-    detection than a resolved-receiver signature match."""
+def _is_content_signal_check(comparison_node, src, attribute_path, equals_value):
+    """True if comparison_node is `<expr>.<attribute_path[-1]> ==
+    equals_value` in either operand order, with the operator actually
+    verified as `==` (not `!=`/`is not`/etc). Generalizes the original
+    tool_use-dispatch check (attribute_path=["type"], equals_value=
+    "tool_use") to any single content-signal a domain pack's
+    structural_pattern registry declares. This is a structurally
+    different detection strategy from every registry-based `_match_suffix`
+    check above: there is no outbound SDK call to match a
+    client-constructor-plus-method-suffix against, because a content-
+    signal dispatch site is application-defined logic reacting to a
+    response's own content, not a call into a client -- not
+    receiver-resolved (no constructor tracking possible here), so treated
+    as a real but lower-confidence detection than a resolved-receiver
+    signature match."""
     if comparison_node.type != "comparison_operator":
         return False
     if _comparison_operator_token(comparison_node) != "==":
@@ -222,9 +229,9 @@ def _is_tool_use_dispatch_check(comparison_node, src):
     if len(operands) != 2:
         return False
     a, b = operands
-    is_string = lambda n: n.type == "string" and _string_content(n, src) == "tool_use"
-    return ((is_string(a) and _is_dot_type_attribute(b, src)) or
-            (is_string(b) and _is_dot_type_attribute(a, src)))
+    is_value = lambda n: n.type == "string" and _string_content(n, src) == equals_value
+    return ((is_value(a) and _is_content_signal_attribute(b, src, attribute_path)) or
+            (is_value(b) and _is_content_signal_attribute(a, src, attribute_path)))
 
 
 def _boolean_operator_token(boolean_node):
@@ -234,25 +241,28 @@ def _boolean_operator_token(boolean_node):
     return None
 
 
-def _condition_implies_tool_use(node, src):
+def _condition_implies_content_signal(node, src, attribute_path, equals_value):
     """Recursively True if `node` (an if/elif condition expression)
-    structurally guarantees `<expr>.type == "tool_use"` whenever the
-    guarded block runs. Handles the three real-world wrapper shapes a
-    bare `_is_tool_use_dispatch_check` on the direct child misses (found
-    by adversarial review): parenthesization, and `and`-chains (an `and`
-    operand's block only runs when ALL operands are true, so the
-    tool_use check anywhere in the chain still guarantees it). `or` is
-    deliberately NOT recursed into -- the block can run when the *other*
-    operand is true instead, so an `or` branch does not guarantee
-    tool_use, and treating it as if it did would be a false positive."""
+    structurally guarantees `<expr>.<attribute_path[-1]> == equals_value`
+    whenever the guarded block runs. Handles the three real-world wrapper
+    shapes a bare `_is_content_signal_check` on the direct child misses
+    (found by adversarial review, against the original tool_use-specific
+    version of this check): parenthesization, and `and`-chains (an `and`
+    operand's block only runs when ALL operands are true, so the check
+    anywhere in the chain still guarantees it). `or` is deliberately NOT
+    recursed into -- the block can run when the *other* operand is true
+    instead, so an `or` branch does not guarantee the signal, and treating
+    it as if it did would be a false positive."""
     if node.type == "comparison_operator":
-        return _is_tool_use_dispatch_check(node, src)
+        return _is_content_signal_check(node, src, attribute_path, equals_value)
     if node.type == "parenthesized_expression":
         inner = node.named_children
-        return len(inner) == 1 and _condition_implies_tool_use(inner[0], src)
+        return len(inner) == 1 and _condition_implies_content_signal(inner[0], src, attribute_path, equals_value)
     if node.type == "boolean_operator" and _boolean_operator_token(node) == "and":
         operands = node.named_children
-        return len(operands) == 2 and any(_condition_implies_tool_use(o, src) for o in operands)
+        return len(operands) == 2 and any(
+            _condition_implies_content_signal(o, src, attribute_path, equals_value) for o in operands
+        )
     return False
 
 
@@ -374,24 +384,34 @@ def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local
 
         if child.type in ("if_statement", "elif_clause"):
             condition = child.child_by_field_name("condition")
-            if condition is not None and _condition_implies_tool_use(condition, src):
-                line = _line(child)
-                candidate_id = f"sp-{next_id[0]:04d}"
-                resolved_points.append(_drop_none({
-                    "id": candidate_id,
-                    "kind": "tool_call",
-                    "file": rel_path,
-                    "line": line,
-                    "symbol": symbol,
-                    "framework": "anthropic-sdk",
-                    "sync_nature": "async" if is_async else "sync",
-                    "detection": "ast",
-                    "confidence": 0.8,
-                    "notes": "tool_use dispatch check ('<expr>.type == \"tool_use\"') -- structural "
-                             "pattern match, not a resolved SDK receiver; the actual handler "
-                             "invocation inside this block is not further resolved by this pass",
-                }))
-                next_id[0] += 1
+            if condition is not None:
+                for entry in STRUCTURAL_PATTERN_REGISTRIES:
+                    signal = entry.get("content_signal") or {}
+                    attribute_path = signal.get("attribute_path")
+                    equals_value = signal.get("equals_value")
+                    if not attribute_path or equals_value is None:
+                        continue
+                    if not _condition_implies_content_signal(condition, src, attribute_path, equals_value):
+                        continue
+                    line = _line(child)
+                    candidate_id = f"sp-{next_id[0]:04d}"
+                    resolved_points.append(_drop_none({
+                        "id": candidate_id,
+                        "kind": entry.get("emits_kind") or entry["surface_kind"],
+                        "file": rel_path,
+                        "line": line,
+                        "symbol": symbol,
+                        "framework": entry["framework"],
+                        "sync_nature": "async" if is_async else "sync",
+                        "detection": "ast",
+                        "confidence": 0.8,
+                        "notes": f"content-signal dispatch check ('<expr>.{attribute_path[-1]} == "
+                                 f"\"{equals_value}\"') -- structural pattern match, not a resolved SDK "
+                                 "receiver; the actual handler invocation inside this block is not "
+                                 "further resolved by this pass",
+                    }))
+                    next_id[0] += 1
+                    break  # first matching structural registry wins
 
         if child.type == "assignment":
             left = child.child_by_field_name("left")

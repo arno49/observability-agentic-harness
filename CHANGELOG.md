@@ -15,6 +15,19 @@
   stability; SP12: two TS detector shapes the Python adapter lacks).
 
 ### Added
+- E13 (domain pack extraction): `schemas/domain_pack.schema.json`,
+  `oah/domains/loader.py`, and `domains/genai/pack.json` — the GenAI domain now
+  ships as a data manifest (point kinds, S1 registries, lens roster, semconv
+  namespaces, DTO event types, advisory word pairs) instead of sixteen literals
+  spread across `oah/cli.py`, `oah/design/gates.py`,
+  `oah/discovery/{gap_model,registry,python_adapter}.py` and eight schema files.
+  Verified byte-identical against the pre-extraction behavior via a new
+  golden-snapshot test (`tests/test_e13_domain_pack_snapshot.py`) and proven to
+  actually generalize via a throwaway second pack running real S3/S5/S7/S8 with
+  zero edits under `oah/` or `schemas/` (`tests/test_domain_pack_loader.py`).
+  `oah/discovery/disambiguate.py` gained a runtime check (kind must be one of the
+  loaded pack's declared kinds) to replace the protection five schema enums lost
+  when they opened from closed lists to pack-validated strings.
 - `oah instrument`: S10 agentic instrumentation, both modes. `report-only`
   (default) proposes a diff per DTO, never writes. `--mode fix` writes and
   creates one git commit per successfully verified DTO; requires

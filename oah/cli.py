@@ -82,46 +82,50 @@ _AGENT_MODEL_HELP = (
     "LiteLLM-routed stage's --model."
 )
 
-# check_every_surface_point_has_decision gate needs, per fragment, the
-# full set of points that fragment is expected to cover -- that set
-# differs by lens now that retrieval is a second target kind alongside
-# llm_generation, so it must be looked up per fragment via its own
-# "lens" field, not assumed to be a single hardcoded kind across all of
-# them (a bug the first version of this mapping's absence would have
-# produced silently: every retrieval fragment checked against
-# llm_generation point IDs it was never designed to cover).
-# "tracing" maps to None, not a kind string -- architecture.md is explicit
-# it's cross-cutting, not scoped to one surface_map kind the way every
-# other lens is (see design_tracing()'s own docstring in
-# oah/design/lens.py). _point_ids_for_fragment treats None as "every
-# point in the surface_map, regardless of kind."
-LENS_TO_POINT_KIND = {
-    "generation-capture": "llm_generation",
-    "pii-governance": "llm_generation",
-    "cost": "llm_generation",
-    "ops": "llm_generation",
-    "retrieval": "retrieval",
-    "feedback": "feedback_ingest",
-    "realtime-multimodal": "realtime_session",
-    "tracing": None,
-    "tools": "tool_call",
-}
+# Replaces the old literal LENS_TO_POINT_KIND dict (docs/decisions/011):
+# {lens_name: target_kinds}, target_kinds a list of point kinds or None for
+# a cross-cutting lens (pack data's own null -- e.g. tracing,
+# architecture.md's cross-cutting lens, unscoped to any one surface_map
+# kind the way every other lens is). check_every_surface_point_has_decision
+# needs, per fragment, the full set of points that fragment is expected to
+# cover -- that set differs by lens, so it's looked up per fragment via its
+# own "lens" field, not assumed to be a single hardcoded kind across all of
+# them (a bug an absent mapping would produce silently: a fragment checked
+# against point IDs it was never designed to cover).
+def _target_kinds_for_pack(pack):
+    return {entry["lens"]: entry["target_kinds"] for entry in pack["lenses"]}
 
 
-def _point_ids_for_fragment(fragment, surface_map):
-    kind = LENS_TO_POINT_KIND[fragment["lens"]]
-    if kind is None:
+def _lens_fns_for_pack(pack, lens_module):
+    """One shared {lens_name: design_fn} builder, replacing four
+    hand-duplicated dict literals this file used to write out
+    independently in cmd_design/cmd_event_schema/cmd_dtos/cmd_readiness --
+    a lens missing from one copy went undetected by anything but a manual
+    grep audit, three times in one session (docs/decisions/011). Every
+    design_* function's name is its pack lens name with hyphens replaced
+    by underscores, a convention oah/design/lens.py's functions already
+    follow (design_generation_capture for "generation-capture", etc.); an
+    AttributeError here means the pack names a lens this build of oah
+    doesn't actually have a design function for, and that should be loud,
+    not silently skipped."""
+    return {entry["lens"]: getattr(lens_module, f"design_{entry['lens'].replace('-', '_')}")
+            for entry in pack["lenses"]}
+
+
+def _point_ids_for_fragment(fragment, surface_map, target_kinds_by_lens):
+    kinds = target_kinds_by_lens[fragment["lens"]]
+    if kinds is None:
         return [p["id"] for p in surface_map["points"]]
-    return [p["id"] for p in surface_map["points"] if p["kind"] == kind]
+    return [p["id"] for p in surface_map["points"] if p["kind"] in kinds]
 
 
 _ALL_PERSONA_NAMES = frozenset({"cost_skeptic", "sre", "security"})
 
 
-def _design_all_lenses(points, git_sha, lens_fns, LensDesignError, context=None, model=None):
+def _design_all_lenses(points, git_sha, lens_fns, LensDesignError, pack, context=None, model=None):
     """Runs every S4 lens against `points`, warning (not failing) on any
     lens that raises. `lens_fns` must be a {lens_name: design_fn} dict
-    covering exactly LENS_TO_POINT_KIND's keys -- the assert below turns a
+    covering exactly `pack`'s own lens roster -- the assert below turns a
     missing/extra entry into an immediate, loud crash instead of a silent
     gap. This exists because the equivalent 4-way copy-pasted inline loop
     (one per command) had a lens silently missing from cmd_readiness's own
@@ -130,9 +134,10 @@ def _design_all_lenses(points, git_sha, lens_fns, LensDesignError, context=None,
     implementation, called identically from every command, makes that
     whole bug class structurally impossible instead of merely
     well-intentioned."""
-    assert set(lens_fns) == set(LENS_TO_POINT_KIND), (
-        f"lens_fns must cover exactly LENS_TO_POINT_KIND's lenses -- got {sorted(lens_fns)}, "
-        f"expected {sorted(LENS_TO_POINT_KIND)}"
+    expected = {entry["lens"] for entry in pack["lenses"]}
+    assert set(lens_fns) == expected, (
+        f"lens_fns must cover exactly the pack's lens roster -- got {sorted(lens_fns)}, "
+        f"expected {sorted(expected)}"
     )
     fragments = []
     for lens_name, design_fn in lens_fns.items():
@@ -386,13 +391,11 @@ def cmd_design(args):
     iteration, not a strict pipeline where S6 only runs after S5 is
     clean."""
     from oah.discovery.python_adapter import build_surface_map
-    from oah.design.lens import (
-        design_generation_capture, design_pii_governance, design_cost, design_ops,
-        design_retrieval, design_feedback, design_realtime_multimodal, design_tracing,
-        design_tools, LensDesignError,
-    )
+    from oah.design import lens as lens_module
+    from oah.design.lens import LensDesignError
     from oah.design.gates import run_gates, gates_passed
     from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
+    from oah.domains.loader import load_pack
     from oah.schemas import validate
 
     git_sha = _git_sha(args.target)
@@ -413,19 +416,11 @@ def cmd_design(args):
         print("No surface points found (or all still ambiguous) — nothing to design for.", file=sys.stderr)
         return 0
 
-    lens_fns = {
-        "generation-capture": design_generation_capture,
-        "pii-governance": design_pii_governance,
-        "cost": design_cost,
-        "ops": design_ops,
-        "retrieval": design_retrieval,
-        "feedback": design_feedback,
-        "realtime-multimodal": design_realtime_multimodal,
-        "tracing": design_tracing,
-        "tools": design_tools,
-    }
+    pack = load_pack("genai")
+    lens_fns = _lens_fns_for_pack(pack, lens_module)
+    target_kinds_by_lens = _target_kinds_for_pack(pack)
     model = getattr(args, "model", None)
-    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError,
+    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
                                     context=context, model=model)
 
     if not fragments:
@@ -434,7 +429,7 @@ def cmd_design(args):
 
     findings = []
     for fragment in fragments:
-        findings.extend(run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map)))
+        findings.extend(run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map, target_kinds_by_lens), pack=pack))
     s5_passed = gates_passed(findings)
 
     persona_fns = {"cost_skeptic": run_cost_skeptic, "sre": run_sre, "security": run_security}
@@ -486,12 +481,10 @@ def cmd_event_schema(args):
     fatal -- the schema is built from
     whichever lenses did produce one."""
     from oah.discovery.python_adapter import build_surface_map
-    from oah.design.lens import (
-        design_generation_capture, design_pii_governance, design_cost, design_ops,
-        design_retrieval, design_feedback, design_realtime_multimodal, design_tracing,
-        design_tools, LensDesignError,
-    )
+    from oah.design import lens as lens_module
+    from oah.design.lens import LensDesignError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
+    from oah.domains.loader import load_pack
     from oah.schemas import validate
 
     git_sha = _git_sha(args.target)
@@ -512,19 +505,10 @@ def cmd_event_schema(args):
         print("No surface points found — nothing to build an event schema from.", file=sys.stderr)
         return 0
 
-    lens_fns = {
-        "generation-capture": design_generation_capture,
-        "pii-governance": design_pii_governance,
-        "cost": design_cost,
-        "ops": design_ops,
-        "retrieval": design_retrieval,
-        "feedback": design_feedback,
-        "realtime-multimodal": design_realtime_multimodal,
-        "tracing": design_tracing,
-        "tools": design_tools,
-    }
+    pack = load_pack("genai")
+    lens_fns = _lens_fns_for_pack(pack, lens_module)
     model = getattr(args, "model", None)
-    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError,
+    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
                                     context=context, model=model)
 
     if not fragments:
@@ -532,7 +516,7 @@ def cmd_event_schema(args):
         return 0
 
     try:
-        schema = build_event_schema(fragments, git_sha)
+        schema = build_event_schema(fragments, git_sha, pack=pack)
     except EventSchemaConflictError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
@@ -560,13 +544,11 @@ def cmd_dtos(args):
     from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
-    from oah.design.lens import (
-        design_generation_capture, design_pii_governance, design_cost, design_ops,
-        design_retrieval, design_feedback, design_realtime_multimodal, design_tracing,
-        design_tools, LensDesignError,
-    )
+    from oah.design import lens as lens_module
+    from oah.design.lens import LensDesignError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
     from oah.design.dto_generator import generate_dtos, DtoGenerationError
+    from oah.domains.loader import load_pack
     from oah.schemas import validate
 
     git_sha = _git_sha(args.target)
@@ -587,19 +569,10 @@ def cmd_dtos(args):
         print("No surface points found — nothing to generate DTOs for.", file=sys.stderr)
         return 0
 
-    lens_fns = {
-        "generation-capture": design_generation_capture,
-        "pii-governance": design_pii_governance,
-        "cost": design_cost,
-        "ops": design_ops,
-        "retrieval": design_retrieval,
-        "feedback": design_feedback,
-        "realtime-multimodal": design_realtime_multimodal,
-        "tracing": design_tracing,
-        "tools": design_tools,
-    }
+    pack = load_pack("genai")
+    lens_fns = _lens_fns_for_pack(pack, lens_module)
     model = getattr(args, "model", None)
-    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError,
+    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
                                     context=context, model=model)
 
     if not fragments:
@@ -607,13 +580,13 @@ def cmd_dtos(args):
         return 0
 
     try:
-        event_schema = build_event_schema(fragments, git_sha)
+        event_schema = build_event_schema(fragments, git_sha, pack=pack)
     except EventSchemaConflictError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
 
     inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
-    gap_model = build_gap_model(surface_map, inventory, context=context)
+    gap_model = build_gap_model(surface_map, inventory, context=context, pack=pack)
 
     covered_point_ids = {pid for a in event_schema["attributes"] for pid in a["surface_point_ids"]}
     points = [p for p in surface_map["points"] if p["id"] in covered_point_ids]
@@ -622,7 +595,7 @@ def cmd_dtos(args):
     gaps = [g for g in gap_model["gaps"] if g["id"] in relevant_gap_ids]
 
     try:
-        dtos = generate_dtos(event_schema, points, gaps, git_sha, context=context, model=model)
+        dtos = generate_dtos(event_schema, points, gaps, git_sha, context=context, model=model, pack=pack)
     except DtoGenerationError as e:
         print(f"error: DTO generation failed: {e}", file=sys.stderr)
         return 1
@@ -658,16 +631,14 @@ def cmd_readiness(args):
     from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
-    from oah.design.lens import (
-        design_generation_capture, design_pii_governance, design_cost, design_ops,
-        design_retrieval, design_feedback, design_realtime_multimodal, design_tracing,
-        design_tools, LensDesignError,
-    )
+    from oah.design import lens as lens_module
+    from oah.design.lens import LensDesignError
     from oah.design.gates import run_gates
     from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
     from oah.design.dto_generator import generate_dtos, DtoGenerationError
     from oah.design.readiness_report import build_readiness_report
+    from oah.domains.loader import load_pack
     from oah.schemas import validate
 
     git_sha = _git_sha(args.target)
@@ -683,36 +654,29 @@ def cmd_readiness(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
+    pack = load_pack("genai")
     surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
     inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
-    gap_model = build_gap_model(surface_map, inventory, context=context)
+    gap_model = build_gap_model(surface_map, inventory, context=context, pack=pack)
 
     gate_findings = []
     panel_verdicts = []
+    empty_kind_counts = {f"{v}_count": 0 for v in pack["attribute_kind_values"]}
     event_schema = {"schema_version": "0.1.0", "repo_git_sha": git_sha, "attributes": [],
-                     "summary": {"attribute_count": 0, "otel_genai_count": 0, "oah_extension_count": 0, "lenses_included": []}}
+                     "summary": {"attribute_count": 0, **empty_kind_counts, "lenses_included": []}}
     dtos = {"schema_version": "0.1.0", "dtos": []}
 
     model = getattr(args, "model", None)
     if surface_map["points"]:
-        lens_fns = {
-            "generation-capture": design_generation_capture,
-            "pii-governance": design_pii_governance,
-            "cost": design_cost,
-            "ops": design_ops,
-            "retrieval": design_retrieval,
-            "feedback": design_feedback,
-            "realtime-multimodal": design_realtime_multimodal,
-            "tracing": design_tracing,
-            "tools": design_tools,
-        }
-        fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError,
+        lens_fns = _lens_fns_for_pack(pack, lens_module)
+        target_kinds_by_lens = _target_kinds_for_pack(pack)
+        fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
                                         context=context, model=model)
 
         if fragments:
             gate_findings = [
                 f.__dict__ for fragment in fragments
-                for f in run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map))
+                for f in run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map, target_kinds_by_lens), pack=pack)
             ]
 
             persona_fns = {"cost_skeptic": run_cost_skeptic, "sre": run_sre, "security": run_security}
@@ -720,7 +684,7 @@ def cmd_readiness(args):
                                                 context=context, model=model)
 
             try:
-                event_schema = build_event_schema(fragments, git_sha)
+                event_schema = build_event_schema(fragments, git_sha, pack=pack)
             except EventSchemaConflictError as e:
                 print(f"warning: event schema build failed: {e}", file=sys.stderr)
 
@@ -732,7 +696,7 @@ def cmd_readiness(args):
             if points:
                 try:
                     generated = generate_dtos(event_schema, points, gaps_for_dtos, git_sha,
-                                               context=context, model=model)
+                                               context=context, model=model, pack=pack)
                     if generated:
                         dtos = generated
                 except DtoGenerationError as e:

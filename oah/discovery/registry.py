@@ -1,133 +1,77 @@
-"""Signature registries for S1's deterministic Python pass. Each entry
-describes one SDK: its client-constructor names, its own dotted module
-path (as it appears in an `import`/`from ... import` statement), and the
-method-suffix shapes (the last N attribute-chain segments of a call, e.g.
-`("messages", "create")` for `client.messages.create(...)`) that count as
-a real call to that SDK — wired to one `surface_map.json` `kind`.
+"""Derives S1's deterministic-pass lookup structures from a loaded domain
+pack's `registries[]`, instead of holding them as literal dicts (E13,
+docs/decisions/011). Two detector shapes exist:
 
-Four registries so far:
+- **receiver_method_suffix** (and `module_function_call`) — a resolved
+  receiver (tracked via import/assignment/annotation) whose call's last N
+  attribute-chain segments match a declared suffix, e.g.
+  `client.messages.create(...)`. `build_registry_index(pack)` derives
+  `REGISTRIES`/`CONSTRUCTOR_NAMES`/`MODULE_TO_REGISTRY`/`ALL_METHOD_SUFFIXES`/
+  `SUFFIX_LENGTHS` from this shape's entries — the exact five names
+  `oah/discovery/python_adapter.py` already consumed before extraction, now
+  pack-derived rather than four literal dicts (`ANTHROPIC`, `PINECONE`,
+  `LANGSMITH`, `LIVEKIT`).
+- **structural_pattern** — a content-signal match (`<expr>.<attribute> ==
+  "value"`) with no resolved receiver at all, because there is no outbound
+  SDK call to match a client-constructor-plus-method-suffix against (the
+  tool_use-dispatch check: application code reacting to a response's own
+  content, not a call into a client). `structural_pattern_registries(pack)`
+  derives `STRUCTURAL_PATTERN_REGISTRIES` from this shape's entries.
 
-- **anthropic-sdk -> llm_generation** — S1's first target stack per
-  ROADMAP.md E2 ("Python + raw Anthropic SDK"), carried over verbatim from
-  the SP1 spike prototype (see module docstring history in
-  oah/discovery/python_adapter.py). Suffix length 2
-  (`client.messages.create`) because the SDK nests resources under the
-  client.
-- **pinecone -> retrieval** — the classic pre-v3 Pinecone SDK shape:
-  `import pinecone; pinecone.init(...); index = pinecone.Index("name");
-  index.query(...)`. `pinecone.Index(...)` is a direct, single-hop
-  constructor call the existing receiver-tracking already handles, same
-  as `anthropic.Anthropic()`. Deliberately NOT the v3+ `Pinecone()`
-  client-object SDK (`pc = Pinecone(...); index = pc.Index("name")`) —
-  that shape needs multi-hop receiver tracking (constructor -> a
-  *method*-returned intermediate object, not a variable bound directly to
-  a constructor call) that oah/discovery/python_adapter.py's detector
-  doesn't do yet. Stated here as a real, current scope boundary, not
-  glossed over — same discipline as every other partial-scope module in
-  this codebase. Suffix length 1 (`index.query`) since Pinecone calls
-  methods directly on the index object, unlike Anthropic's nested
-  resources.
-- **langsmith -> feedback_ingest** — `from langsmith import Client; client
-  = Client(); client.create_feedback(run_id=..., key="...", score=...)`.
-  A direct, single-hop constructor exactly like pinecone's, and
-  `create_feedback` is LangSmith's own real method name for binding user
-  feedback/reviewer verdicts to a trace/run ID — architecture.md's feedback
-  lens description verbatim. Suffix length 1, and unlike pinecone's
-  `query`, `create_feedback` is specific enough that it shouldn't meaningfully
-  raise the ambiguous-candidate rate the way a generic verb would.
-- **livekit -> realtime_session** — `from livekit import rtc; room =
-  rtc.Room(); await room.connect(url, token)`. This is the first registry
-  whose SDK module lives one level under its top-level package
-  (`livekit.rtc`, not bare `livekit`) -- `from livekit import rtc` is an
-  import of the *submodule*, not a class, a shape
-  oah/discovery/python_adapter.py's `ImportResolver` didn't track before
-  this registry needed it (only `from X import ClassName` and `import
-  X.Y` were tracked; `visit_import_from_statement` now also records a
-  from-imported name as a possible submodule alias when it isn't a known
-  constructor name, the from-import counterpart to `import X.Y`'s
-  existing dotted-path tracking). `rtc.Room()` is then a direct,
-  single-hop constructor call exactly like the other three registries,
-  and `.connect(...)` is called directly on the room object. Confidence
-  note, stated not hidden: this registry is grounded in LiveKit's public
-  SDK docs/quickstart shape as of this codebase's own knowledge, not
-  independently verified against a live corpus the way SP1's anthropic
-  registry was -- if real-world LiveKit code more commonly uses `from
-  livekit.rtc import Room` instead, that form already resolves correctly
-  too (same mechanism as `from anthropic import Anthropic`), so this
-  registry works either way. Suffix length 1 (`connect`) -- an even more
-  generic verb than pinecone's `query` (any socket/DB/API client can have
-  a `.connect()` method), so this registry raises the ambiguous-candidate
-  rate the most of the four; accepted for the same reason pinecone's
-  tradeoff was accepted, not because it's free.
+Module-level constants below (`REGISTRIES` etc.) are this module's default —
+built from the `genai` pack at import time, so `python_adapter.py`'s
+zero-argument call sites stay exactly as they were before this file held
+data instead of literals. `build_registry_index`/`structural_pattern_registries`
+are the pack-parameterized functions a second pack's registries would be
+derived through.
 
-`_walk_calls` in python_adapter.py tries the longest declared suffix
-length first when matching a call site's attribute chain, so a registry
-with a longer, more specific suffix is preferred over one whose shorter
-suffix happens to share a final segment.
-
-Real tradeoff, stated not hidden: pinecone's suffix is a single common
-word (`query`), unlike anthropic's two-segment, SDK-specific
-`messages.create`. A `.query(...)` call on a receiver this detector can't
-resolve (e.g. a SQLAlchemy `session.query(...)`) lands in the ambiguous
-bucket for LLM disambiguation, not silently ignored and not silently
-accepted -- disambiguation correctly returns `kind: null` for it, at the
-cost of one more model call than a Pinecone-only corpus would need. This
-is the same "never silently drop, never silently accept" posture S1 uses
-for every genuinely unresolved receiver; adding a generic-verb suffix just
-means more real-world call sites now fall into that bucket.
+`_walk_calls` in python_adapter.py tries the longest declared suffix length
+first when matching a call site's attribute chain, so a registry with a
+longer, more specific suffix is preferred over one whose shorter suffix
+happens to share a final segment.
 """
+from oah.domains.loader import load_pack
 
-ANTHROPIC = {
-    "constructor_names": frozenset({"Anthropic", "AsyncAnthropic"}),
-    "sdk_module": "anthropic",
-    # Suffix match on the last two attribute-chain segments, not the full
-    # dotted path — this is what let the SP1 prototype resolve
-    # client.beta.prompt_caching.messages.create correctly without
-    # enumerating every beta-namespace prefix by hand (see SP1 finding 3).
-    "method_suffixes": frozenset({("messages", "create"), ("messages", "stream")}),
-    "surface_kind": "llm_generation",
-    "framework": "anthropic-sdk",
-}
+_RECEIVER_SHAPES = ("receiver_method_suffix", "module_function_call")
 
-PINECONE = {
-    "constructor_names": frozenset({"Index"}),
-    "sdk_module": "pinecone",
-    "method_suffixes": frozenset({("query",)}),
-    "surface_kind": "retrieval",
-    "framework": "pinecone-sdk",
-}
 
-LANGSMITH = {
-    "constructor_names": frozenset({"Client"}),
-    "sdk_module": "langsmith",
-    "method_suffixes": frozenset({("create_feedback",)}),
-    "surface_kind": "feedback_ingest",
-    "framework": "langsmith-sdk",
-}
+def _receiver_entries(pack):
+    return [r for r in pack.get("registries", []) if r["detector_shape"] in _RECEIVER_SHAPES]
 
-LIVEKIT = {
-    "constructor_names": frozenset({"Room"}),
-    "sdk_module": "livekit.rtc",
-    "method_suffixes": frozenset({("connect",)}),
-    "surface_kind": "realtime_session",
-    "framework": "livekit-sdk",
-}
 
-REGISTRIES = [ANTHROPIC, PINECONE, LANGSMITH, LIVEKIT]
+def build_registry_index(pack):
+    """Returns (registries, constructor_names, module_to_registry,
+    all_method_suffixes, suffix_lengths) for the receiver/method-suffix
+    detector, derived from `pack` instead of a fixed literal list. Assumes
+    no two registries in the pack share an sdk_module -- MODULE_TO_REGISTRY
+    depends on that, same invariant this module always had."""
+    registries = [
+        {
+            "constructor_names": frozenset(r.get("constructor_names") or []),
+            "sdk_module": r["sdk_module"],
+            "method_suffixes": frozenset(tuple(s) for s in (r.get("method_suffixes") or [])),
+            "surface_kind": r["surface_kind"],
+            "framework": r["framework"],
+        }
+        for r in _receiver_entries(pack)
+    ]
+    constructor_names = frozenset().union(*(r["constructor_names"] for r in registries)) if registries else frozenset()
+    module_to_registry = {r["sdk_module"]: r for r in registries}
+    all_method_suffixes = frozenset().union(*(r["method_suffixes"] for r in registries)) if registries else frozenset()
+    suffix_lengths = sorted({len(s) for r in registries for s in r["method_suffixes"]}, reverse=True)
+    return registries, constructor_names, module_to_registry, all_method_suffixes, suffix_lengths
 
-# Union across registries -- the resolver only needs to know "is this call
-# constructing SOME tracked SDK client", the specific registry is looked
-# up later via the resolved module name.
-CONSTRUCTOR_NAMES = frozenset().union(*(r["constructor_names"] for r in REGISTRIES))
 
-# Resolved module name -> its one registry entry. Assumes no two
-# registries share an sdk_module -- true today, and a real invariant this
-# structure depends on if a third registry is ever added for a module
-# already present here.
-MODULE_TO_REGISTRY = {r["sdk_module"]: r for r in REGISTRIES}
+def structural_pattern_registries(pack):
+    """registries[] entries shaped for the structural content-signal
+    detector (detector_shape == structural_pattern), each carrying
+    content_signal (attribute_path, equals_value), the surface_kind/
+    emits_kind to report, and the framework label -- e.g. the
+    tool_use-dispatch check (attribute_path=["type"], equals_value=
+    "tool_use", emits kind "tool_call")."""
+    return [r for r in pack.get("registries", []) if r["detector_shape"] == "structural_pattern"]
 
-ALL_METHOD_SUFFIXES = frozenset().union(*(r["method_suffixes"] for r in REGISTRIES))
 
-# Distinct suffix lengths across all registries, longest first, so
-# _match_suffix tries the more specific pattern before a shorter one.
-SUFFIX_LENGTHS = sorted({len(s) for r in REGISTRIES for s in r["method_suffixes"]}, reverse=True)
+_GENAI_PACK = load_pack("genai")
+REGISTRIES, CONSTRUCTOR_NAMES, MODULE_TO_REGISTRY, ALL_METHOD_SUFFIXES, SUFFIX_LENGTHS = build_registry_index(_GENAI_PACK)
+STRUCTURAL_PATTERN_REGISTRIES = structural_pattern_registries(_GENAI_PACK)

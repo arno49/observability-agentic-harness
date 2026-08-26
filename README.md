@@ -73,11 +73,21 @@ mechanics, the S4 ops lens (release identifiers, alert plan, decision menu), S5'
 invariant gates, S7's runbook/roll-up structure, S8–S9's DTO and readiness-report
 shapes, and S11's TCR/validation-ladder concept are domain-agnostic SRE engineering.
 What's LLM-specific is concentrated in [docs/event-model.md](docs/event-model.md)
-(the Generation/Retrieval entities S3 diffs against) and three of S4's eight lenses
-(generation-capture, retrieval, realtime-multimodal) — call it the **GenAI domain
-pack** the harness ships with. That's a scope choice, not an architectural limit:
-LLM observability is where OTel semantic conventions and APM tooling are least
-mature, so it's where a gap-modeling harness adds the most value first.
+(the Generation/Retrieval entities S3 diffs against) and most of S4's nine lenses —
+call it the **GenAI domain pack** the harness ships with, declared as data at
+`domains/genai/pack.json` (point-kind vocabulary, S1 registries, the lens roster,
+semantic-convention namespaces, DTO event types) rather than hardwired into pipeline
+code. That split was a scope choice, not an architectural limit, but for a while it
+was only half real: enumerating where "GenAI" was actually hardwired found sixteen
+literals scattered through `oah/cli.py`, `oah/design/gates.py`,
+`oah/discovery/gap_model.py`, `oah/discovery/registry.py` and five schemas — see
+[docs/decisions/011](docs/decisions/011-service-domain-pack-architecture.md). E13
+extracted that seam with zero behavior change (`oah/domains/loader.py` loads and
+validates a pack manifest against `schemas/domain_pack.schema.json`); a second,
+non-AI domain pack is now a real, planned epic (E12) rather than a stub. LLM
+observability was still the right place to start: it's where OTel semantic
+conventions and APM tooling are least mature, so it's where a gap-modeling harness
+added the most value first.
 
 Retrofitting this by hand into an existing codebase is slow, inconsistent, and usually
 stalls after the first dashboard. OAH turns it into a repeatable, reviewable,
@@ -378,6 +388,9 @@ oah check-drift --repo ./product    # cheap staleness check against DTOs' retest
 docs/          architecture, event model, skills system, validation ladder, security
 schemas/       JSON Schemas for inter-stage artifacts (the contract backbone)
 skills/        skill drafts (SKILL.md per stage lens)
+domains/       domain pack manifests (domains/<name>/pack.json) -- what's
+               domain-specific about one pipeline run, loaded by oah/domains/
+               instead of hardwired; genai is the only pack today
 corpus/        reference repositories & eval fixtures for skill testing (planned)
 .github/       CI, incl. a skills-bundling Action — debug tooling, not the
                pipeline itself; see docs/skills-bundle.md

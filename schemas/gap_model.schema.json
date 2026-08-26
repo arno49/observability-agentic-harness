@@ -22,7 +22,9 @@
             "description": "IDs from surface_map.json this gap concerns"
           },
           "dimension": {
-            "enum": ["tracing", "generation_capture", "retrieval", "tools", "feedback", "error_taxonomy", "pii_governance", "cost", "operations", "self_telemetry", "realtime_multimodal"]
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Was a closed eleven-value enum; opened to any well-formed identifier (docs/decisions/011) so a second domain pack's own dimensions validate without a schema edit. Real membership is the loaded pack's point_kinds[].dimension values (oah/domains/validate.py), not a fixed list here."
           },
           "status": { "enum": ["dark", "partial", "covered"] },
           "existing_telemetry_refs": {
