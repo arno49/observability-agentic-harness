@@ -29,9 +29,13 @@ def _write_dtos_file(path, dtos):
     path.write_text(json.dumps({"schema_version": "0.1.0", "dtos": dtos}, indent=2))
 
 
-def _write_instrument_report(path):
+def _write_instrument_report(path, results=None):
+    results = results or []
+    summary = {"total": len(results), "applied": 0, "refused": 0, "unsupported": 0, "failed": 0}
+    for r in results:
+        summary[r["status"]] += 1
     report = {"schema_version": "0.1.0", "repo_git_sha": "x", "mode": "fix",
-              "results": [], "summary": {"total": 0, "applied": 0, "refused": 0, "unsupported": 0, "failed": 0}}
+              "results": results, "summary": summary}
     path.write_text(json.dumps(report, indent=2))
 
 
@@ -120,7 +124,9 @@ def test_dynamic_reports_observed_for_a_dto_the_s10_skill_pattern_actually_emits
     dtos_path = tmp_path / "implementation_dto.json"
     _write_dtos_file(dtos_path, [dto])
     report_path = tmp_path / "instrument_report.json"
-    _write_instrument_report(report_path)
+    _write_instrument_report(report_path, [
+        {"dto_id": "dto-0001", "status": "applied", "commit_sha": "abc123", "reason": None, "syntax_valid": True},
+    ])
 
     args = argparse.Namespace(target=str(target), dtos=str(dtos_path), instrument_report=str(report_path),
                                output=str(tmp_path / "validation.json"), dynamic=True)
@@ -130,3 +136,9 @@ def test_dynamic_reports_observed_for_a_dto_the_s10_skill_pattern_actually_emits
     result = json.loads((tmp_path / "validation.json").read_text())
     assert result["regression_gate"]["status"] == "passed"
     assert result["event_assertions"] == [{"dto_id": "dto-0001", "status": "observed", "reason": None}]
+    # The real proof this phase's whole point works end to end: a real
+    # DTO, actually applied, whose expected event was actually captured
+    # -- this is the first real report in the whole codebase that can
+    # honestly say "validated".
+    assert result["ladder_rung"] == "R2"
+    assert result["verdict"] == "validated"

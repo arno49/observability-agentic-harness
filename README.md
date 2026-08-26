@@ -156,7 +156,7 @@ oah dtos <target> [--context context.yaml] [-o out.json] [--model MODEL]        
 oah readiness <target> [--context context.yaml] [-o out.json] [--model MODEL]     # S9: readiness report
 oah instrument <target> --dtos implementation_dto.json [-o out.json] [--run-id ID]        # S10 report-only
 oah instrument <target> --dtos implementation_dto.json --mode fix --readiness readiness_report.json  # S10 fix
-oah validate <target> --dtos implementation_dto.json --instrument-report instrument_report.json [-o out.json] [--dynamic]  # S11, R4 (+ opt-in regression gate)
+oah validate <target> --dtos implementation_dto.json --instrument-report instrument_report.json [-o out.json] [--dynamic]  # S11, R4 always + real R2 with --dynamic
 oah backend-config <target> --backend {otel-only,langfuse} [-o output_dir]  # E9: collector config
 ```
 
@@ -206,16 +206,30 @@ OpenTelemetry capture pipeline (`opentelemetry-instrument` +
 `OTEL_TRACES_EXPORTER=console`) and, per DTO, checks whether a single real
 captured span actually had every one of that DTO's `expected_events[].required_attributes`
 together — reported under `event_assertions`
-(`status`: `not_attempted`/`skipped`/`observed`/`not_observed`, plus `reason`),
-informational only, never forcing `validation_failed` on its own (an unobserved
-event may just mean the test suite doesn't exercise that code path). This is
-**real R2's first half** — `docs/validation.md`'s ladder table defines R2 as
-event-emission assertion **and** a static trace-ID-propagation check together;
-the second half isn't built yet, so `ladder_rung` still stays `"R4"` regardless
-of `--dynamic`, and the verdict is never `validated`. R1/R3 (a real running
-product, an OTLP collector, live traffic, the agentic audit panel, actual TCR)
-aren't built either — see [Requirements](#requirements-planned) and
-`ROADMAP.md`'s E6 entry.
+(`status`: `not_attempted`/`skipped`/`observed`/`not_observed`, plus `reason`).
+Alongside these two, a **static trace-ID-propagation check** runs unconditionally
+(no `--dynamic` needed, same as the R4 static check) for `propagate_context`
+DTOs specifically: it classifies the async/queue boundary shape from
+`change.description`'s free text and looks for that shape's expected
+propagation code (`opentelemetry.context`'s `get_current()`/`attach()` for a
+thread-pool boundary, `opentelemetry.propagate`'s `inject()`/`extract()` for a
+Celery/queue boundary crossing a real wire, or nothing at all for
+`asyncio.create_task`, which already propagates via Python's own `contextvars`)
+— reported under `propagation_checks` (`status`:
+`not_applicable`/`skipped`/`present`/`absent`, plus `reason`); an
+unclassifiable description is honestly `skipped`, never guessed.
+
+Together these are **real R2, both halves** — `docs/validation.md`'s ladder
+table defines R2 as event-emission assertion *and* propagation check together,
+and `oah/validate/verdict.py`'s `compute_ladder_verdict` is the one place that
+decides whether a run actually earned it: `ladder_rung: "R2"` /
+`verdict: "validated"` only when `--dynamic` ran, the regression gate passed,
+there's at least one DTO S10 actually applied, and every one of those DTOs'
+relevant checks came back positive. Short of that, `ladder_rung` stays `"R4"`
+— a real regression-gate failure still forces `validation_failed` regardless of
+the rest. R1/R3 (a real running product, an OTLP collector, live traffic, the
+agentic audit panel, actual TCR) aren't built — see
+[Requirements](#requirements-planned) and `ROADMAP.md`'s E6 entry.
 
 `oah backend-config` generates a real `otel-collector-config.yaml` for either
 `otel-only` (a vendor-neutral floor, exports to the collector's own `debug`

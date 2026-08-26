@@ -73,6 +73,7 @@ def test_validate_end_to_end_present(tmp_path):
     # getattr(args, "dynamic", False) default matches old behavior.
     assert result["regression_gate"] == {"status": "not_attempted", "reason": None}
     assert result["event_assertions"] == [{"dto_id": "dto-0001", "status": "not_attempted", "reason": None}]
+    assert result["propagation_checks"] == [{"dto_id": "dto-0001", "status": "not_applicable", "reason": "this checker only evaluates propagate_context DTOs"}]
 
 
 def test_validate_end_to_end_absent(tmp_path):

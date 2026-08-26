@@ -2,17 +2,20 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oah.dev/schemas/validation_report.schema.json",
   "title": "S11 validation report",
-  "description": "docs/validation.md's degradation ladder. ladder_rung is R4 only in this phase (static schema conformance of code-level emission points, a hard ceiling for this rung, not situational) -- the ladder table defines R2 as BOTH per-DTO event-emission assertion AND a static trace-ID-propagation check together; event_assertions below builds only the first half, so ladder_rung stays R4 until the propagation check also lands (see ROADMAP.md's E6 entry). regression_gate wires E6 R2's sandbox mechanism into the deterministic layer's own step 1 ('instrumentation must not break the product') independent of ladder_rung -- a real, opt-in dynamic check, not a re-badging of R4. event_assertions asserts, per DTO, whether a single real captured OTel span (from the same sandboxed run) actually had every one of that DTO's expected_events[].required_attributes together -- informational only this phase, never affecting verdict on its own (an unobserved event may just mean the test suite doesn't exercise that code path, not that instrumentation is broken). R1/R3 (running the product live, a real OTLP collector, real traffic, the agentic audit panel) all need real target execution beyond the test suite, not attempted here -- ladder_rung and verdict grow further when they land, not silently redefined.",
+  "description": "docs/validation.md's degradation ladder. ladder_rung/verdict are computed by oah/validate/verdict.py's compute_ladder_verdict, the one place this decision is made -- see its own module docstring for the exact rule. Short version: ladder_rung is 'R2'/verdict 'validated' only when --dynamic ran, the regression gate passed, there is at least one DTO S10 actually applied, and every one of those DTOs' relevant checks came back positive (event_assertions 'observed' for ordinary DTOs, propagation_checks 'present' for propagate_context DTOs) -- matching the ladder table's own definition of R2 as BOTH checks together, not either alone. Anything short of that stays 'R4' (static-only ceiling, or --dynamic ran but didn't fully earn R2), 'needs_review' -- except a real regression_gate failure, which is 'validation_failed' regardless of the static/propagation results. regression_gate wires E6 R2's sandbox mechanism into the deterministic layer's own step 1 ('instrumentation must not break the product') independent of ladder_rung. R1/R3 (running the product live, a real OTLP collector, real traffic, the agentic audit panel) all need real target execution beyond the test suite, not attempted here -- ladder_rung and verdict grow further when they land, not silently redefined.",
   "type": "object",
-  "required": ["schema_version", "repo_git_sha", "ladder_rung", "verdict", "regression_gate", "event_assertions", "results", "summary"],
+  "required": ["schema_version", "repo_git_sha", "ladder_rung", "verdict", "regression_gate", "event_assertions", "propagation_checks", "results", "summary"],
   "additionalProperties": false,
   "properties": {
     "schema_version": { "const": "0.1.0" },
     "repo_git_sha": { "type": "string" },
-    "ladder_rung": { "const": "R4" },
+    "ladder_rung": {
+      "enum": ["R4", "R2"],
+      "description": "R4: static-only ceiling, or --dynamic ran but the run didn't earn R2 (see compute_ladder_verdict). R2: --dynamic ran, the regression gate passed, and every applicable DTO's event-emission (or propagation, for propagate_context DTOs) check came back positive -- the ladder table's actual definition of R2, both halves together."
+    },
     "verdict": {
-      "enum": ["needs_review", "validation_failed"],
-      "description": "needs_review: R4's own ceiling (static-only), or --dynamic ran and the regression gate didn't fail. validation_failed: regression_gate actually ran the target's test suite in the sandbox and it failed after instrumentation -- docs/validation.md's deterministic-layer step 1, independent of ladder_rung. Never 'validated' -- that needs real R2/R1 evidence, not built yet."
+      "enum": ["needs_review", "validation_failed", "validated"],
+      "description": "needs_review: R4's own ceiling, or --dynamic ran but didn't earn R2. validation_failed: regression_gate actually ran the target's test suite in the sandbox and it failed after instrumentation -- forces this verdict regardless of the static/propagation results. validated: paired with ladder_rung 'R2' -- see compute_ladder_verdict for the exact promotion rule. Never claimed for R1/R3, which aren't built."
     },
     "regression_gate": {
       "type": "object",
@@ -46,6 +49,26 @@
           "reason": {
             "type": ["string", "null"],
             "description": "Explains 'skipped'/'not_observed'; null for 'not_attempted'/'observed'."
+          }
+        }
+      }
+    },
+    "propagation_checks": {
+      "type": "array",
+      "description": "One entry per DTO in the input implementation_dto.json, in the same order -- real R2's own defining check, second half (oah/validate/propagation_checker.py): for propagate_context DTOs only, a static (no --dynamic needed) check of trace-ID propagation across the async/queue boundary, classified heuristically from change.description's free text. Empty array is valid (no DTOs given).",
+      "items": {
+        "type": "object",
+        "required": ["dto_id", "status", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "dto_id": { "type": "string" },
+          "status": {
+            "enum": ["not_applicable", "skipped", "present", "absent"],
+            "description": "not_applicable: change.type isn't propagate_context -- this checker has nothing to say about it. skipped: propagate_context, but not applied by S10, its file/anchor is missing, or change.description's boundary shape couldn't be classified -- never guessed. present: the classified boundary's expected propagation code was found (or, for an asyncio.create_task boundary, none is required in the first place). absent: classified, but the expected evidence was not found -- reason names what was expected."
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "description": "Explains 'skipped'/'absent'; null for 'not_applicable'/'present'."
           }
         }
       }

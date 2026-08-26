@@ -902,21 +902,21 @@ def cmd_instrument(args):
 
 
 def cmd_validate(args):
-    """S11, R4 (static-only) plus an opt-in --dynamic pass that adds two
-    real dynamic checks over one sandboxed run (oah/validate/dynamic.py):
-    a deterministic regression gate (docs/validation.md's own step 1,
-    "instrumentation must not break the product", independent of ladder
-    rung) and, now, real per-DTO event-emission assertion against
-    captured OTel spans (oah/validate/event_assertion.py) -- the first
-    half of R2's own defining check. ladder_rung is still fixed at 'R4'
-    regardless of --dynamic: R2's other defining half (a static check of
-    trace-ID propagation across async boundaries) isn't built yet, and
-    the ladder table defines R2 as both together -- see
-    oah/validate/dynamic.py's module docstring and ROADMAP.md's E6 entry.
-    No checkpointing -- neither path makes an LLM/agent call, and even
+    """S11, R4 (static-only presence check) plus real R2 (both halves):
+    an opt-in --dynamic pass adds a deterministic regression gate and
+    per-DTO event-emission assertion over one real sandboxed run
+    (oah/validate/dynamic.py), and a static trace-ID-propagation check
+    for propagate_context DTOs (oah/validate/propagation_checker.py) runs
+    unconditionally, same as the R4 static check. oah/validate/verdict.py's
+    compute_ladder_verdict is the one place that decides whether a run has
+    actually earned ladder_rung 'R2'/verdict 'validated' -- deliberately
+    conservative, see its own module docstring for the exact rule. No
+    checkpointing -- none of these make an LLM/agent call, and even
     --dynamic's sandbox run is cheap enough to always re-run in full."""
     from oah.validate.checker import check_dto_static
     from oah.validate.dynamic import run_dynamic_validation
+    from oah.validate.propagation_checker import check_dto_propagation
+    from oah.validate.verdict import compute_ladder_verdict
     from oah.schemas import validate, SchemaValidationError
 
     git_sha = _git_sha(args.target)
@@ -963,17 +963,26 @@ def cmd_validate(args):
     for r in results:
         summary[r["status"]] += 1
 
+    propagation_checks = [
+        check_dto_propagation(dto, instrument_by_id.get(dto["id"]), args.target)
+        for dto in dtos_data["dtos"]
+    ]
+
     dynamic = getattr(args, "dynamic", False)
     dynamic_result = run_dynamic_validation(args.target, dtos_data["dtos"], dynamic=dynamic)
     regression_gate = dynamic_result["regression_gate"]
     event_assertions = dynamic_result["event_assertions"]
-    verdict = "validation_failed" if regression_gate["status"] == "failed" else "needs_review"
+
+    ladder_rung, verdict = compute_ladder_verdict(
+        dtos_data["dtos"], results, event_assertions, propagation_checks, regression_gate,
+    )
 
     report = {
         "schema_version": "0.1.0", "repo_git_sha": git_sha,
-        "ladder_rung": "R4", "verdict": verdict,
+        "ladder_rung": ladder_rung, "verdict": verdict,
         "regression_gate": regression_gate,
         "event_assertions": event_assertions,
+        "propagation_checks": propagation_checks,
         "results": results, "summary": summary,
     }
     validate("validation_report", report)
@@ -984,9 +993,8 @@ def cmd_validate(args):
     else:
         print(json.dumps(report, indent=2))
 
-    print(f"\nladder_rung: R4  verdict: {verdict} (static ceiling is needs_review -- "
-          f"validation_failed only from a real --dynamic regression-gate failure)", file=sys.stderr)
-    print(f"S11 R4: {summary['present']} present, {summary['absent']} absent, "
+    print(f"\nladder_rung: {ladder_rung}  verdict: {verdict}", file=sys.stderr)
+    print(f"S11 R4 (static): {summary['present']} present, {summary['absent']} absent, "
           f"{summary['skipped']} skipped", file=sys.stderr)
     print(f"regression_gate: {regression_gate['status']}"
           + (f" -- {regression_gate['reason']}" if regression_gate["reason"] else ""), file=sys.stderr)
@@ -997,6 +1005,12 @@ def cmd_validate(args):
           f"{event_assertion_counts['not_observed']} not_observed, "
           f"{event_assertion_counts['skipped']} skipped, "
           f"{event_assertion_counts['not_attempted']} not_attempted", file=sys.stderr)
+    propagation_counts = {"not_applicable": 0, "skipped": 0, "present": 0, "absent": 0}
+    for pc in propagation_checks:
+        propagation_counts[pc["status"]] += 1
+    print(f"propagation_checks: {propagation_counts['present']} present, "
+          f"{propagation_counts['absent']} absent, {propagation_counts['skipped']} skipped, "
+          f"{propagation_counts['not_applicable']} not_applicable", file=sys.stderr)
     return 0
 
 
