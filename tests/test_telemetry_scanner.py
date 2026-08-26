@@ -117,3 +117,96 @@ except Exception:
     assert inventory["summary"]["logger_call_sites"] == 1
     assert inventory["summary"]["swallowed_exceptions"] == 1
     assert inventory["summary"]["has_existing_otel"] is False
+
+
+# --- Regressions for bugs found by adversarial review ------------------
+
+def test_self_attribute_stdlib_logger_detected(tmp_path):
+    """`self.logger = logging.getLogger(...)` -- one of the most common
+    Python logging idioms in any class-based service -- was invisible
+    before this fix (only plain-variable bindings were tracked)."""
+    result = _scan(tmp_path, """
+import logging
+
+class Foo:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+    def run(self):
+        self.logger.info("hello")
+""")
+    assert len(result["loggers"]) == 1
+    assert result["loggers"][0]["logger_kind"] == "stdlib_logging"
+    assert result["loggers"][0]["level"] == "info"
+
+
+def test_self_attribute_custom_wrapper_logger_detected(tmp_path):
+    result = _scan(tmp_path, """
+from beacon_logging import get_logger
+
+class Foo:
+    def __init__(self):
+        self._logger = get_logger("app")
+
+    def run(self):
+        self._logger.warning("careful")
+""")
+    assert len(result["loggers"]) == 1
+    assert result["loggers"][0]["logger_kind"] == "custom_wrapper"
+    assert result["loggers"][0]["wrapper_module"] == "beacon_logging"
+
+
+def test_self_attribute_bindings_do_not_bleed_across_classes(tmp_path):
+    """(class_name, attr_name) keying -- a `self.logger` in one class must
+    not be confused with an unrelated `self.logger` attribute in another
+    class that was never bound to an actual logger."""
+    result = _scan(tmp_path, """
+import logging
+
+class Foo:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+class Bar:
+    def __init__(self):
+        self.logger = "not a logger at all"
+
+    def run(self):
+        self.logger.info("this should not be counted")
+""")
+    assert len(result["loggers"]) == 0
+
+
+def test_direct_module_level_logging_call_detected(tmp_path):
+    """`logging.info(...)` with no intermediate getLogger() binding at
+    all -- invisible before this fix, since bindings only tracked
+    variables assigned FROM a getLogger() call, never the `logging`
+    module name itself."""
+    result = _scan(tmp_path, """
+import logging
+logging.error("oops")
+""")
+    assert len(result["loggers"]) == 1
+    assert result["loggers"][0]["logger_kind"] == "stdlib_logging"
+    assert result["loggers"][0]["level"] == "error"
+
+
+def test_aliased_logging_import_direct_call_detected(tmp_path):
+    result = _scan(tmp_path, """
+import logging as lg
+lg.warning("careful")
+""")
+    assert len(result["loggers"]) == 1
+    assert result["loggers"][0]["logger_kind"] == "stdlib_logging"
+
+
+def test_otel_prefix_requires_real_package_boundary(tmp_path):
+    """A bare startswith() on OTEL_PACKAGE_PREFIX misflagged an unrelated
+    package sharing the same string prefix as OTel usage."""
+    result = _scan(tmp_path, "import opentelemetryunrelatedpkg\n")
+    assert result["existing_otel_usage"] == []
+
+
+def test_otel_exact_package_name_still_detected(tmp_path):
+    result = _scan(tmp_path, "import opentelemetry\n")
+    assert len(result["existing_otel_usage"]) == 1

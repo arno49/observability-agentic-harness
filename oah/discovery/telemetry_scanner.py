@@ -46,11 +46,38 @@ def _find_logger_bindings(root, src):
     """Names bound to a logger, either stdlib (`logging.getLogger(...)`) or
     a custom wrapper (any call to a function literally named
     get_logger/getLogger, imported from elsewhere — the module it came from
-    is recorded, not assumed)."""
-    bindings = {}  # local name -> ("stdlib_logging"|"custom_wrapper", module_or_None)
+    is recorded, not assumed).
+
+    Returns (bindings, self_bindings, logging_aliases):
+    - bindings: local variable name -> ("stdlib_logging"|"custom_wrapper", module_or_None)
+    - self_bindings: (class_name, attr_name) -> same value shape, for
+      `self.logger = logging.getLogger(...)` in `__init__` -- found by
+      adversarial review to be invisible before this fix (one of the most
+      common Python logging idioms in any class-based service), the same
+      class-scoped self-attribute prescan trick as S1's python_adapter.py
+      already uses for SDK client bindings.
+    - logging_aliases: local names bound to the stdlib `logging` module
+      itself (`logging`, or `import logging as X`), so a direct
+      `logging.info(...)` / `X.info(...)` call site -- no intermediate
+      `getLogger()` binding at all -- is also recognized, not just
+      variable-bound loggers.
+    """
+    bindings = {}
+    self_bindings = {}
     wrapper_import_module = {}  # local func name -> module it was imported from
+    logging_aliases = {"logging"}
 
     def scan_imports(node):
+        if node.type == "import_statement":
+            for child in node.named_children:
+                if child.type == "dotted_name" and _text(child, src) == "logging":
+                    logging_aliases.add("logging")
+                elif child.type == "aliased_import":
+                    name_node = child.child_by_field_name("name")
+                    alias_node = child.child_by_field_name("alias")
+                    if (name_node is not None and _text(name_node, src) == "logging"
+                            and alias_node is not None):
+                        logging_aliases.add(_text(alias_node, src))
         if node.type == "import_from_statement":
             module_node = node.child_by_field_name("module_name")
             module = _text(module_node, src) if module_node is not None else ""
@@ -74,28 +101,47 @@ def _find_logger_bindings(root, src):
 
     scan_imports(root)
 
-    def scan_assignments(node):
+    def _classify_call(call_node):
+        """None, or ("stdlib_logging", None) / ("custom_wrapper", module)."""
+        func = call_node.child_by_field_name("function")
+        if func is None:
+            return None
+        if func.type == "attribute":
+            obj = func.child_by_field_name("object")
+            attr = func.child_by_field_name("attribute")
+            if (obj is not None and obj.type == "identifier" and attr is not None
+                    and _text(obj, src) in logging_aliases and _text(attr, src) == "getLogger"):
+                return ("stdlib_logging", None)
+        elif func.type == "identifier":
+            fname = _text(func, src)
+            if fname in wrapper_import_module:
+                return ("custom_wrapper", wrapper_import_module[fname])
+        return None
+
+    def scan_assignments(node, class_name):
+        local_class = class_name
+        if node.type == "class_definition":
+            name_node = node.child_by_field_name("name")
+            if name_node is not None:
+                local_class = _text(name_node, src)
         if node.type == "assignment":
             left = node.child_by_field_name("left")
             right = node.child_by_field_name("right")
-            if left is not None and right is not None and right.type == "call" and left.type == "identifier":
-                func = right.child_by_field_name("function")
-                if func is not None:
-                    if func.type == "attribute":
-                        obj = func.child_by_field_name("object")
-                        attr = func.child_by_field_name("attribute")
-                        if (obj is not None and attr is not None
-                                and _text(obj, src) == "logging" and _text(attr, src) == "getLogger"):
-                            bindings[_text(left, src)] = ("stdlib_logging", None)
-                    elif func.type == "identifier":
-                        fname = _text(func, src)
-                        if fname in wrapper_import_module:
-                            bindings[_text(left, src)] = ("custom_wrapper", wrapper_import_module[fname])
+            if left is not None and right is not None and right.type == "call":
+                hit = _classify_call(right)
+                if hit and left.type == "identifier":
+                    bindings[_text(left, src)] = hit
+                elif hit and left.type == "attribute":
+                    obj = left.child_by_field_name("object")
+                    attr = left.child_by_field_name("attribute")
+                    if (obj is not None and obj.type == "identifier" and _text(obj, src) == "self"
+                            and attr is not None and local_class is not None):
+                        self_bindings[(local_class, _text(attr, src))] = hit
         for c in node.children:
-            scan_assignments(c)
+            scan_assignments(c, local_class)
 
-    scan_assignments(root)
-    return bindings
+    scan_assignments(root, None)
+    return bindings, self_bindings, logging_aliases
 
 
 def _except_pattern(except_clause, src):
@@ -155,7 +201,7 @@ def scan_file(path, repo_root, ids):
         return {"loggers": [], "existing_otel_usage": [], "metrics_libraries": [], "error_handling": []}
 
     rel_path = str(path.relative_to(repo_root)) if repo_root else str(path)
-    logger_bindings = _find_logger_bindings(tree.root_node, src)
+    logger_bindings, self_logger_bindings, logging_aliases = _find_logger_bindings(tree.root_node, src)
 
     loggers, otel_usage, metrics, error_handling = [], [], [], []
 
@@ -164,7 +210,22 @@ def scan_file(path, repo_root, ids):
         # scope tracking) — file/line is enough to locate a finding.
         return None
 
-    def walk(node):
+    def _record_log_call(node, level, kind, wrapper_module):
+        entry = {
+            "id": ids.next("log"), "file": rel_path, "line": _line(node),
+            "level": level, "logger_kind": kind,
+        }
+        if wrapper_module:
+            entry["wrapper_module"] = wrapper_module
+        loggers.append(entry)
+
+    def walk(node, class_name):
+        local_class = class_name
+        if node.type == "class_definition":
+            name_node = node.child_by_field_name("name")
+            if name_node is not None:
+                local_class = _text(name_node, src)
+
         if node.type in ("import_statement", "import_from_statement"):
             module_node = node.child_by_field_name("module_name") if node.type == "import_from_statement" else None
             targets = [module_node] if module_node is not None else []
@@ -179,7 +240,10 @@ def scan_file(path, repo_root, ids):
                         targets.append(name_node)
             for t in targets:
                 text = _text(t, src)
-                if text.startswith(OTEL_PACKAGE_PREFIX):
+                # Exact match or a real dotted-package boundary -- a bare
+                # startswith would misflag e.g. `opentelemetryunrelatedpkg`
+                # as OTel usage (found by adversarial review).
+                if text == OTEL_PACKAGE_PREFIX or text.startswith(OTEL_PACKAGE_PREFIX + "."):
                     otel_usage.append({
                         "id": ids.next("otel"), "file": rel_path, "line": _line(node), "package": text,
                     })
@@ -194,17 +258,32 @@ def scan_file(path, repo_root, ids):
             if func is not None and func.type == "attribute":
                 obj = func.child_by_field_name("object")
                 attr = func.child_by_field_name("attribute")
-                if obj is not None and obj.type == "identifier" and attr is not None:
-                    obj_name, level = _text(obj, src), _text(attr, src)
-                    if level in LOG_LEVELS and obj_name in logger_bindings:
-                        kind, wrapper_module = logger_bindings[obj_name]
-                        entry = {
-                            "id": ids.next("log"), "file": rel_path, "line": _line(node),
-                            "level": level, "logger_kind": kind,
-                        }
-                        if wrapper_module:
-                            entry["wrapper_module"] = wrapper_module
-                        loggers.append(entry)
+                if obj is not None and attr is not None:
+                    level = _text(attr, src)
+                    if level in LOG_LEVELS:
+                        if obj.type == "identifier":
+                            obj_name = _text(obj, src)
+                            if obj_name in logger_bindings:
+                                kind, wrapper_module = logger_bindings[obj_name]
+                                _record_log_call(node, level, kind, wrapper_module)
+                            elif obj_name in logging_aliases:
+                                # Direct `logging.info(...)` / `X.info(...)`
+                                # with no intermediate getLogger() binding --
+                                # found by adversarial review to be
+                                # invisible before this fix.
+                                _record_log_call(node, level, "stdlib_logging", None)
+                        elif obj.type == "attribute":
+                            # `self.logger.info(...)` -- the receiver is
+                            # itself an attribute access, not a plain name.
+                            inner_obj = obj.child_by_field_name("object")
+                            inner_attr = obj.child_by_field_name("attribute")
+                            if (inner_obj is not None and inner_obj.type == "identifier"
+                                    and _text(inner_obj, src) == "self" and inner_attr is not None
+                                    and local_class is not None):
+                                key = (local_class, _text(inner_attr, src))
+                                if key in self_logger_bindings:
+                                    kind, wrapper_module = self_logger_bindings[key]
+                                    _record_log_call(node, level, kind, wrapper_module)
             elif func is not None and func.type == "identifier" and _text(func, src) == "print":
                 loggers.append({
                     "id": ids.next("log"), "file": rel_path, "line": _line(node),
@@ -222,9 +301,9 @@ def scan_file(path, repo_root, ids):
             error_handling.append(entry)
 
         for c in node.children:
-            walk(c)
+            walk(c, local_class)
 
-    walk(tree.root_node)
+    walk(tree.root_node, None)
     return {
         "loggers": loggers, "existing_otel_usage": otel_usage,
         "metrics_libraries": metrics, "error_handling": error_handling,
