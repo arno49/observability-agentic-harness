@@ -28,18 +28,21 @@
           },
           "framework": {
             "type": "string",
-            "description": "e.g. anthropic-sdk, openai-sdk, langchain, llamaindex, raw-http, homegrown-wrapper:<symbol>"
+            "maxLength": 100,
+            "description": "e.g. anthropic-sdk, openai-sdk, langchain, llamaindex, raw-http, homegrown-wrapper:<symbol>. A short label, never a code quote -- SKILL.md's own Hard rule against quoting more than a short identifier from the source is enforced here structurally, not just in prose."
           },
           "sync_nature": { "enum": ["sync", "async", "queued", "streamed"] },
           "workflow_hint": {
             "type": "string",
-            "description": "Best-effort; S3 confirms with the owner"
+            "maxLength": 200,
+            "description": "Best-effort; S3 confirms with the owner. A short phrase, never a code quote."
           },
           "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
           "detection": { "const": "llm_disambiguation" },
           "notes": {
             "type": "string",
-            "description": "Required when kind is null (the reason), or for flags like possible-injection-content / dead-code-candidate"
+            "maxLength": 300,
+            "description": "Required when kind is null (the reason), or for flags like possible-injection-content / dead-code-candidate. A short reason, never a code quote."
           },
           "needs_context": {
             "type": "array",

@@ -128,3 +128,58 @@ def test_rejection_kind_null_is_valid_output():
 
     results = disambiguate([CANDIDATE], _completion_fn=fake_completion)
     assert results[0]["kind"] is None
+
+
+# --- Secret-leakage detection (found by adversarial review) ----------------
+# SKILL.md states, as a Hard rule, "Never emit secrets, keys, or environment
+# values ... in any field, including notes" -- previously unenforced. A
+# response whose notes/workflow_hint/framework field echoed a real-looking
+# secret validated cleanly and would have flowed into surface_map.json.
+
+def test_leaked_anthropic_api_key_in_notes_rejected():
+    def fake_completion(**kwargs):
+        return _fake_response({"schema_version": "0.1.0", "results": [
+            {"candidate_id": "c1", "kind": "llm_generation", "confidence": 0.9,
+             "detection": "llm_disambiguation",
+             "notes": "uses api_key=sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890ABCDEF"},
+        ]})
+
+    with pytest.raises(DisambiguationError, match="looks like a real secret"):
+        disambiguate([CANDIDATE], _completion_fn=fake_completion)
+
+
+def test_leaked_aws_key_in_workflow_hint_rejected():
+    def fake_completion(**kwargs):
+        return _fake_response({"schema_version": "0.1.0", "results": [
+            {"candidate_id": "c1", "kind": "llm_generation", "confidence": 0.9,
+             "detection": "llm_disambiguation", "workflow_hint": "AKIAABCDEFGHIJKLMNOP"},
+        ]})
+
+    with pytest.raises(DisambiguationError, match="looks like a real secret"):
+        disambiguate([CANDIDATE], _completion_fn=fake_completion)
+
+
+def test_overlong_notes_field_rejected_by_schema():
+    """maxLength bounds the blast radius even for content that doesn't
+    match a known secret pattern -- a wholesale code quote instead of a
+    short reason."""
+    def fake_completion(**kwargs):
+        return _fake_response({"schema_version": "0.1.0", "results": [
+            {"candidate_id": "c1", "kind": "llm_generation", "confidence": 0.9,
+             "detection": "llm_disambiguation", "notes": "x" * 500},
+        ]})
+
+    with pytest.raises(DisambiguationError, match="schema validation"):
+        disambiguate([CANDIDATE], _completion_fn=fake_completion)
+
+
+def test_ordinary_notes_content_not_misdetected_as_a_secret():
+    def fake_completion(**kwargs):
+        return _fake_response({"schema_version": "0.1.0", "results": [
+            {"candidate_id": "c1", "kind": "llm_generation", "confidence": 0.9,
+             "detection": "llm_disambiguation",
+             "notes": "receiver resolved via a homegrown wrapper function"},
+        ]})
+
+    results = disambiguate([CANDIDATE], _completion_fn=fake_completion)
+    assert results[0]["notes"] == "receiver resolved via a homegrown wrapper function"

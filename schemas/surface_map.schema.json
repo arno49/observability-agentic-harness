@@ -36,12 +36,12 @@
           "file": { "type": "string" },
           "line": { "type": "integer", "minimum": 1 },
           "symbol": { "type": "string", "description": "Enclosing function/class" },
-          "framework": { "type": "string", "description": "e.g. anthropic-sdk, openai-sdk, langchain, llamaindex, raw-http, celery" },
+          "framework": { "type": "string", "maxLength": 100, "description": "e.g. anthropic-sdk, openai-sdk, langchain, llamaindex, raw-http, celery -- a short label, never a code quote" },
           "sync_nature": { "enum": ["sync", "async", "queued", "streamed"] },
           "detection": { "enum": ["ast", "signature", "llm_disambiguation"] },
           "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
-          "notes": { "type": "string" },
-          "workflow_hint": { "type": "string", "description": "Best-effort mapping to a product workflow; confirmed in context.yaml" }
+          "notes": { "type": "string", "maxLength": 300, "description": "A short reason, never a code quote" },
+          "workflow_hint": { "type": "string", "maxLength": 200, "description": "Best-effort mapping to a product workflow; confirmed in context.yaml. A short phrase, never a code quote." }
         }
       }
     },

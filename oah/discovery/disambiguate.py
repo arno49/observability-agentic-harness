@@ -14,6 +14,7 @@ at runtime, not copied here — this can never drift from what
 docs/SKILLS.md documents as the skill of record.
 """
 import json
+import re
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
@@ -22,6 +23,33 @@ from oah.llm_client import missing_credentials  # noqa: F401 (re-exported — se
 
 SKILL_PATH = Path(__file__).parent.parent.parent / "skills" / "s1-surface-mapper"
 DEFAULT_MODEL = "claude-sonnet-5"  # SP8: frontier default for S1 disambiguation, not light tier
+
+# Found by adversarial review: SKILL.md states, as a Hard rule, "Never
+# emit secrets, keys, or environment values ... in any field, including
+# notes" -- but nothing enforced it. A mocked response whose notes/
+# workflow_hint field echoed a source excerpt verbatim (including a
+# literal API key) validated cleanly and flowed straight into the
+# persisted surface_map.json. schemas add maxLength bounds (blast-radius
+# limiting, not detection); this is the second, detection layer: a
+# pattern match on well-known secret-key *shapes*, not a comprehensive
+# secrets scanner -- stated as a real, bounded scope, not oversold.
+_SECRET_PATTERNS = [
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),   # Anthropic API key
+    re.compile(r"sk-[A-Za-z0-9]{20,}"),         # OpenAI-style API key
+    re.compile(r"AKIA[0-9A-Z]{16}"),            # AWS access key ID
+    re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),  # GitHub token (ghp_/gho_/ghu_/ghs_/ghr_)
+    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),  # Slack token
+]
+
+
+def _find_leaked_secret(text):
+    if not text:
+        return None
+    for pattern in _SECRET_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return match.group(0)
+    return None
 
 
 class DisambiguationError(Exception):
@@ -109,5 +137,17 @@ def disambiguate(candidates, model=None, _completion_fn=None):
             f"candidates sent — missing: {sorted(missing)}. Not merging a partial "
             f"batch silently; retry or investigate."
         )
+
+    for result in parsed["results"]:
+        for field in ("notes", "workflow_hint", "framework"):
+            leaked = _find_leaked_secret(result.get(field))
+            if leaked:
+                raise DisambiguationError(
+                    f"result for candidate_id={result.get('candidate_id')!r} field {field!r} "
+                    f"contains what looks like a real secret/API key — refusing to merge this "
+                    f"batch into surface_map.json. This violates SKILL.md's own Hard rule "
+                    f"('never emit secrets, keys, or environment values'); investigate the "
+                    f"model response rather than retrying blindly."
+                )
 
     return parsed["results"]
