@@ -23,15 +23,23 @@ def _gate_result(status, reason=None):
     return {"status": status, "reason": reason}
 
 
-def check_regression_gate(target_repo, *, dynamic, sandbox_runner=run_in_sandbox, **sandbox_kwargs):
+def check_regression_gate(target_repo, *, dynamic, sandbox_runner=run_in_sandbox,
+                           _pytest_result=None, **sandbox_kwargs):
+    """`_pytest_result`, when given, is used instead of calling
+    run_pytest_suite again -- oah/validate/dynamic.py's orchestrator makes
+    exactly one real sandbox run (with capture_spans=True, for event
+    assertion) and passes its result in here so a single `oah validate
+    --dynamic` invocation never spins up the sandbox twice. Every existing
+    call site (this parameter omitted) is unaffected."""
     if not dynamic:
         return _gate_result("not_attempted")
 
-    if not docker_available():
-        return _gate_result("skipped", reason="docker is not available (not on PATH, or the daemon "
-                                               "is unreachable) -- --dynamic requires a real sandbox")
-
-    result = run_pytest_suite(target_repo, sandbox_runner=sandbox_runner, **sandbox_kwargs)
+    if _pytest_result is None:
+        if not docker_available():
+            return _gate_result("skipped", reason="docker is not available (not on PATH, or the daemon "
+                                                   "is unreachable) -- --dynamic requires a real sandbox")
+        _pytest_result = run_pytest_suite(target_repo, sandbox_runner=sandbox_runner, **sandbox_kwargs)
+    result = _pytest_result
 
     if result["status"] == "no_tests_found":
         return _gate_result("skipped", reason="no pytest suite found in the target repo")

@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oah.dev/schemas/validation_report.schema.json",
   "title": "S11 validation report",
-  "description": "docs/validation.md's degradation ladder. ladder_rung is R4 only in this phase (static schema conformance of code-level emission points, a hard ceiling for this rung, not situational) -- R2's own defining check (per-DTO event-emission assertion) needs skills/s10-instrumenter/SKILL.md to name a concrete telemetry API first, not built yet. regression_gate wires E6 R2's already-built sandbox mechanism into the deterministic layer's own step 1 ('instrumentation must not break the product') independent of ladder_rung -- a real, opt-in dynamic check, not a re-badging of R4. R1/R3 (running the product live, a real OTLP collector, real traffic, the agentic audit panel) all need real target execution beyond the test suite, not attempted here -- ladder_rung and verdict grow further when they land, not silently redefined.",
+  "description": "docs/validation.md's degradation ladder. ladder_rung is R4 only in this phase (static schema conformance of code-level emission points, a hard ceiling for this rung, not situational) -- the ladder table defines R2 as BOTH per-DTO event-emission assertion AND a static trace-ID-propagation check together; event_assertions below builds only the first half, so ladder_rung stays R4 until the propagation check also lands (see ROADMAP.md's E6 entry). regression_gate wires E6 R2's sandbox mechanism into the deterministic layer's own step 1 ('instrumentation must not break the product') independent of ladder_rung -- a real, opt-in dynamic check, not a re-badging of R4. event_assertions asserts, per DTO, whether a single real captured OTel span (from the same sandboxed run) actually had every one of that DTO's expected_events[].required_attributes together -- informational only this phase, never affecting verdict on its own (an unobserved event may just mean the test suite doesn't exercise that code path, not that instrumentation is broken). R1/R3 (running the product live, a real OTLP collector, real traffic, the agentic audit panel) all need real target execution beyond the test suite, not attempted here -- ladder_rung and verdict grow further when they land, not silently redefined.",
   "type": "object",
-  "required": ["schema_version", "repo_git_sha", "ladder_rung", "verdict", "regression_gate", "results", "summary"],
+  "required": ["schema_version", "repo_git_sha", "ladder_rung", "verdict", "regression_gate", "event_assertions", "results", "summary"],
   "additionalProperties": false,
   "properties": {
     "schema_version": { "const": "0.1.0" },
@@ -16,7 +16,7 @@
     },
     "regression_gate": {
       "type": "object",
-      "description": "docs/validation.md's deterministic layer step 1 ('instrumentation must not break the product'), wired via E6 R2's sandbox mechanism (oah/validate/sandbox.py, pytest_runner.py) -- NOT R2 itself, which additionally needs per-DTO event-emission assertion, not built. Only meaningful when --dynamic was passed to `oah validate`; otherwise 'not_attempted'.",
+      "description": "docs/validation.md's deterministic layer step 1 ('instrumentation must not break the product'), wired via E6 R2's sandbox mechanism (oah/validate/sandbox.py, pytest_runner.py) -- independent of ladder_rung, not itself a claim of any ladder rung. Only meaningful when --dynamic was passed to `oah validate`; otherwise 'not_attempted'.",
       "required": ["status", "reason"],
       "additionalProperties": false,
       "properties": {
@@ -27,6 +27,26 @@
         "reason": {
           "type": ["string", "null"],
           "description": "Explains 'skipped'/'failed'; null for 'not_attempted'/'passed'."
+        }
+      }
+    },
+    "event_assertions": {
+      "type": "array",
+      "description": "One entry per DTO in the input implementation_dto.json, in the same order -- real R2's own defining check, first half (oah/validate/event_assertion.py): does a single real OTel span, captured from the same --dynamic sandboxed run as regression_gate, actually have every one of this DTO's expected_events[].required_attributes together? Empty array is valid (no DTOs given).",
+      "items": {
+        "type": "object",
+        "required": ["dto_id", "status", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "dto_id": { "type": "string" },
+          "status": {
+            "enum": ["not_attempted", "skipped", "observed", "not_observed"],
+            "description": "not_attempted: --dynamic not passed. skipped: --dynamic passed but the sandboxed run never actually reached pytest (Docker unavailable, no test suite found, or the install ladder failed) -- distinct from not_observed, which means the run DID happen and still found nothing. observed: a single captured span had every required attribute together. not_observed: no single span did -- reason names which attributes were never found together."
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "description": "Explains 'skipped'/'not_observed'; null for 'not_attempted'/'observed'."
+          }
         }
       }
     },

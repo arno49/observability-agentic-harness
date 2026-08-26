@@ -194,17 +194,28 @@ anchor line? A code-level presence check, nothing more — it never runs the tar
 product on its own, so `ladder_rung` is fixed at `"R4"` (R4's own stated ceiling —
 `--dynamic` below doesn't change this, see why). `--dynamic` additionally wires
 E6 R2's sandbox mechanism into `docs/validation.md`'s own **deterministic-layer
-regression gate**: the target's real test suite runs, network-isolated, inside a
-throwaway Docker container; a real test failure sets `verdict: "validation_failed"`
-(real ladder vocabulary the schema never emitted before this), reported under a
-new `regression_gate` field (`status`: `not_attempted`/`skipped`/`passed`/`failed`,
-plus `reason`). This is **not** real R2 — R2's own defining check (asserting each
-DTO's expected telemetry event is actually emitted at runtime) needs
-`skills/s10-instrumenter/SKILL.md` to name a concrete, predictable telemetry API
-first, which it doesn't yet — so `ladder_rung` stays `"R4"` regardless of
-`--dynamic`, and the verdict is never `validated`. R1/R3 (a real running product,
-an OTLP collector, live traffic, the agentic audit panel, actual TCR) aren't built
-either — see [Requirements](#requirements-planned) and `ROADMAP.md`'s E6 entry.
+regression gate** and, now, **real per-DTO event-emission assertion** — both over
+one real sandboxed run, not two. The regression gate: the target's real test suite
+runs, network-isolated, inside a throwaway Docker container; a real test failure
+sets `verdict: "validation_failed"` (real ladder vocabulary the schema never
+emitted before this), reported under `regression_gate`
+(`status`: `not_attempted`/`skipped`/`passed`/`failed`, plus `reason`). Event
+assertion: `skills/s10-instrumenter/SKILL.md` now names a concrete telemetry API
+(`opentelemetry.trace`), so the sandbox additionally bootstraps a real
+OpenTelemetry capture pipeline (`opentelemetry-instrument` +
+`OTEL_TRACES_EXPORTER=console`) and, per DTO, checks whether a single real
+captured span actually had every one of that DTO's `expected_events[].required_attributes`
+together — reported under `event_assertions`
+(`status`: `not_attempted`/`skipped`/`observed`/`not_observed`, plus `reason`),
+informational only, never forcing `validation_failed` on its own (an unobserved
+event may just mean the test suite doesn't exercise that code path). This is
+**real R2's first half** — `docs/validation.md`'s ladder table defines R2 as
+event-emission assertion **and** a static trace-ID-propagation check together;
+the second half isn't built yet, so `ladder_rung` still stays `"R4"` regardless
+of `--dynamic`, and the verdict is never `validated`. R1/R3 (a real running
+product, an OTLP collector, live traffic, the agentic audit panel, actual TCR)
+aren't built either — see [Requirements](#requirements-planned) and
+`ROADMAP.md`'s E6 entry.
 
 `oah backend-config` generates a real `otel-collector-config.yaml` for either
 `otel-only` (a vendor-neutral floor, exports to the collector's own `debug`

@@ -1,7 +1,48 @@
 """E6 R2 -- pytest_runner.py with a fake sandbox_runner injected, so
 none of this needs real Docker. The real-Docker half of R2's coverage
-lives in tests/test_sandbox_docker.py."""
-from oah.validate.pytest_runner import detect_pytest_suite, run_pytest_suite
+lives in tests/test_sandbox_docker.py (regression gate) and
+tests/test_pytest_runner_capture_docker.py (span capture)."""
+from oah.validate.pytest_runner import detect_pytest_suite, parse_captured_spans, run_pytest_suite
+
+# A realistic combined-stdout sample: pytest's own progress dot, a test's
+# own print(), the summary line, and two ConsoleSpanExporter JSON dumps,
+# all interleaved -- captured from a real Docker run during this phase's
+# own spike, not hand-guessed.
+_REALISTIC_CAPTURE_OUTPUT = """\
+some test-level print output too
+..
+============================== 2 passed in 0.00s ==============================
+{
+    "name": "llm.generate.1",
+    "context": {
+        "trace_id": "0x95d164f498c05fb6d37e01011aa57e81",
+        "span_id": "0xa32bb2a931f32c28",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "attributes": {
+        "gen_ai.usage.input_tokens": 43
+    },
+    "events": [],
+    "links": []
+}
+{
+    "name": "llm.generate.2",
+    "context": {
+        "trace_id": "0x4cc6c9c0722e5ada89052fb62dfba96c",
+        "span_id": "0xd8de73cdeba56ddf",
+        "trace_state": "[]"
+    },
+    "kind": "SpanKind.INTERNAL",
+    "parent_id": null,
+    "attributes": {
+        "gen_ai.usage.input_tokens": 44
+    },
+    "events": [],
+    "links": []
+}
+"""
 
 
 def _fake_sandbox(exit_code, stdout="", stderr=""):
@@ -124,3 +165,81 @@ def test_sandbox_kwargs_are_forwarded_to_the_runner(tmp_path):
     run_pytest_suite(tmp_path, sandbox_runner=runner, timeout_s=60, memory="256m")
     assert seen_kwargs["timeout_s"] == 60
     assert seen_kwargs["memory"] == "256m"
+
+
+def test_parse_captured_spans_extracts_both_spans_from_realistic_output():
+    spans = parse_captured_spans(_REALISTIC_CAPTURE_OUTPUT)
+    assert len(spans) == 2
+    assert spans[0]["name"] == "llm.generate.1"
+    assert spans[0]["attributes"] == {"gen_ai.usage.input_tokens": 43}
+    assert spans[1]["name"] == "llm.generate.2"
+    assert spans[1]["attributes"] == {"gen_ai.usage.input_tokens": 44}
+
+
+def test_parse_captured_spans_ignores_unrelated_json_without_span_shape():
+    text = '{"just": "some unrelated json the target printed"}\nno spans here at all\n'
+    assert parse_captured_spans(text) == []
+
+
+def test_parse_captured_spans_empty_on_plain_text():
+    assert parse_captured_spans("no json here, just plain pytest text\n") == []
+
+
+def test_run_pytest_suite_without_capture_spans_returns_empty_spans_list(tmp_path):
+    (tmp_path / "tests").mkdir()
+    result = run_pytest_suite(tmp_path, sandbox_runner=_fake_sandbox(0, stdout="===== 1 passed in 0.01s ====="))
+    assert result["spans"] == []
+
+
+def test_run_pytest_suite_with_capture_spans_true_parses_real_spans(tmp_path):
+    (tmp_path / "tests").mkdir()
+    result = run_pytest_suite(
+        tmp_path, sandbox_runner=_fake_sandbox(0, stdout=_REALISTIC_CAPTURE_OUTPUT),
+        capture_spans=True,
+    )
+    assert result["status"] == "passed"
+    assert len(result["spans"]) == 2
+    assert result["spans"][0]["name"] == "llm.generate.1"
+
+
+def test_capture_spans_true_installs_the_otel_capture_dependencies(tmp_path):
+    (tmp_path / "tests").mkdir()
+    seen = {}
+
+    def runner(target_repo, script, setup_script=None, **kwargs):
+        seen["script"] = script
+        seen["setup_script"] = setup_script
+        return {"exit_code": 0, "stdout": "===== 1 passed in 0.01s =====", "stderr": "", "timed_out": False}
+
+    run_pytest_suite(tmp_path, sandbox_runner=runner, capture_spans=True)
+    assert "opentelemetry-distro" in seen["setup_script"]
+    assert "opentelemetry-instrument" in seen["script"]
+    assert "-s" in seen["script"]
+
+
+def test_capture_spans_false_never_installs_otel_capture_dependencies(tmp_path):
+    (tmp_path / "tests").mkdir()
+    seen = {}
+
+    def runner(target_repo, script, setup_script=None, **kwargs):
+        seen["script"] = script
+        seen["setup_script"] = setup_script
+        return {"exit_code": 0, "stdout": "===== 1 passed in 0.01s =====", "stderr": "", "timed_out": False}
+
+    run_pytest_suite(tmp_path, sandbox_runner=runner)
+    assert "opentelemetry-distro" not in seen["setup_script"]
+    assert "opentelemetry-instrument" not in seen["script"]
+
+
+def test_no_tests_found_never_populates_spans_even_with_capture_requested(tmp_path):
+    result = run_pytest_suite(tmp_path, sandbox_runner=_fake_sandbox(0), capture_spans=True)
+    assert result["status"] == "no_tests_found"
+    assert result["spans"] == []
+
+
+def test_install_failed_never_populates_spans_even_with_capture_requested(tmp_path):
+    (tmp_path / "tests").mkdir()
+    result = run_pytest_suite(tmp_path, sandbox_runner=_fake_sandbox(1, stderr="no summary line"),
+                               capture_spans=True)
+    assert result["status"] == "install_failed"
+    assert result["spans"] == []

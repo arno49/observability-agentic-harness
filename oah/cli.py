@@ -902,22 +902,21 @@ def cmd_instrument(args):
 
 
 def cmd_validate(args):
-    """S11, R4 (static-only) plus an opt-in --dynamic regression gate.
-    See oah/validate/checker.py's module docstring for exactly what the
-    static check claims (a code-level attribute-name presence check, at
-    or after each DTO's own anchor) and what it explicitly doesn't
-    (R1-R3: running the product, real OTLP capture, the agentic audit
-    panel -- none of that exists yet). ladder_rung is fixed at 'R4'
-    regardless of --dynamic -- the regression gate is docs/validation.md's
-    own deterministic-layer step 1 ("instrumentation must not break the
-    product"), independent of ladder rung, not a claim of real R2 (which
-    additionally needs per-DTO event-emission assertion -- see
-    oah/validate/regression_gate.py's module docstring for why that isn't
-    built yet). No checkpointing -- neither path makes an LLM/agent call,
-    and even --dynamic's sandbox run is cheap enough to always re-run in
-    full."""
+    """S11, R4 (static-only) plus an opt-in --dynamic pass that adds two
+    real dynamic checks over one sandboxed run (oah/validate/dynamic.py):
+    a deterministic regression gate (docs/validation.md's own step 1,
+    "instrumentation must not break the product", independent of ladder
+    rung) and, now, real per-DTO event-emission assertion against
+    captured OTel spans (oah/validate/event_assertion.py) -- the first
+    half of R2's own defining check. ladder_rung is still fixed at 'R4'
+    regardless of --dynamic: R2's other defining half (a static check of
+    trace-ID propagation across async boundaries) isn't built yet, and
+    the ladder table defines R2 as both together -- see
+    oah/validate/dynamic.py's module docstring and ROADMAP.md's E6 entry.
+    No checkpointing -- neither path makes an LLM/agent call, and even
+    --dynamic's sandbox run is cheap enough to always re-run in full."""
     from oah.validate.checker import check_dto_static
-    from oah.validate.regression_gate import check_regression_gate
+    from oah.validate.dynamic import run_dynamic_validation
     from oah.schemas import validate, SchemaValidationError
 
     git_sha = _git_sha(args.target)
@@ -965,13 +964,16 @@ def cmd_validate(args):
         summary[r["status"]] += 1
 
     dynamic = getattr(args, "dynamic", False)
-    regression_gate = check_regression_gate(args.target, dynamic=dynamic)
+    dynamic_result = run_dynamic_validation(args.target, dtos_data["dtos"], dynamic=dynamic)
+    regression_gate = dynamic_result["regression_gate"]
+    event_assertions = dynamic_result["event_assertions"]
     verdict = "validation_failed" if regression_gate["status"] == "failed" else "needs_review"
 
     report = {
         "schema_version": "0.1.0", "repo_git_sha": git_sha,
         "ladder_rung": "R4", "verdict": verdict,
         "regression_gate": regression_gate,
+        "event_assertions": event_assertions,
         "results": results, "summary": summary,
     }
     validate("validation_report", report)
@@ -988,6 +990,13 @@ def cmd_validate(args):
           f"{summary['skipped']} skipped", file=sys.stderr)
     print(f"regression_gate: {regression_gate['status']}"
           + (f" -- {regression_gate['reason']}" if regression_gate["reason"] else ""), file=sys.stderr)
+    event_assertion_counts = {"not_attempted": 0, "skipped": 0, "observed": 0, "not_observed": 0}
+    for ea in event_assertions:
+        event_assertion_counts[ea["status"]] += 1
+    print(f"event_assertions: {event_assertion_counts['observed']} observed, "
+          f"{event_assertion_counts['not_observed']} not_observed, "
+          f"{event_assertion_counts['skipped']} skipped, "
+          f"{event_assertion_counts['not_attempted']} not_attempted", file=sys.stderr)
     return 0
 
 
@@ -1155,10 +1164,11 @@ def build_parser():
                              help="Path to an instrument_report.json from `oah instrument --mode fix`")
     p_validate.add_argument("-o", "--output", default=None, help="Write validation_report.json here instead of stdout")
     p_validate.add_argument("--dynamic", action="store_true",
-                             help="Also run the target's own test suite in an isolated Docker sandbox as a "
-                                  "regression gate (E6 R2's mechanism) -- requires Docker; a real test "
-                                  "failure forces verdict=validation_failed. Without this flag, behavior is "
-                                  "unchanged (static-only). Does not change ladder_rung.")
+                             help="Also run the target's own test suite in an isolated Docker sandbox "
+                                  "(E6 R2's mechanism) -- requires Docker. Adds a regression gate (a real "
+                                  "test failure forces verdict=validation_failed) and per-DTO event_assertions "
+                                  "(observed/not_observed against real captured OTel spans). Without this "
+                                  "flag, behavior is unchanged (static-only). Does not change ladder_rung.")
     p_validate.set_defaults(func=cmd_validate)
 
     p_backend_config = sub.add_parser(

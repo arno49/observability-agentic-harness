@@ -78,3 +78,55 @@ def test_dynamic_with_a_real_failing_suite_forces_validation_failed(tmp_path):
     assert result["verdict"] == "validation_failed"
     assert result["regression_gate"]["status"] == "failed"
     assert "1 failed" in result["regression_gate"]["reason"]
+
+
+_APP_PY = '''
+from opentelemetry import trace
+tracer = trace.get_tracer(__name__)
+
+def do_work():
+    with tracer.start_as_current_span("llm.generate") as span:
+        span.set_attribute("gen_ai.usage.input_tokens", 42)
+        return "ok"
+'''
+
+_TEST_PY = '''
+from app import do_work
+
+def test_do_work():
+    assert do_work() == "ok"
+'''
+
+
+def test_dynamic_reports_observed_for_a_dto_the_s10_skill_pattern_actually_emits(tmp_path):
+    """End-to-end proof that skills/s10-instrumenter/SKILL.md's own
+    taught pattern (from opentelemetry import trace;
+    tracer.start_as_current_span(...); span.set_attribute(...)) and this
+    phase's capture mechanism actually connect -- not just each half
+    verified in isolation."""
+    target = tmp_path / "target_repo"
+    (target / "tests").mkdir(parents=True)
+    (target / "app.py").write_text(_APP_PY)
+    (target / "tests" / "test_app.py").write_text(_TEST_PY)
+    _init_git_repo(target)
+
+    dto = {
+        "id": "dto-0001", "gap_id": "gap-0001", "surface_point_ids": ["sp-0001"],
+        "change": {"type": "wrap_call", "file": "app.py", "anchor": "def do_work",
+                    "preconditions": [], "description": "wrap with a span"},
+        "expected_events": [{"event_type": "generation", "required_attributes": ["gen_ai.usage.input_tokens"]}],
+        "rollout_step": 1,
+    }
+    dtos_path = tmp_path / "implementation_dto.json"
+    _write_dtos_file(dtos_path, [dto])
+    report_path = tmp_path / "instrument_report.json"
+    _write_instrument_report(report_path)
+
+    args = argparse.Namespace(target=str(target), dtos=str(dtos_path), instrument_report=str(report_path),
+                               output=str(tmp_path / "validation.json"), dynamic=True)
+    rc = cmd_validate(args)
+    assert rc == 0
+
+    result = json.loads((tmp_path / "validation.json").read_text())
+    assert result["regression_gate"]["status"] == "passed"
+    assert result["event_assertions"] == [{"dto_id": "dto-0001", "status": "observed", "reason": None}]

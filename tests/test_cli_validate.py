@@ -72,6 +72,7 @@ def test_validate_end_to_end_present(tmp_path):
     # No `dynamic` attribute on this Namespace at all -- proves the
     # getattr(args, "dynamic", False) default matches old behavior.
     assert result["regression_gate"] == {"status": "not_attempted", "reason": None}
+    assert result["event_assertions"] == [{"dto_id": "dto-0001", "status": "not_attempted", "reason": None}]
 
 
 def test_validate_end_to_end_absent(tmp_path):

@@ -19,7 +19,23 @@ to the target's own test code as it executes.
 Python only, matching S1's own surface-detection scope today -- see
 this module's own docstring note in the R2 plan for why non-Python
 targets aren't attempted here.
+
+`capture_spans=True` additionally captures what the target's own
+(S10-instrumented) code actually emits at runtime, via OpenTelemetry's
+own official zero-code-change bootstrap tool, `opentelemetry-instrument`
+-- verified against a real container before relying on it: it silently
+no-ops unless `opentelemetry-distro` is installed alongside
+`-api`/`-sdk`/`-instrumentation` (no Configurator registered otherwise),
+and pytest's default fd-level capture swallows the exporter's
+background-thread writes unless run with `-s`. The `ConsoleSpanExporter`
+prints one pretty-printed JSON object per span, back to back, interleaved
+with pytest's own text -- not one parseable document -- so
+`parse_captured_spans` scans for each individually via
+`json.JSONDecoder.raw_decode`, filtering to objects that actually look
+like a real span so unrelated JSON the target's own tests might print
+can't be mistaken for one.
 """
+import json
 import re
 from pathlib import Path
 
@@ -46,6 +62,7 @@ _COUNT_RE = re.compile(r"(\d+) (failed|passed)")
 _INSTALL_SCRIPT = """
 set -e
 if pip install -e ".[dev]" >/tmp/oah_install.log 2>&1; then
+    pip install opentelemetry-api
     exit 0
 fi
 echo "--- editable install failed, falling back ---" >&2
@@ -53,10 +70,57 @@ cat /tmp/oah_install.log >&2
 if [ -f requirements.txt ]; then
     pip install -r requirements.txt
 fi
-pip install pytest
+pip install pytest opentelemetry-api
 """.strip()
 
 _TEST_SCRIPT = "python -m pytest"
+
+# opentelemetry-api alone is always installed above (not gated on
+# capture_spans): S10-instrumented target code now unconditionally does
+# `from opentelemetry import trace` (per skills/s10-instrumenter/SKILL.md),
+# and the api package alone is enough for that import and every
+# tracer.start_as_current_span/set_attribute call to work as real no-ops
+# -- without it, ANY --dynamic run against a real S10-instrumented target
+# would fail to even import, a real regression a Docker-only test caught
+# (test_pytest_runner_capture_docker.py), not the mocked unit tests.
+# -sdk/-instrumentation/-distro turn those no-ops into real, exported,
+# capturable spans -- only needed when capture_spans=True.
+_CAPTURE_SETUP_ADDITION = (
+    "\npip install opentelemetry-sdk opentelemetry-instrumentation opentelemetry-distro"
+)
+_CAPTURE_TEST_SCRIPT = (
+    "OTEL_TRACES_EXPORTER=console OTEL_METRICS_EXPORTER=none "
+    "OTEL_LOGS_EXPORTER=none opentelemetry-instrument python -m pytest -s"
+)
+
+_REQUIRED_SPAN_KEYS = {"name", "context", "attributes"}
+
+
+def parse_captured_spans(output):
+    """Scans `output` for `ConsoleSpanExporter`'s pretty-printed JSON span
+    objects, one at a time via `raw_decode` (multiple top-level JSON
+    objects back to back, interleaved with pytest's own text, is not one
+    parseable document). Only objects that actually look like a real span
+    (name/context/attributes keys all present) are kept -- unrelated JSON
+    the target's own test output happens to print is silently skipped,
+    never mistaken for a span. Returns [] when nothing real was found,
+    never raises on malformed fragments."""
+    decoder = json.JSONDecoder()
+    spans = []
+    i = 0
+    while i < len(output):
+        if output[i] == "{":
+            try:
+                obj, end = decoder.raw_decode(output, i)
+            except json.JSONDecodeError:
+                i += 1
+                continue
+            if isinstance(obj, dict) and _REQUIRED_SPAN_KEYS.issubset(obj.keys()):
+                spans.append(obj)
+            i = end
+            continue
+        i += 1
+    return spans
 
 
 def detect_pytest_suite(target_repo):
@@ -92,22 +156,31 @@ def _parse_summary(output):
     return counts
 
 
-def _runner_result(status, exit_code=None, stdout="", stderr="", summary=None):
-    return {"status": status, "exit_code": exit_code, "stdout": stdout, "stderr": stderr, "summary": summary}
+def _runner_result(status, exit_code=None, stdout="", stderr="", summary=None, spans=None):
+    return {"status": status, "exit_code": exit_code, "stdout": stdout, "stderr": stderr,
+            "summary": summary, "spans": spans if spans is not None else []}
 
 
-def run_pytest_suite(target_repo, sandbox_runner=run_in_sandbox, **sandbox_kwargs):
+def run_pytest_suite(target_repo, sandbox_runner=run_in_sandbox, *, capture_spans=False, **sandbox_kwargs):
     """Returns one of exactly four honest outcomes: `no_tests_found`
     (never spins up a container), `install_failed` (neither the
     editable install nor the fallback got far enough to invoke pytest
     at all), `passed`, `failed`. `sandbox_runner` is the same
     injection-point pattern as `_agent_runner`/`_completion_fn`
     elsewhere in this codebase -- most tests fake it; a smaller,
-    separately-marked set uses the real sandbox.run_in_sandbox."""
+    separately-marked set uses the real sandbox.run_in_sandbox.
+
+    `capture_spans=True` additionally captures real OTel spans the
+    target's own (S10-instrumented) code emits during the run -- see
+    this module's own docstring for the mechanism. `spans` is always []
+    when False, or when the run never reached `python -m pytest` at all
+    (`install_failed`/`no_tests_found`)."""
     if not detect_pytest_suite(target_repo):
         return _runner_result("no_tests_found")
 
-    result = sandbox_runner(target_repo, _TEST_SCRIPT, setup_script=_INSTALL_SCRIPT, **sandbox_kwargs)
+    test_script = _CAPTURE_TEST_SCRIPT if capture_spans else _TEST_SCRIPT
+    setup_script = _INSTALL_SCRIPT + _CAPTURE_SETUP_ADDITION if capture_spans else _INSTALL_SCRIPT
+    result = sandbox_runner(target_repo, test_script, setup_script=setup_script, **sandbox_kwargs)
     output = result["stdout"] + result["stderr"]
 
     if result["exit_code"] is None:
@@ -122,5 +195,6 @@ def run_pytest_suite(target_repo, sandbox_runner=run_in_sandbox, **sandbox_kwarg
                                stdout=result["stdout"], stderr=result["stderr"])
 
     status = "passed" if result["exit_code"] == 0 else "failed"
+    spans = parse_captured_spans(output) if capture_spans else []
     return _runner_result(status, exit_code=result["exit_code"],
-                           stdout=result["stdout"], stderr=result["stderr"], summary=summary)
+                           stdout=result["stdout"], stderr=result["stderr"], summary=summary, spans=spans)
