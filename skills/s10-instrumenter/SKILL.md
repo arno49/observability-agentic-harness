@@ -55,25 +55,88 @@ call/wrapper/decorator that would invoke it).
    content.** Any precondition that doesn't hold → refuse, name which
    one failed. Preconditions that do hold don't need restating in full,
    just confirm you checked them.
-4. **Produce the edit per `change.type`:**
-   - **`wrap_call`** — wrap the existing call site with a context
-     manager/span around it, without restructuring surrounding control
-     flow. Prefer this shape when the call can be wrapped in place.
-   - **`insert_span`** — the call site is already inside a broader block;
-     add a child span around specifically the anchored call, not the
-     whole block.
+4. **Produce the edit per `change.type`, using the one concrete telemetry
+   API below for all four types — never a different library, never a
+   hand-rolled logger call, even if the target repo already has its own
+   logging setup.** An earlier version of this skill left the emission
+   library entirely up to your judgment, which meant nothing about a
+   live run's output was actually predictable or capturable — this
+   section exists specifically to close that gap.
+
+   **The API: `opentelemetry.trace`, the vendor-neutral standard this
+   whole harness is built around** (the same library `oah`'s own
+   telemetry.py uses on its own pipeline, and what `oah backend-config`
+   generates an OTLP collector for). At the top of `change.file` (add
+   the import only if it isn't already present):
+   ```python
+   from opentelemetry import trace
+   tracer = trace.get_tracer(__name__)
+   ```
+   Then, per type:
+   - **`wrap_call`** — wrap the existing call site in place:
+     ```python
+     with tracer.start_as_current_span("<span name>") as span:
+         response = client.messages.create(...)   # the real, unmoved call
+         span.set_attribute("<attr>", <real runtime value>)  # one per required_attributes entry
+     ```
+     Don't restructure surrounding control flow — the call itself stays
+     exactly where it was, just inside the `with` block.
+   - **`insert_span`** — same shape as `wrap_call`, but only around the
+     specifically anchored call inside its already-broader block, not
+     the whole block.
    - **`add_decorator`** — apply a decorator to the function definition
      itself (found via the anchor) rather than editing the call site's
      body. Only valid when the anchor resolves to a `def`/function
      definition, not a bare call expression — if it resolves to a call
-     expression instead, that's a precondition mismatch, refuse.
+     expression instead, that's a precondition mismatch, refuse. Write a
+     small local decorator using the same API, e.g.:
+     ```python
+     def _traced(fn):
+         @functools.wraps(fn)
+         def wrapper(*args, **kwargs):
+             with tracer.start_as_current_span(fn.__name__) as span:
+                 result = fn(*args, **kwargs)
+                 span.set_attribute("<attr>", <real value derived from args/result>)
+                 return result
+         return wrapper
+     ```
+     (an `async def` target needs the `async`/`await` mirror of this —
+     never silently drop the `await` while adding the wrapper).
    - **`propagate_context`** — thread trace context across an async/queue
      boundary (the call crosses into a different execution context:
      `asyncio.create_task`, a Celery/queue dispatch, a thread pool
      submit). This is the highest-risk type (`implementation_dto.schema.json`'s
      own DTOs mark it `risk: high`) — be conservative: if the boundary
      shape doesn't match `change.description`'s stated pattern exactly,
-     refuse rather than adapt.
+     refuse rather than adapt. `asyncio.create_task` already propagates
+     the current span via Python's own `contextvars` — no explicit code
+     needed there; only add explicit propagation for a boundary that
+     doesn't share a `contextvars` context (a thread pool submit, or a
+     dispatch that serializes across a real wire, e.g. Celery), using
+     `opentelemetry.context`:
+     ```python
+     from opentelemetry import context as otel_context
+     ctx = otel_context.get_current()          # captured at the submission site
+     # ...handed to the new execution context, which then does:
+     token = otel_context.attach(ctx)
+     try:
+         ...  # the moved work
+     finally:
+         otel_context.detach(token)
+     ```
+     For a boundary that crosses process/service serialization (e.g.
+     trace context riding in a Celery task's own headers), use
+     `opentelemetry.propagate.inject`/`extract` (the
+     `TraceContextTextMapPropagator`) instead of passing the raw
+     `Context` object directly — it isn't picklable/serializable as-is.
+
+   Every `expected_events[].required_attributes` string must appear as a
+   literal `span.set_attribute(...)` key somewhere in your edit, with a
+   value read from real data available at the call site — never a
+   hardcoded placeholder chosen just to make the name appear. If a
+   required attribute has no real value available at this call site,
+   that's a precondition mismatch: refuse and say which attribute has no
+   real source, rather than fabricating one.
 5. Touch **only** the one anchored location. No reformatting, no renaming,
    no touching any other call site in the file — even one that looks like
    an obvious candidate for the same DTO's `expected_events` (this is

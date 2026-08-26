@@ -110,6 +110,32 @@ record -- whether the agent may ever autocorrect an ambiguous DTO instead of
 refusing -- resolved as: never, same hard rule as report-only, since writing to
 disk doesn't make a guessed edit safer.
 
+**Telemetry-API gap fixed** (2026-08-26): `skills/s10-instrumenter/SKILL.md`
+previously left the emission library entirely up to the agent's own judgment
+("wrap the existing call site with a context manager/span"), which meant a
+live S10 run had no guarantee of producing runtime-observable code — flagged
+in M4's own status note, surfaced again while scoping E6 R2's wiring (real R2
+needs to capture what a DTO actually emits, and there was nothing predictable
+to capture). Fixed by naming one concrete API for all four `change.type`
+values: `opentelemetry.trace` (`tracer.start_as_current_span(...)` +
+`span.set_attribute(...)` for every `expected_events[].required_attributes`
+entry, with a real runtime value, never a hardcoded placeholder — refuse
+instead if no real value is available), plus `opentelemetry.context` for
+`propagate_context` boundaries that don't already share a `contextvars`
+context (noting `asyncio.create_task` already does, so needs no explicit
+code). Prompt-content only, no schema/Python change, no version bump (same
+precedent as the earlier systemic S4 `latency_overhead_budget_ms` prompt-gap
+fix). **A new, real, named gap this surfaces**: `implementation_dto.schema.json`'s
+13 `change.type` values have no `add_dependency` type, so applying a DTO
+never ensures the target repo actually has `opentelemetry-api` installed —
+if it doesn't, the instrumented import fails at runtime. This is exactly
+what `oah validate --dynamic`'s regression gate (E6, below) is designed to
+catch (a real, honest `validation_failed`, not a silent gap), but the DTO
+pipeline itself doesn't yet add the dependency proactively — not attempted
+here, named for a future pass. Real capture/assertion of these now-predictable
+spans (R2's own actual defining check) is still not built — this phase only
+removes the blocker that made it impossible to build honestly.
+
 ### E6 — Dynamic validation (S11)
 Deterministic layer: run target tests; exercise the product (existing e2e / compose /
 generated smoke scenario); intercept emitted events via local OTLP collector; validate
