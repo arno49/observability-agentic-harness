@@ -31,9 +31,17 @@ _PYTEST_CONFIG_MARKERS = {
     "setup.cfg": "[tool:pytest]",
 }
 
-_SUMMARY_RE = re.compile(
-    r"=+ .*?(?:(\d+) failed)?,?\s*(?:(\d+) passed)?.*? in [\d.]+s.*? =+"
-)
+# Two-step, not one combined regex: pytest's summary is always exactly
+# one line ("===== 1 failed, 2 passed in 0.12s =====", MULTILINE-anchored
+# so it can't span into neighboring lines), matched first in isolation;
+# counts are then pulled from just that line's own text. A single regex
+# spanning both concerns previously used \s* between the failed/passed
+# groups, which matches '\n' -- letting the match silently drift onto an
+# unrelated earlier line (e.g. a stray "== 2" inside a traceback) and
+# report a fabricated 0/0 instead of the real counts. Caught only by a
+# real Docker run, not by the mocked test suite.
+_SUMMARY_LINE_RE = re.compile(r"^=+ (.+ in [\d.]+s.*) =+$", re.MULTILINE)
+_COUNT_RE = re.compile(r"(\d+) (failed|passed)")
 
 _INSTALL_SCRIPT = """
 set -e
@@ -75,11 +83,13 @@ def _parse_summary(output):
     Returns None (never a fabricated 0) when the line isn't found or
     doesn't match the expected shape -- e.g. install_failed output,
     or a pytest version whose summary format doesn't match."""
-    match = _SUMMARY_RE.search(output)
-    if not match:
+    line_match = _SUMMARY_LINE_RE.search(output)
+    if not line_match:
         return None
-    failed, passed = match.groups()
-    return {"failed": int(failed) if failed else 0, "passed": int(passed) if passed else 0}
+    counts = {"failed": 0, "passed": 0}
+    for count, kind in _COUNT_RE.findall(line_match.group(1)):
+        counts[kind] = int(count)
+    return counts
 
 
 def _runner_result(status, exit_code=None, stdout="", stderr="", summary=None):

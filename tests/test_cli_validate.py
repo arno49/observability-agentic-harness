@@ -69,6 +69,9 @@ def test_validate_end_to_end_present(tmp_path):
     assert result["verdict"] == "needs_review"
     assert result["results"][0]["status"] == "present"
     assert result["summary"] == {"total": 1, "present": 1, "absent": 0, "skipped": 0}
+    # No `dynamic` attribute on this Namespace at all -- proves the
+    # getattr(args, "dynamic", False) default matches old behavior.
+    assert result["regression_gate"] == {"status": "not_attempted", "reason": None}
 
 
 def test_validate_end_to_end_absent(tmp_path):

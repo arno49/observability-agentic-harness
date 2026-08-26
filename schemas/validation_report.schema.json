@@ -2,15 +2,34 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oah.dev/schemas/validation_report.schema.json",
   "title": "S11 validation report",
-  "description": "docs/validation.md's degradation ladder. R4 only in this phase (static schema conformance of code-level emission points -- 'needs_review, never validated' per the ladder table, a hard ceiling for this rung, not situational). R1-R3 (running the product, a real OTLP collector, real traffic, the agentic audit panel) all need real target execution, not attempted here -- ladder_rung and verdict grow when they land, not silently redefined.",
+  "description": "docs/validation.md's degradation ladder. ladder_rung is R4 only in this phase (static schema conformance of code-level emission points, a hard ceiling for this rung, not situational) -- R2's own defining check (per-DTO event-emission assertion) needs skills/s10-instrumenter/SKILL.md to name a concrete telemetry API first, not built yet. regression_gate wires E6 R2's already-built sandbox mechanism into the deterministic layer's own step 1 ('instrumentation must not break the product') independent of ladder_rung -- a real, opt-in dynamic check, not a re-badging of R4. R1/R3 (running the product live, a real OTLP collector, real traffic, the agentic audit panel) all need real target execution beyond the test suite, not attempted here -- ladder_rung and verdict grow further when they land, not silently redefined.",
   "type": "object",
-  "required": ["schema_version", "repo_git_sha", "ladder_rung", "verdict", "results", "summary"],
+  "required": ["schema_version", "repo_git_sha", "ladder_rung", "verdict", "regression_gate", "results", "summary"],
   "additionalProperties": false,
   "properties": {
     "schema_version": { "const": "0.1.0" },
     "repo_git_sha": { "type": "string" },
     "ladder_rung": { "const": "R4" },
-    "verdict": { "const": "needs_review" },
+    "verdict": {
+      "enum": ["needs_review", "validation_failed"],
+      "description": "needs_review: R4's own ceiling (static-only), or --dynamic ran and the regression gate didn't fail. validation_failed: regression_gate actually ran the target's test suite in the sandbox and it failed after instrumentation -- docs/validation.md's deterministic-layer step 1, independent of ladder_rung. Never 'validated' -- that needs real R2/R1 evidence, not built yet."
+    },
+    "regression_gate": {
+      "type": "object",
+      "description": "docs/validation.md's deterministic layer step 1 ('instrumentation must not break the product'), wired via E6 R2's sandbox mechanism (oah/validate/sandbox.py, pytest_runner.py) -- NOT R2 itself, which additionally needs per-DTO event-emission assertion, not built. Only meaningful when --dynamic was passed to `oah validate`; otherwise 'not_attempted'.",
+      "required": ["status", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": ["not_attempted", "skipped", "passed", "failed"],
+          "description": "not_attempted: --dynamic not passed. skipped: --dynamic passed but inconclusive (Docker unavailable, no test suite found, or the install ladder failed) -- never evidence the target is broken. passed: the target's real test suite ran and passed in the sandbox. failed: it ran and something failed -- the only status that forces verdict=validation_failed."
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "description": "Explains 'skipped'/'failed'; null for 'not_attempted'/'passed'."
+        }
+      }
+    },
     "results": {
       "type": "array",
       "description": "One entry per DTO in the input implementation_dto.json, in the same order. Empty array is valid (no DTOs given).",

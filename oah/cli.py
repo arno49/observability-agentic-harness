@@ -902,15 +902,22 @@ def cmd_instrument(args):
 
 
 def cmd_validate(args):
-    """S11, R4 (static-only) -- see oah/validate/checker.py's module
-    docstring for exactly what this claims (a code-level attribute-name
-    presence check, at or after each DTO's own anchor) and what it
-    explicitly doesn't (R1-R3: running the product, real OTLP capture,
-    the agentic audit panel -- none of that exists yet). Ladder rung and
-    verdict are both fixed at 'R4'/'needs_review' for this phase; no
-    checkpointing -- this does no LLM/agent call and is cheap enough to
-    always re-run in full."""
+    """S11, R4 (static-only) plus an opt-in --dynamic regression gate.
+    See oah/validate/checker.py's module docstring for exactly what the
+    static check claims (a code-level attribute-name presence check, at
+    or after each DTO's own anchor) and what it explicitly doesn't
+    (R1-R3: running the product, real OTLP capture, the agentic audit
+    panel -- none of that exists yet). ladder_rung is fixed at 'R4'
+    regardless of --dynamic -- the regression gate is docs/validation.md's
+    own deterministic-layer step 1 ("instrumentation must not break the
+    product"), independent of ladder rung, not a claim of real R2 (which
+    additionally needs per-DTO event-emission assertion -- see
+    oah/validate/regression_gate.py's module docstring for why that isn't
+    built yet). No checkpointing -- neither path makes an LLM/agent call,
+    and even --dynamic's sandbox run is cheap enough to always re-run in
+    full."""
     from oah.validate.checker import check_dto_static
+    from oah.validate.regression_gate import check_regression_gate
     from oah.schemas import validate, SchemaValidationError
 
     git_sha = _git_sha(args.target)
@@ -956,9 +963,15 @@ def cmd_validate(args):
     summary = {"total": len(results), "present": 0, "absent": 0, "skipped": 0}
     for r in results:
         summary[r["status"]] += 1
+
+    dynamic = getattr(args, "dynamic", False)
+    regression_gate = check_regression_gate(args.target, dynamic=dynamic)
+    verdict = "validation_failed" if regression_gate["status"] == "failed" else "needs_review"
+
     report = {
         "schema_version": "0.1.0", "repo_git_sha": git_sha,
-        "ladder_rung": "R4", "verdict": "needs_review",
+        "ladder_rung": "R4", "verdict": verdict,
+        "regression_gate": regression_gate,
         "results": results, "summary": summary,
     }
     validate("validation_report", report)
@@ -969,10 +982,12 @@ def cmd_validate(args):
     else:
         print(json.dumps(report, indent=2))
 
-    print(f"\nladder_rung: R4  verdict: needs_review (this phase's ceiling -- static-only, "
-          f"no product execution, no runtime evidence)", file=sys.stderr)
+    print(f"\nladder_rung: R4  verdict: {verdict} (static ceiling is needs_review -- "
+          f"validation_failed only from a real --dynamic regression-gate failure)", file=sys.stderr)
     print(f"S11 R4: {summary['present']} present, {summary['absent']} absent, "
           f"{summary['skipped']} skipped", file=sys.stderr)
+    print(f"regression_gate: {regression_gate['status']}"
+          + (f" -- {regression_gate['reason']}" if regression_gate["reason"] else ""), file=sys.stderr)
     return 0
 
 
@@ -1139,6 +1154,11 @@ def build_parser():
     p_validate.add_argument("--instrument-report", required=True,
                              help="Path to an instrument_report.json from `oah instrument --mode fix`")
     p_validate.add_argument("-o", "--output", default=None, help="Write validation_report.json here instead of stdout")
+    p_validate.add_argument("--dynamic", action="store_true",
+                             help="Also run the target's own test suite in an isolated Docker sandbox as a "
+                                  "regression gate (E6 R2's mechanism) -- requires Docker; a real test "
+                                  "failure forces verdict=validation_failed. Without this flag, behavior is "
+                                  "unchanged (static-only). Does not change ladder_rung.")
     p_validate.set_defaults(func=cmd_validate)
 
     p_backend_config = sub.add_parser(

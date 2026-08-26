@@ -156,13 +156,17 @@ oah dtos <target> [--context context.yaml] [-o out.json] [--model MODEL]        
 oah readiness <target> [--context context.yaml] [-o out.json] [--model MODEL]     # S9: readiness report
 oah instrument <target> --dtos implementation_dto.json [-o out.json] [--run-id ID]        # S10 report-only
 oah instrument <target> --dtos implementation_dto.json --mode fix --readiness readiness_report.json  # S10 fix
-oah validate <target> --dtos implementation_dto.json --instrument-report instrument_report.json [-o out.json]  # S11, R4
+oah validate <target> --dtos implementation_dto.json --instrument-report instrument_report.json [-o out.json] [--dynamic]  # S11, R4 (+ opt-in regression gate)
 oah backend-config <target> --backend {otel-only,langfuse} [-o output_dir]  # E9: collector config
 ```
 
 `--no-disambiguate` on `map`, plus `doctor`/`estimate`/`inventory`/`interview`/`gaps`/`validate`/`backend-config`,
 need neither the `[llm]`/`[agent]` extras nor an API credential — `validate`'s R4
-slice is pure static file reads, no LLM or agent call at all. `design`,
+slice is pure static file reads, no LLM or agent call at all. `validate --dynamic`
+needs no LLM/agent credential either, but does need a real, reachable Docker
+daemon — it runs the target's own test suite inside E6 R2's isolated sandbox
+(`oah/validate/sandbox.py`) as a regression gate; without Docker it degrades
+to a reported `regression_gate.status: "skipped"`, never a crash. `design`,
 `event-schema`, `dtos`, and `readiness` (and `map` without `--no-disambiguate`) call
 the S4 lens skills and need `[llm]` — see [Installation](#installation) above.
 `instrument` needs the separate `[agent]` extra instead (Claude Agent SDK,
@@ -187,10 +191,20 @@ cleanly and is recorded as `status: "failed"`, never a half-applied file.
 **R4 only**: for each DTO `oah instrument --mode fix` actually applied, does
 `change.file` contain every expected attribute name at or after the DTO's own
 anchor line? A code-level presence check, nothing more — it never runs the target
-product, so the verdict is fixed at `needs_review` (R4's own stated ceiling, never
-`validated`). R1–R3 (a real running product, an OTLP collector, live traffic, the
-agentic audit panel, actual TCR) aren't built — see
-[Requirements](#requirements-planned) and `ROADMAP.md`'s E6 entry.
+product on its own, so `ladder_rung` is fixed at `"R4"` (R4's own stated ceiling —
+`--dynamic` below doesn't change this, see why). `--dynamic` additionally wires
+E6 R2's sandbox mechanism into `docs/validation.md`'s own **deterministic-layer
+regression gate**: the target's real test suite runs, network-isolated, inside a
+throwaway Docker container; a real test failure sets `verdict: "validation_failed"`
+(real ladder vocabulary the schema never emitted before this), reported under a
+new `regression_gate` field (`status`: `not_attempted`/`skipped`/`passed`/`failed`,
+plus `reason`). This is **not** real R2 — R2's own defining check (asserting each
+DTO's expected telemetry event is actually emitted at runtime) needs
+`skills/s10-instrumenter/SKILL.md` to name a concrete, predictable telemetry API
+first, which it doesn't yet — so `ladder_rung` stays `"R4"` regardless of
+`--dynamic`, and the verdict is never `validated`. R1/R3 (a real running product,
+an OTLP collector, live traffic, the agentic audit panel, actual TCR) aren't built
+either — see [Requirements](#requirements-planned) and `ROADMAP.md`'s E6 entry.
 
 `oah backend-config` generates a real `otel-collector-config.yaml` for either
 `otel-only` (a vendor-neutral floor, exports to the collector's own `debug`
