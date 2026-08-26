@@ -76,7 +76,10 @@ retention field about PII handling is itself sensitive to disclose),
 `pii_masked` (required `true` whenever tier is confidential/restricted —
 note this describes the *governance signal itself*, separate from
 `oah.pii.masked_at_ingestion`'s claim about the underlying content),
-`supports_decision`, `acting_role`.
+`supports_decision`, `acting_role`. Also set `latency_overhead_budget_ms`
+on at least one signal per point — S5 gates on it being declared per
+point, not per signal — a concrete millisecond estimate for the overhead
+this lens's own capture adds to the call path.
 
 Where `oah.pii.masked_at_ingestion` is `false` for a point whose workflow
 declares `pii_presence: direct`, add a `consistency_assertions` entry

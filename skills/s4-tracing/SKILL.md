@@ -93,7 +93,10 @@ not itself judge), `pii_masked` (only `true` if tier ends up
 confidential/restricted), `supports_decision` (e.g. "whether this call
 site needs a thread-pool/queue instrumentor presence check before trace
 context can be trusted"), `acting_role` (e.g. "on-call SRE" or "tracing
-owner").
+owner"). Also set `latency_overhead_budget_ms` on at least one signal per
+point — S5 gates on it being declared per point, not per signal — a
+concrete millisecond estimate for the overhead this lens's own capture
+adds to the call path.
 
 `failure_mode` is always `"fail_open"` — telemetry loss must never break
 the product being instrumented.

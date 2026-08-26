@@ -67,7 +67,12 @@ designing directly against `design_fragment.schema.json`'s required fields:
 `pii_masked` (required true whenever tier is confidential/restricted),
 `supports_decision`, `acting_role`. A signal with no real decision it
 supports and role that acts on it should not be designed — a smaller,
-justified field set beats a larger, unjustified one.
+justified field set beats a larger, unjustified one. Also set
+`latency_overhead_budget_ms` on at least one signal per point — S5 gates
+on it being declared per point, not per signal — a concrete millisecond
+estimate for the overhead this lens's own capture adds to the call path
+(e.g. serializing and emitting the event), not a measurement of the
+generation call's own latency.
 
 `failure_mode` is always `"fail_open"` — telemetry loss must never break
 the product being instrumented.

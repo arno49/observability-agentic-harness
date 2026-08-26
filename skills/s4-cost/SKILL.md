@@ -66,7 +66,10 @@ Every signal must satisfy S5's gates by construction: `surface_point_ids`,
 the org, not to the public, and rarely PII — but set `confidential` if a
 point's attribution key would expose a specific customer/tenant identity),
 `pii_masked` (required `true` only when tier is confidential/restricted),
-`supports_decision`, `acting_role`.
+`supports_decision`, `acting_role`. Also set `latency_overhead_budget_ms`
+on at least one signal per point — S5 gates on it being declared per
+point, not per signal — a concrete millisecond estimate for the overhead
+this lens's own capture adds to the call path.
 
 `failure_mode` is always `"fail_open"` — telemetry loss must never break
 the product being instrumented; a cost-tracking gap must never become an

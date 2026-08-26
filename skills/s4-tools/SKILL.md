@@ -72,7 +72,11 @@ Every signal must satisfy S5's gates by construction: `surface_point_ids`,
 `sensitivity_tier` (arguments/result default `confidential` per above;
 name/duration/position default `internal`), `pii_masked` (required `true`
 whenever tier is confidential/restricted), `supports_decision`,
-`acting_role`.
+`acting_role`. Also set `latency_overhead_budget_ms` on at least one
+signal per point — S5 gates on it being declared per point, not per
+signal — a concrete millisecond estimate for the overhead this lens's own
+capture adds to the call path (distinct from `oah.tools.duration_ms`,
+which measures the tool call itself, not this telemetry's overhead).
 
 `failure_mode` is always `"fail_open"` — telemetry loss must never break
 the product being instrumented.

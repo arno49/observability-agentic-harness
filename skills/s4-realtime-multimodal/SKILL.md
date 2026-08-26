@@ -74,7 +74,11 @@ Every signal must satisfy S5's gates by construction: `surface_point_ids`,
 `confidential` or `restricted` by default — raw voice/video is
 inherently more sensitive than text; do not default to `internal` the
 way a text-only signal might), `pii_masked` (required `true` whenever
-tier is confidential/restricted), `supports_decision`, `acting_role`.
+tier is confidential/restricted), `supports_decision`, `acting_role`. Also
+set `latency_overhead_budget_ms` on at least one signal per point — S5
+gates on it being declared per point, not per signal — a concrete
+millisecond estimate for the overhead this lens's own capture adds to the
+call path.
 
 `failure_mode` is always `"fail_open"` — telemetry loss must never break
 the product being instrumented; a lost turn-latency measurement must
