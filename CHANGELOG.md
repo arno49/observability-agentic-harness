@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+- ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a
+  concrete, sequenced epic — service domain pack (ordinary request-driven
+  services), informed by a real first candidate consumer. New E13 ("domain pack
+  extraction") lands as its hard prerequisite: an enumeration of the sixteen
+  places GenAI is hardwired into pipeline core found the domain-agnostic claim in
+  README's "Why" true for S5–S11 and false for the seam itself — see
+  `docs/decisions/011-service-domain-pack-architecture.md`. E12 no longer depends
+  on M4 for design (still does for evidence); it now depends on E13, E11's
+  TypeScript half, and two new spikes (SP11: DB/messaging/RPC/browser semconv
+  stability; SP12: two TS detector shapes the Python adapter lacks).
+
 ### Added
 - `oah instrument`: S10 agentic instrumentation, both modes. `report-only`
   (default) proposes a diff per DTO, never writes. `--mode fix` writes and

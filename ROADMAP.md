@@ -722,27 +722,136 @@ M2 closes; Java follows using the same bar, timeboxed independently so a slow Ja
 port doesn't block M2. *Depends on:* SP10, E2. *Starts immediately after SP10's
 decision record lands — not deferred to post-M4.*
 
-### E12 — Second domain pack *(stub, post-M4)*
-Proves — or disproves — the pipeline-core/domain-pack split from README's "Why":
-port S3's reference domain model and S4's three GenAI-specific lenses
-(generation-capture, retrieval, realtime-multimodal) to one concrete non-LLM
-domain, without touching S1–S2, S5–S11, or the DTO/schema-as-truth mechanics.
-Candidate domain and lens replacements are not chosen yet — picking one now would
-be designing the abstraction before a second real instance tests it, the same
-mistake SP10 already avoids for languages by requiring two. *DoD:* the second
-domain pack reaches the M2-equivalent gate (design passes S5/S6 on a corpus repo
-in that domain) while changing zero pipeline-core files outside the
-`event-model.md`-equivalent and the swapped S4 lenses — if pipeline-core needs
-edits to fit the second domain, that itself is the finding, not a failure.
-*Depends on:* M4 (GenAI domain pack proven end-to-end first).
+### E13 — Domain pack extraction *(pipeline core; prerequisite for E12)*
+There is no object called a domain pack today: domain-ness is sixteen literals
+scattered across `oah/cli.py`, `oah/design/gates.py`, `oah/discovery/gap_model.py`,
+`oah/discovery/registry.py` and five schemas — all of them in files E12's old
+definition of done promised not to touch. E12 could therefore never have passed as
+written, and its own text anticipated exactly this ("if pipeline-core needs edits
+to fit the second domain, that itself is the finding"). E13 promotes that finding
+to work: introduce `schemas/domain_pack.schema.json` plus `oah/domains/<name>/`,
+and re-express today's GenAI behaviour as a pack with **zero behaviour change**.
+Contents of a pack: surface-point vocabulary with each kind's gap dimension and
+rollout rank (replacing `KIND_TO_DIMENSION` and the closed `dimension`/`kind`
+enums), S1 signature registries with an explicit `detector_shape`, the lens roster
+with target kinds and emitted artifact types (replacing `LENS_TO_POINT_KIND` and
+its four duplicated `lens_fns` copies), semconv namespaces with per-namespace pin
+and stability, DTO event types, and the advisory gate's word pairs. Two
+corrections ride along because the second pack exposes them: `otel_genai`
+generalises to `otel_semconv` + `namespace`, and stability moves from per-pack to
+**per-attribute** — `event_schema.schema.json`'s current claim that upstream
+attributes are "currently always development" is true of `gen_ai.*` and false of
+the stable HTTP conventions. A third change is structural: `lenses[].emits` lets a
+lens return more than one artifact, because an SLO specification is not
+expressible as a list of event attributes and the slo lens (E12) must emit
+`design_fragment` **and** `slo_spec` (see
+[011](docs/decisions/011-service-domain-pack-architecture.md), Finding 1).
+*DoD:* GenAI ships as a pack; corpus results byte-identical before and after; full
+suite green with only mechanical renames; a throwaway second pack declaring one
+kind and one lens loads and runs S1→S9 end to end with **no edit under `oah/` or
+`schemas/`** — that last clause is the whole point of the epic and the only one
+that proves the seam exists. *Depends on:* nothing. *Blocks:* E12.
+
+### E12 — Service domain pack *(rewritten; was "second domain pack, stub")*
+Proves — or disproves — the pipeline-core/domain-pack split from README's "Why"
+against one concrete non-AI domain: ordinary request-driven services. The domain
+is now chosen rather than deferred, because E13 gives the abstraction a seam to be
+tested against, and because the evidence needed to pick well already exists (a
+real first candidate consumer — see below).
+
+**Why this domain inverts the value proposition, and why that is the point.**
+HTTP semantic conventions are Stable; eBPF-based auto-instrumentation emits HTTP
+RED metrics and correctly named spans with no code change, no library install and
+no restart, and propagates W3C trace context into outgoing calls. The GenAI pack
+earns its agentic source editing because nothing else will write those spans. A
+service pack that wrapped HTTP handlers would re-emit, worse and later, what
+`opentelemetry-instrument` already provides. So this pack's value is the
+**decision layer over signals that already exist**, plus the narrow set of things
+zero-code instrumentation provably cannot do: business attributes and custom
+spans, a guaranteed low-cardinality route, the SLI definition itself (conventions
+define attributes, never which events are valid or good), and continuity
+verification across runtimes whose propagation maturity differs. An explicit
+anti-redundancy gate enforces this: a DTO whose only effect is to re-emit an
+attribute already covered by the pack's declared `auto_instrumentation_baseline`
+is refused, not generated.
+
+**Lenses.** Six. `tracing`, `ops` and `pii-governance` **reused unchanged** — the
+concrete test of the split, and any edit they turn out to need is a reportable
+finding against it. `telemetry-cost` adapted from `cost` (token accounting becomes
+cardinality, sampling and retention accounting). Two new: `slo` (indicator,
+objective, paired-window burn-rate tiers, error budget policy) and `dependency`
+(edge criticality, the extra-nine rule, budget split between own failures and
+dependency failures). Dropped: `generation-capture`, `retrieval`,
+`realtime-multimodal`.
+
+**Point kinds.** `http_server_route`, `http_client_call`, `db_query`,
+`queue_producer`, `queue_consumer`, `scheduled_job`. The two `queue_*` kinds
+already exist in `surface_map.schema.json` and have never been emitted by
+anything — the pack turns dead vocabulary live.
+
+**Excluded from v1, with reasons rather than silence.** Resource saturation: S1
+finds call sites in source, and CPU, memory and connection pools are not call
+sites; covering them needs a second discovery source (deployment manifests,
+runtime inventory), which is SP9's territory. Database and messaging conventions:
+stability unverified against primary sources — SP11. Both are declared
+`declared_undetected` in the manifest and surfaced in `run_manifest.json`, so an
+undetected kind can never read as a covered one.
+
+*DoD:* (a) a corpus fixture in this domain passes S1→S9 and clears S5/S6; (b) the
+three reused lenses run with no edit to their SKILL.md files; (c) **registry
+families with structurally different detector shapes** are proven, not several of
+the same shape — an outbound client call fits the existing receiver/method-suffix
+machinery, whereas the first candidate's stack needs two shapes the adapter does
+not have at all: a declarative route registration (JSX element or route-object
+array) and a global unimported callee (`fetch`). A single-shape prototype would
+repeat exactly the mistake SP10 avoided for languages; (d) the anti-redundancy
+gate refuses at least one real would-be-redundant DTO on that fixture; (e) every
+stability claim traces to a verified namespace, `unknown` where it has not been
+verified.
+*Depends on:* E13, **E11's TypeScript half**, SP11, SP12. M4 remains a
+prerequisite for *evidence* (the GenAI pack proven end to end) but no longer for
+*design*.
+
+**E11-TS is now a hard blocker, not parallel work.** The first candidate
+consumer's stack contains no Python at all: a React/TypeScript SPA in front of a
+Java CMS. S1 cannot map it today — the TypeScript adapter exists only as a
+211-line prototype under `spikes/sp10-multilang/` and was never promoted into
+`oah/`. Whatever the sequencing preference, no service pack can be piloted
+against that stack until the TS adapter is real.
+
+**S2 needs its own small epic alongside.** The telemetry inventory scanner is
+Python-specific and recognises only stdlib logging, OpenTelemetry and
+prometheus/statsd/datadog. It cannot read `package.json` or `tsconfig.json` and
+does not recognise any commercial APM or log platform. For any non-Python
+candidate the inventory is the weakest link in the pipeline — and the cheapest
+one to fix, since vendor detection is pattern matching over manifests, not
+parsing.
+
+**First candidate consumer (informs, does not gate, the design above).** A
+consumer-travel property running a React/TypeScript SPA in front of Adobe
+Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and
+Splunk, with an OpenTelemetry JS rollout planned and W3C traceparent named as the
+single correlation backbone; four named critical user journeys (home / search /
+property detail / booking-checkout) under GDPR + CCPA. Full design rationale,
+including three corrections the candidate forced against the pack's original
+assumptions (detector shapes, route templating under AEM, a second correlation
+backbone), in `docs/decisions/011-service-domain-pack-architecture.md`. Honest
+status today: **OAH does not run on this stack at all** — not partially, not
+report-only. The cheapest real deliverable that needs zero new code: run `oah
+interview` for the four journeys (works today), hand-build one `slo_spec` for
+`booking-checkout` against the designed (not yet built) schema with computed
+burn-rate multipliers, and add a `splunk-hec` target to `oah backend-config`
+(deterministic, no LLM/S1 dependency) with an OTTL masking policy for
+query-string PII.
 
 ## Spikes
 
-All ten spikes are resolved as of 2026-08-25 — see `docs/decisions/`. Every
+The first ten spikes are resolved as of 2026-08-25 — see `docs/decisions/`. Every
 record includes its honest limitations (sample size, untested scope,
 stretch items deferred); resolved does not mean zero remaining risk, it
 means the question has a real, evidence-grounded answer instead of an
-assumption blocking the dependent epic.
+assumption blocking the dependent epic. SP11 and SP12 were added 2026-08-26 as
+prerequisites for E12 (service domain pack) and are not yet resolved.
 
 | ID | Question | Timebox | Blocks | Output | Resolved |
 |---|---|---|---|---|---|
@@ -756,6 +865,8 @@ assumption blocking the dependent epic.
 | **SP8** | LiteLLM as the harness's model abstraction: per-role config (any provider incl. local Ollama/vLLM), streaming & tool-use parity for skill stages, cost-tracking hooks feeding `estimate`. Where does a light tier (Haiku-class / local) hold quality — measure S1-disambiguation and S2-inventory recall light-vs-frontier on corpus. S10/S11 stay Anthropic-pinned (Claude Agent SDK). | 1 wk | E1, E2 | Decision record + role/model matrix | [009](docs/decisions/009-sp8-litellm-model-abstraction.md) — S2 untested |
 | **SP9** | Environment provenance: how does OAH determine — not just accept on trust — which environment (sandbox / staging / production-shadow / production) a validation run's evidence actually came from? Compare: (a) a self-reported CLI flag (weak, unverified), (b) parsing IaC/CI config already in the product repo (Terraform/Helm/k8s manifests, deploy workflows) to infer environment from what's being targeted, (c) accepting a second, separately supplied infra/IaC repo path for cross-reference, (d) cloud-API introspection at run time. Recommend an MVP for the M4 gate vs. what's a stretch worth its own future epic (e.g. a dedicated IaC-assessment sub-pipeline). Must also decide the data model: does environment live on the run manifest only, or per-trace/per-verdict, and how is self-reported-and-unverified visually distinguished from corroborated in the S9 report? | 1.5 wk | E6, E4 | Decision record + environment-provenance data model | [010](docs/decisions/010-sp9-environment-provenance.md) |
 | **SP10** | Multi-language surface-mapping architecture: what's the language-agnostic intermediate call-site representation that lets S1 add a new language (TypeScript/Node, Java, then Go/.NET as stretch) without touching pipeline core or the S3+ skills downstream of it? Compare a unified tree-sitter-based parse layer across all languages vs. native per-language parsers (Python `ast`/`libcst`; TypeScript `ts-morph`/compiler API; Java `javaparser`/tree-sitter) behind a common adapter interface. Prototype must prove the abstraction on **two** real languages (Python + TypeScript), not one — a single-language prototype doesn't test whether the abstraction actually generalizes. | 1.5 wk | E2, E11 | Decision record + two-language prototype | [004](docs/decisions/004-sp10-multilang-architecture.md) — 21/21 across both languages |
+| **SP11** | Stability and attribute sets of the DB, messaging, RPC and **browser** semantic conventions (the last added because the first E12 candidate's primary instrumentable surface is a browser SPA), verified against primary sources rather than inferred. The HTTP conventions are Stable and the GenAI ones are entirely Development; DB/messaging/RPC sit between and are currently **unknown to this project** — several proposed service point kinds depend on the answer, and a pack that guessed "stable" would be making exactly the unverified claim S9 refuses. Also: is `error.type` propagated as an attribute on the HTTP duration metric, which decides whether a good/valid-event SLI is computable from metrics alone or needs spans? | 3 d | E12 | Decision record + namespace stability table for the pack manifest | Not started |
+| **SP12** | Two detector shapes the Python adapter does not have, prototyped in **TypeScript** rather than Python, because the first E12 candidate consumer's stack has no Python in it. (a) **Declarative registration**: SPA routes are JSX elements or a route-object array — neither a method call on a tracked receiver nor a decorator. This is the shape that matters most, because a consumer's business journeys *are* its routes. (b) **Global unimported callee**: `fetch(...)` has no import to anchor on, and the adapter's whole resolution model is import-anchored. Measure both against E2's existing recall and false-positive bars. Must also answer where the route template is *not* statically recoverable — a CMS that resolves URLs to content paths by resource type has no route literal in source, and a route the adapter cannot template is a stated gap, never a licence to substitute the raw path. | 1 wk | E12 | Decision record + TS prototype + corpus fixture | Not started |
 
 ## Sequencing sketch
 
@@ -766,8 +877,9 @@ M1:  E1 ─┬─ E2 ── E7(start)
 M2:      └─ E3 ── E4          E8(start, continuous)
 M3:  E5
 M4:  E6 ── E9 ── E10
-post-M4: managed-backend targets, Go/.NET (if SP10's abstraction earns it),
-         E12 (second domain pack, if pursued)
+     E13 (domain pack extraction) starts independently of M4 -- depends on nothing
+     SP11, SP12 → E12 (service domain pack), gated on E13 + E11-TS, not on M4
+post-M4: managed-backend targets, Go/.NET (if SP10's abstraction earns it)
 ```
 
 ## Explicit non-goals (for now)
@@ -777,9 +889,12 @@ post-M4: managed-backend targets, Go/.NET (if SP10's abstraction earns it),
 - Runtime guardrails/content filtering — adjacent product; we only make their
   signals visible.
 - Supporting closed/no-code LLM platforms where we cannot touch source.
-- Retargeting the pipeline to non-AI/non-LLM products. The S1–S11 orchestration
-  and DTO/schema-as-truth mechanics are domain-agnostic by construction (see
-  README's "Why") — what's LLM-specific is concentrated in `event-model.md` and
-  three of S4's eight lenses — but that portability isn't being exercised or
-  promised until one domain (GenAI) is dogfooded end-to-end through M4. Stubbed
-  as E12, not scheduled.
+- Retargeting the pipeline to non-AI/non-LLM products, as a claim about *today's*
+  code. README's "Why" claims S1–S3's mapping mechanics, S5's gates, S7's roll-up,
+  S8/S9's DTO and readiness shapes and S11's ladder are domain-agnostic; enumerating
+  where GenAI is actually hardwired found the claim true for the expensive half and
+  false for the seam itself — see
+  [011](docs/decisions/011-service-domain-pack-architecture.md). E13 (extract the
+  seam) and E12 (service domain pack, scheduled and no longer a stub — see above)
+  are now the real, sequenced answer to this non-goal, gated on E13 + E11-TS + SP11
+  + SP12, not on M4.
