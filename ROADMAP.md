@@ -425,10 +425,34 @@ target that never binds its port both resolve cleanly
 (`docker_unavailable`/`startup_failed`, never a hang); cleanup (both
 containers, the built image, the network) confirmed via real
 `docker ps -a`/`docker network ls`/`docker image ls` calls before and
-after every scenario, including the failure paths. 452 tests passing (up
-from 446), run three times in a row clean after the timing fixes, since a
-single green run doesn't prove a timing-sensitive mechanism isn't still
-flaky.
+after every scenario, including the failure paths.
+
+**A third real bug, this one CI-only** (the same "worked locally, fails on
+a real Linux Docker daemon" class this session already hit once for git
+identity in S10's fix mode): `otel/opentelemetry-collector` runs as a
+non-root UID (`10001:10001`) by default. Locally, Docker Desktop on macOS
+doesn't enforce real UID/GID permission checks on bind mounts, so the
+collector could write to a host-owned output file freely; on GitHub
+Actions' real Linux Docker daemon, it couldn't, and the collector crashed
+immediately after starting — but `docker run -d` succeeding only confirms
+the container *started*, not that its process stayed up, so this surfaced
+as a silently empty `spans: []` "ok" result, not a real error, and only
+CI's own test run ever exercised the code path that exposed it. Fixed two
+ways: the output file is now made world-writable
+(`output_path.chmod(0o666)`) before the collector starts, and a new
+liveness check (`docker inspect --format {{.State.Running}}`, a `docker
+logs` capture on failure) runs right after starting the collector, turning
+any future "started then crashed" case into a real, diagnosable
+`build_failed` result instead of a silent empty one — proven with a real,
+portable crash scenario (a tiny custom image whose `ENTRYPOINT` always
+exits, since most "obviously bad" images fail at the `docker run`
+invocation itself rather than reaching a genuinely-started-then-crashed
+state). 453 tests passing (up from 446), run three times in a row clean
+after all the timing and permission fixes, since a single green run
+doesn't prove a real-Docker-timing mechanism isn't still flaky — and this
+specific bug is exactly why: it never reproduced locally at all, only in
+CI, the same lesson this session's git-identity incident already taught
+once about trusting local-only test runs.
 
 **Not wired into `oah validate`** — no `event_schema.json` diffing
 (including the unknown-field/invariant checks `docs/validation.md`'s

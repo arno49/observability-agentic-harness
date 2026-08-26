@@ -9,6 +9,8 @@ Skips cleanly (not a failure) wherever no Docker daemon is reachable;
 runs for real here and in CI (Docker preinstalled on ubuntu-latest,
 already confirmed by the E6 R2 phase)."""
 import subprocess
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -148,6 +150,49 @@ def test_docker_unavailable_returns_clean_status_and_creates_nothing(tmp_path, m
     assert result["status"] == "docker_unavailable"
     assert _networks() == nets_before
     assert _containers() == containers_before
+
+
+def test_collector_crash_is_detected_not_silently_zero_spans(tmp_path):
+    """The real bug this catches: `docker run -d` succeeding only proves
+    the container *started*, not that it stayed running -- a collector
+    that crashes shortly after start (this session hit a real, CI-only
+    case: the collector's own image runs as a non-root UID, and a bind-
+    mounted host file wasn't writable to it under a real Linux Docker
+    daemon, though it worked locally under Docker Desktop's more
+    permissive bind-mount layer) previously surfaced as a silent
+    zero-captured-spans "ok" result, not a real error.
+
+    Needs a "collector" image whose container genuinely starts (so
+    `docker run -d` itself succeeds, exercising the *later* liveness
+    check rather than the earlier "failed to start" one) and then exits
+    on its own -- most images with no real ENTRYPOINT fail at the
+    `docker run` invocation itself instead (Docker tries to exec the
+    bogus `--config ...` args directly as the command), which was tried
+    first and doesn't reach the code path this test means to prove.
+    A tiny custom image with a real `ENTRYPOINT ["sh", "-c", "exit 1"]`
+    ignores any trailing args and reliably starts-then-exits instead."""
+    crash_image = "oah-test-crash-image"
+    with tempfile.TemporaryDirectory() as build_dir:
+        (Path(build_dir) / "Dockerfile").write_text(
+            'FROM alpine:latest\nENTRYPOINT ["sh", "-c", "exit 1"]\n'
+        )
+        subprocess.run(["docker", "build", "-t", crash_image, "-q", build_dir], check=True, capture_output=True)
+
+    try:
+        repo = _make_target(tmp_path)
+        nets_before, containers_before = _networks(), _containers()
+
+        result = run_live_sandbox(
+            repo, start_command=_START_COMMAND, port=8080, requests=[{"path": "/"}],
+            setup_script=_SETUP_SCRIPT, collector_image=crash_image,
+        )
+
+        assert result["status"] == "build_failed"
+        assert "collector container exited" in result["reason"]
+        assert _networks() == nets_before
+        assert _containers() == containers_before
+    finally:
+        subprocess.run(["docker", "image", "rm", "-f", crash_image], capture_output=True)
 
 
 def test_build_failed_cleans_up_the_network_and_leaves_no_image(tmp_path):

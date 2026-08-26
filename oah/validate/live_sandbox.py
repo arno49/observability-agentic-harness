@@ -256,6 +256,15 @@ def run_live_sandbox(target_repo, *, start_command, port, requests,
             config_path.write_text(_COLLECTOR_CONFIG)
             output_path = Path(collector_dir) / "spans.json"
             output_path.write_text("")
+            # otel/opentelemetry-collector runs as a non-root UID (10001)
+            # by default -- a real CI-only failure, not hypothetical: this
+            # worked locally under Docker Desktop on macOS, whose bind-mount
+            # translation layer doesn't enforce real UID/GID checks, but
+            # silently produced zero captured spans on a real Linux Docker
+            # daemon (GitHub Actions), where the collector couldn't open a
+            # host-owned file for writing and crashed. World-writable makes
+            # this independent of whichever UID the collector image uses.
+            output_path.chmod(0o666)
 
             collector_run = subprocess.run(
                 ["docker", "run", "-d", "--network", network, "--name", collector_name,
@@ -267,6 +276,23 @@ def run_live_sandbox(target_repo, *, start_command, port, requests,
             if collector_run.returncode != 0:
                 return _live_result("build_failed", reason=f"failed to start the OTel collector:\n{collector_run.stderr}")
             collector_started = True
+
+            # `docker run -d` succeeding only means the container started,
+            # not that its process stayed up -- a real blind spot until
+            # this check existed: the collector crashing shortly after
+            # start (e.g. the permission issue above) previously surfaced
+            # as silent zero-spans results, not a real error. A short
+            # settle-then-inspect catches an immediate crash without
+            # slowing down the common case.
+            time.sleep(1)
+            inspect = subprocess.run(
+                ["docker", "inspect", "--format", "{{.State.Running}}", collector_name],
+                capture_output=True, text=True, timeout=10,
+            )
+            if inspect.stdout.strip() != "true":
+                logs = subprocess.run(["docker", "logs", collector_name], capture_output=True, text=True, timeout=10)
+                return _live_result("build_failed",
+                                     reason=f"the OTel collector container exited shortly after starting:\n{logs.stdout}\n{logs.stderr}")
 
             target_run = subprocess.run(
                 ["docker", "run", "-d", "--network", network, "--name", target_name,
