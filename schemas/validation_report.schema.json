@@ -76,7 +76,7 @@
     "live_execution": {
       "type": ["object", "null"],
       "description": "E6 R1's execution mechanism (oah/validate/live_sandbox.py) wired via `oah validate --live`: a real running target service alongside a real local OTel collector, real driven traffic. null when --live wasn't passed at all. Does NOT move ladder_rung/verdict -- R1's own promotion rule (real TCR is reported here, but the ladder table requires it AND a latency-vs-budget comparison together; the latter needs a baseline pre-instrumentation run, not built yet) isn't complete, see ROADMAP.md's E6 entry.",
-      "required": ["status", "requests", "latency_p50_ms", "latency_p95_ms", "fail_open", "event_assertions", "unknown_attributes", "tcr", "reason"],
+      "required": ["status", "requests", "latency_p50_ms", "latency_p95_ms", "fail_open", "event_assertions", "unknown_attributes", "tcr", "overhead_vs_budget", "reason"],
       "additionalProperties": false,
       "properties": {
         "status": {
@@ -144,6 +144,40 @@
               "description": "traces_complete / traces_total. null when traces_total is 0 -- never a fabricated 0.0 or 1.0 for 'nothing captured'."
             },
             "incomplete_trace_ids": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "overhead_vs_budget": {
+          "type": "object",
+          "description": "oah/validate/overhead.py's compute_overhead_vs_budget: real latency-overhead-vs-declared-budget, R1's other defining check alongside tcr. Only meaningful when --baseline was passed (with --live); otherwise 'not_attempted'.",
+          "required": ["status", "baseline_latency_p50_ms", "baseline_latency_p95_ms", "instrumented_latency_p50_ms", "instrumented_latency_p95_ms", "overhead_p50_ms", "overhead_p95_ms", "budget_ms", "budget_complete", "within_budget", "reason"],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": ["not_attempted", "skipped", "ok"],
+              "description": "not_attempted: --baseline not passed. skipped: --baseline passed but the baseline or instrumented run didn't succeed -- never a fabricated comparison against a run that didn't happen. ok: both runs succeeded, overhead is real."
+            },
+            "baseline_latency_p50_ms": { "type": ["number", "null"] },
+            "baseline_latency_p95_ms": { "type": ["number", "null"] },
+            "instrumented_latency_p50_ms": { "type": ["number", "null"] },
+            "instrumented_latency_p95_ms": { "type": ["number", "null"] },
+            "overhead_p50_ms": {
+              "type": ["number", "null"],
+              "description": "instrumented latency minus baseline latency -- the raw signed delta, reported even if negative (measurement noise), never clamped to zero."
+            },
+            "overhead_p95_ms": { "type": ["number", "null"] },
+            "budget_ms": {
+              "type": ["number", "null"],
+              "description": "Sum of estimated_overhead_ms across DTOs S10 actually applied. null when budget_complete is false -- never a silent 0 for a DTO missing its own estimate."
+            },
+            "budget_complete": {
+              "type": "boolean",
+              "description": "false when any applied DTO's estimated_overhead_ms is null -- the budget can't be fairly compared against."
+            },
+            "within_budget": {
+              "type": ["boolean", "null"],
+              "description": "overhead_p95_ms <= budget_ms. null unless status is 'ok' and budget_complete is true."
+            },
+            "reason": { "type": ["string", "null"] }
           }
         },
         "reason": {

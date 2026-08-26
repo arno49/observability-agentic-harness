@@ -527,6 +527,41 @@ Docker test (`tests/test_live_sandbox.py`): a real parent+child span pair
 captured with correctly linked trace/span/parent IDs, not just the pure
 grouping logic in isolation. 469 tests passing (up from 461).
 
+**Baseline vs. instrumented latency overhead landed** (2026-08-26): R1's
+other defining check alongside TCR, `docs/validation.md`'s "p50/p95
+latency overhead vs. declared budget." "Overhead" only means anything
+relative to a baseline (the target's latency *before* instrumentation),
+which no prior phase measured. The baseline git ref needed no new
+plumbing to locate -- `cmd_instrument` (`oah/cli.py`) already captures
+`repo_git_sha` before touching any DTO, and `instrument_report.json`'s
+own field is exactly that SHA, already a required `oah validate` input.
+`oah/validate/baseline.py`'s `run_baseline_live_sandbox` runs
+`live_sandbox.run_live_sandbox` against a real `git worktree` at that
+SHA (verified for real before building against it: a worktree checkout
+at a parent commit genuinely lacks a file only added in a later commit;
+`git worktree remove --force` cleans up completely, confirmed via real
+`git worktree list`/`git status --porcelain` before and after, on the
+*caller's* actual working tree, never touched). `oah/validate/overhead.py`'s
+`compute_overhead_vs_budget` sums `estimated_overhead_ms` across DTOs
+S10 actually applied as the declared budget -- a `null` estimate on any
+applied DTO makes the budget explicitly *incomplete*, never silently
+treated as `0` (which would understate the true budget and make "within
+budget" artificially easy); the overhead itself is the raw signed delta
+between the two runs' real p50/p95 latencies, reported even if negative,
+never clamped to zero. New opt-in `--baseline` flag (on top of `--live`,
+since it doubles the live-run cost/time) wires this into
+`live_execution.overhead_vs_budget`. Proven end to end through
+`cmd_validate` itself with a real two-commit git repo (a real 100ms sleep
+present only in the "instrumented" commit): a real, measured
+`overhead_p95_ms > 50` against a real, declared 5ms budget correctly
+reports `within_budget: False` -- not just wired-but-always-zero. **Still not promoting to `ladder_rung: "R1"`** -- that needs this
+evidence combined with TCR in `oah/validate/verdict.py`'s
+`compute_ladder_verdict`, a separate, focused follow-up, matching every
+"build the evidence, promote later" split this project has used (TCR
+itself landed the same way one phase earlier). 480 tests passing (up
+from 469), the new real-Docker+git test files run twice in a row clean
+before committing.
+
 ### E7 — Reference corpus & skill evals
 Curate open-source LLM apps across architectures (simple RAG chat, multi-agent
 system, queue-based pipeline) and, once SP10 lands, across languages (Python first;

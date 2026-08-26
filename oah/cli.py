@@ -930,6 +930,8 @@ def cmd_validate(args):
     from oah.validate.event_assertion import check_dto_dynamic
     from oah.validate.live_diff import check_unknown_attributes
     from oah.validate.tcr import compute_tcr
+    from oah.validate.baseline import run_baseline_live_sandbox
+    from oah.validate.overhead import compute_overhead_vs_budget, not_attempted as overhead_not_attempted
     from oah.validate.live_sandbox import run_live_sandbox
     from oah.validate.propagation_checker import check_dto_propagation
     from oah.validate.verdict import compute_ladder_verdict
@@ -1025,6 +1027,18 @@ def cmd_validate(args):
             [check_dto_dynamic(dto, live_result["spans"]) for dto in dtos_data["dtos"]]
             if live_result["status"] == "ok" else []
         )
+
+        overhead_vs_budget = overhead_not_attempted()
+        if getattr(args, "baseline", False):
+            baseline_result = run_baseline_live_sandbox(
+                args.target, instrument_data["repo_git_sha"],
+                start_command=args.start_command, port=args.port, requests=requests_list,
+                setup_script=getattr(args, "setup_script", None),
+            )
+            overhead_vs_budget = compute_overhead_vs_budget(
+                baseline_result, live_result, dtos_data["dtos"], results,
+            )
+
         live_execution = {
             "status": live_result["status"],
             "requests": live_result["requests"],
@@ -1034,6 +1048,7 @@ def cmd_validate(args):
             "event_assertions": live_event_assertions,
             "unknown_attributes": check_unknown_attributes(live_result["spans"], event_schema),
             "tcr": compute_tcr(live_result["spans"]),
+            "overhead_vs_budget": overhead_vs_budget,
             "reason": live_result["reason"],
         }
 
@@ -1086,6 +1101,15 @@ def cmd_validate(args):
                   f"fail_open={live_execution['fail_open']} "
                   f"unknown_attributes={live_execution['unknown_attributes']['status']} "
                   f"tcr={tcr_str}", file=sys.stderr)
+            ovb = live_execution["overhead_vs_budget"]
+            if ovb["status"] == "ok":
+                budget_str = f"{ovb['budget_ms']:.1f}ms" if ovb["budget_complete"] else "incomplete"
+                print(f"  overhead_vs_budget: p50={ovb['overhead_p50_ms']:.1f}ms "
+                      f"p95={ovb['overhead_p95_ms']:.1f}ms budget={budget_str} "
+                      f"within_budget={ovb['within_budget']}", file=sys.stderr)
+            elif ovb["status"] != "not_attempted":
+                print(f"  overhead_vs_budget: {ovb['status']}"
+                      + (f" -- {ovb['reason']}" if ovb["reason"] else ""), file=sys.stderr)
     return 0
 
 
@@ -1281,6 +1305,13 @@ def build_parser():
                                   "role as sandbox.py's own setup_script. Unlike --dynamic's pytest_runner, "
                                   "--live has no built-in install-fallback ladder, so a target needing "
                                   "opentelemetry-api/-sdk (or its own dependencies) to even start needs this.")
+    p_validate.add_argument("--baseline", action="store_true",
+                             help="With --live, also run the target's own pre-instrumentation code (a real "
+                                  "git worktree at --instrument-report's own repo_git_sha) through the same "
+                                  "--start-command/--port/--requests, and report the real latency overhead vs. "
+                                  "each applied DTO's declared estimated_overhead_ms budget under "
+                                  "live_execution.overhead_vs_budget. Doubles the live-run cost/time -- opt-in "
+                                  "on top of --live, not a default. Does not change ladder_rung.")
     p_validate.set_defaults(func=cmd_validate)
 
     p_backend_config = sub.add_parser(

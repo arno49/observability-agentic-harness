@@ -148,6 +148,103 @@ def test_live_with_event_schema_flags_unknown_attributes(tmp_path):
     assert "gen_ai.usage.input_tokens" in unknown["unknown"]
 
 
+_BASELINE_APP_PY = '''
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def log_message(self, *args):
+        pass
+
+HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+'''
+
+_INSTRUMENTED_WITH_DELAY_APP_PY = '''
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        with tracer.start_as_current_span("handle_booking") as span:
+            span.set_attribute("gen_ai.usage.input_tokens", 42)
+            time.sleep(0.1)  # simulates real instrumentation overhead
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+    def log_message(self, *args):
+        pass
+
+HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+'''
+
+
+def test_live_with_baseline_reports_real_positive_overhead(tmp_path):
+    """A real two-commit repo: baseline has no delay, the 'instrumented'
+    commit adds a deliberate 100ms sleep -- proves overhead_p50_ms/
+    overhead_p95_ms are real, measured numbers, not just wired-but-
+    always-zero."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=target, check=True)
+    (target / "app.py").write_text(_BASELINE_APP_PY)
+    subprocess.run(["git", "add", "app.py"], cwd=target, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.com", "-c", "user.name=t",
+                     "commit", "-q", "-m", "baseline"], cwd=target, check=True)
+    baseline_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=target,
+                                   capture_output=True, text=True, check=True).stdout.strip()
+
+    (target / "app.py").write_text(_INSTRUMENTED_WITH_DELAY_APP_PY)
+    subprocess.run(["git", "add", "app.py"], cwd=target, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.com", "-c", "user.name=t",
+                     "commit", "-q", "-m", "instrumented"], cwd=target, check=True)
+
+    dto = {
+        "id": "dto-0001", "gap_id": "gap-0001", "surface_point_ids": ["sp-0001"],
+        "change": {"type": "wrap_call", "file": "app.py", "anchor": "def do_GET",
+                   "preconditions": [], "description": "wrap with a span"},
+        "expected_events": [{"event_type": "generation", "required_attributes": ["gen_ai.usage.input_tokens"]}],
+        "rollout_step": 1, "estimated_overhead_ms": 5.0,
+    }
+    dtos_path = tmp_path / "implementation_dto.json"
+    _write_dtos_file(dtos_path, [dto])
+    report_path = tmp_path / "instrument_report.json"
+    report_path.write_text(json.dumps({
+        "schema_version": "0.1.0", "repo_git_sha": baseline_sha, "mode": "fix",
+        "results": [{"dto_id": "dto-0001", "status": "applied", "commit_sha": "abc123",
+                     "reason": None, "syntax_valid": True}],
+        "summary": {"total": 1, "applied": 1, "refused": 0, "unsupported": 0, "failed": 0},
+    }))
+    requests_path = tmp_path / "requests.json"
+    requests_path.write_text(json.dumps([{"path": "/"}]))
+
+    args = argparse.Namespace(
+        target=str(target), dtos=str(dtos_path), instrument_report=str(report_path),
+        output=str(tmp_path / "validation.json"), live=True,
+        start_command=_START_COMMAND, port=8080, requests=str(requests_path), event_schema=None,
+        setup_script=_SETUP_SCRIPT, baseline=True,
+    )
+    rc = cmd_validate(args)
+    assert rc == 0
+
+    result = json.loads((tmp_path / "validation.json").read_text())
+    ovb = result["live_execution"]["overhead_vs_budget"]
+    assert ovb["status"] == "ok", ovb
+    # the 100ms sleep is only in the instrumented version -- a real, measured, positive delta
+    assert ovb["overhead_p50_ms"] > 50
+    assert ovb["overhead_p95_ms"] > 50
+    assert ovb["budget_ms"] == 5.0
+    assert ovb["budget_complete"] is True
+    assert ovb["within_budget"] is False  # 100ms of real overhead vs. a 5ms declared budget
+
+
 def test_live_missing_required_flags_returns_clean_error(tmp_path):
     target = _make_target(tmp_path)
     dtos_path = tmp_path / "implementation_dto.json"

@@ -241,11 +241,20 @@ real **TCR** — `docs/architecture.md`'s own primary metric: the share of
 captured traces (spans grouped by `trace_id`) reconstructable end-to-end
 with no missing spans (no span's parent points at one that was never
 captured) — under `live_execution.tcr`, computed directly from that run's
-own captured spans. **This does not move `ladder_rung`/`verdict`** —
-`docs/validation.md`'s R1 row requires TCR **and** a latency-vs-budget
-comparison together; only TCR is built so far, the budget half needs a
-genuine baseline (pre-instrumentation) run, not attempted yet — same "prove
-each real piece, then the promotion rule" split R2 already went through. R3
+own captured spans. `--baseline` (on top of `--live`) additionally runs the
+target's real *pre-instrumentation* code — a real `git worktree` at
+`--instrument-report`'s own `repo_git_sha`, never touching your actual
+working tree — through the same `--start-command`/`--port`/`--requests`, and
+reports the real measured latency overhead against each applied DTO's
+declared `estimated_overhead_ms` budget under
+`live_execution.overhead_vs_budget` (`overhead_p50_ms`/`overhead_p95_ms` are
+the real signed delta between the two runs, never clamped to zero; the
+budget is `null`/incomplete rather than silently `0` if any applied DTO
+never declared an estimate). Doubles the live-run cost/time — opt-in, not a
+default. **This still does not move `ladder_rung`/`verdict`** — that needs
+TCR and the overhead-vs-budget comparison tied together in
+`compute_ladder_verdict`, a separate follow-up, same "prove each real
+piece, then the promotion rule" split R2 already went through. R3
 (generated smoke) and the agentic audit panel aren't built — see
 [Requirements](#requirements-planned) and `ROADMAP.md`'s E6 entry.
 
