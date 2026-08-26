@@ -150,9 +150,17 @@ def _wait_for_file_size_to_stabilize(path, timeout_s=15, poll_interval_s=1.5):
 
 def _parse_span_file(path, start_offset=0):
     """The file exporter writes one OTLP-JSON `resourceSpans` document per
-    line -- flattened here to the same {name, attributes} shape
-    pytest_runner.parse_captured_spans already returns, so
-    event_assertion.check_dto_dynamic can consume either source unchanged.
+    line -- flattened here to {name, attributes, trace_id, span_id,
+    parent_span_id}, a superset of pytest_runner.parse_captured_spans's own
+    {name, attributes} shape, so event_assertion.check_dto_dynamic and
+    live_diff.check_unknown_attributes (which only ever read `attributes`)
+    consume it unchanged. trace_id/span_id/parent_span_id are pulled
+    directly from OTLP-JSON's own `traceId`/`spanId`/`parentSpanId` fields
+    (verified for real against a nested-span capture: `parentSpanId` is
+    present only on child spans, absent entirely for a root span, per
+    protobuf-JSON's own default-omission behavior) -- oah/validate/tcr.py's
+    compute_tcr is what actually uses these.
+
     Attribute values keep whatever type OTLP-JSON's typed-value encoding
     gives them (e.g. an int64 attribute arrives as a numeral *string*, per
     the protobuf-JSON mapping) -- check_dto_dynamic only ever checks
@@ -186,7 +194,11 @@ def _parse_span_file(path, start_offset=0):
                     for attr in span.get("attributes", []):
                         value = attr.get("value", {})
                         attributes[attr["key"]] = next(iter(value.values()), None)
-                    spans.append({"name": span.get("name"), "attributes": attributes})
+                    spans.append({
+                        "name": span.get("name"), "attributes": attributes,
+                        "trace_id": span.get("traceId"), "span_id": span.get("spanId"),
+                        "parent_span_id": span.get("parentSpanId"),
+                    })
     return spans
 
 

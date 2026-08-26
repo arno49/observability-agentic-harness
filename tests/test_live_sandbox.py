@@ -95,8 +95,13 @@ def test_real_request_returns_status_and_captures_span(tmp_path):
     assert result["requests"][0]["status_code"] == 200
     assert result["requests"][0]["latency_ms"] > 0
     assert len(result["spans"]) == 1
-    assert result["spans"][0]["name"] == "handle_booking"
-    assert result["spans"][0]["attributes"].get("gen_ai.usage.input_tokens") is not None
+    span = result["spans"][0]
+    assert span["name"] == "handle_booking"
+    assert span["attributes"].get("gen_ai.usage.input_tokens") is not None
+    # a root span (no parent) -- real trace/span IDs, no parent_span_id
+    assert span["trace_id"]
+    assert span["span_id"]
+    assert span["parent_span_id"] is None
     assert result["latency_p50_ms"] is not None
     assert result["latency_p95_ms"] is not None
 
@@ -137,6 +142,52 @@ def test_kill_collector_after_request_proves_fail_open(tmp_path):
     assert result["fail_open"] is True
     # only the pre-kill request's span could have been captured
     assert len(result["spans"]) <= 1
+
+
+_NESTED_APP_PY = '''
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        with tracer.start_as_current_span("outer") as outer:
+            outer.set_attribute("gen_ai.usage.input_tokens", 42)
+            with tracer.start_as_current_span("inner") as inner:
+                inner.set_attribute("gen_ai.request.model", "x")
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+    def log_message(self, *args):
+        pass
+
+HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+'''
+
+
+def test_nested_spans_capture_real_trace_and_parent_linkage(tmp_path):
+    """Proves the extraction against real captured data (not just parsing
+    logic in isolation): a real parent+child span pair, and the parent's
+    own span_id really does equal the child's parent_span_id."""
+    repo = tmp_path / "target_repo"
+    repo.mkdir()
+    (repo / "app.py").write_text(_NESTED_APP_PY)
+
+    result = run_live_sandbox(
+        repo, start_command=_START_COMMAND, port=8080, requests=[{"path": "/"}],
+        setup_script=_SETUP_SCRIPT, startup_timeout_s=30,
+    )
+
+    assert result["status"] == "ok", result
+    assert len(result["spans"]) == 2
+    by_name = {s["name"]: s for s in result["spans"]}
+    outer, inner = by_name["outer"], by_name["inner"]
+
+    assert outer["trace_id"] == inner["trace_id"]
+    assert outer["parent_span_id"] is None
+    assert inner["parent_span_id"] == outer["span_id"]
 
 
 def test_docker_unavailable_returns_clean_status_and_creates_nothing(tmp_path, monkeypatch):

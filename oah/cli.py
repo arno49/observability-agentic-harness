@@ -929,6 +929,7 @@ def cmd_validate(args):
     from oah.validate.dynamic import run_dynamic_validation
     from oah.validate.event_assertion import check_dto_dynamic
     from oah.validate.live_diff import check_unknown_attributes
+    from oah.validate.tcr import compute_tcr
     from oah.validate.live_sandbox import run_live_sandbox
     from oah.validate.propagation_checker import check_dto_propagation
     from oah.validate.verdict import compute_ladder_verdict
@@ -1032,6 +1033,7 @@ def cmd_validate(args):
             "fail_open": live_result["fail_open"],
             "event_assertions": live_event_assertions,
             "unknown_attributes": check_unknown_attributes(live_result["spans"], event_schema),
+            "tcr": compute_tcr(live_result["spans"]),
             "reason": live_result["reason"],
         }
 
@@ -1076,10 +1078,14 @@ def cmd_validate(args):
         print(f"live_execution: {live_execution['status']}"
               + (f" -- {live_execution['reason']}" if live_execution["reason"] else ""), file=sys.stderr)
         if live_execution["status"] == "ok":
+            tcr = live_execution["tcr"]
+            tcr_str = (f"{tcr['tcr']:.2f} ({tcr['traces_complete']}/{tcr['traces_total']} traces complete)"
+                       if tcr["tcr"] is not None else "n/a (no traces captured)")
             print(f"  latency_p50_ms={live_execution['latency_p50_ms']:.1f} "
                   f"latency_p95_ms={live_execution['latency_p95_ms']:.1f} "
                   f"fail_open={live_execution['fail_open']} "
-                  f"unknown_attributes={live_execution['unknown_attributes']['status']}", file=sys.stderr)
+                  f"unknown_attributes={live_execution['unknown_attributes']['status']} "
+                  f"tcr={tcr_str}", file=sys.stderr)
     return 0
 
 

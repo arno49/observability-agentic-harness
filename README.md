@@ -236,13 +236,18 @@ local OTel Collector on an internet-isolated Docker network, drives each
 real captured requests/latency (`latency_p50_ms`/`latency_p95_ms`, computed
 from that run's own raw samples) plus per-DTO event assertions under
 `live_execution`. With `--event-schema`, captured spans' attribute names are
-also checked against its declared list for unknown attributes. **This does
-not move `ladder_rung`/`verdict`** — R1's own promotion rule (a real TCR
-taxonomy, a latency-vs-budget comparison, semantic `event_schema.json`
-invariant checks) isn't built yet, same "prove the mechanism, then the
-promotion rule" split R2 already went through. R3 (generated smoke) and the
-agentic audit panel aren't built — see [Requirements](#requirements-planned)
-and `ROADMAP.md`'s E6 entry.
+also checked against its declared list for unknown attributes. Also reports
+real **TCR** — `docs/architecture.md`'s own primary metric: the share of
+captured traces (spans grouped by `trace_id`) reconstructable end-to-end
+with no missing spans (no span's parent points at one that was never
+captured) — under `live_execution.tcr`, computed directly from that run's
+own captured spans. **This does not move `ladder_rung`/`verdict`** —
+`docs/validation.md`'s R1 row requires TCR **and** a latency-vs-budget
+comparison together; only TCR is built so far, the budget half needs a
+genuine baseline (pre-instrumentation) run, not attempted yet — same "prove
+each real piece, then the promotion rule" split R2 already went through. R3
+(generated smoke) and the agentic audit panel aren't built — see
+[Requirements](#requirements-planned) and `ROADMAP.md`'s E6 entry.
 
 `oah backend-config` generates a real `otel-collector-config.yaml` for either
 `otel-only` (a vendor-neutral floor, exports to the collector's own `debug`

@@ -109,6 +109,8 @@ def test_live_end_to_end_reports_real_requests_and_event_assertions(tmp_path):
     assert live["latency_p50_ms"] is not None
     assert live["event_assertions"] == [{"dto_id": "dto-0001", "status": "observed", "reason": None}]
     assert live["unknown_attributes"]["status"] == "not_attempted"
+    # two requests, each a single root-only span -> two complete traces
+    assert live["tcr"] == {"traces_total": 2, "traces_complete": 2, "tcr": 1.0, "incomplete_trace_ids": []}
     # this phase deliberately never claims R1
     assert result["ladder_rung"] == "R4"
 

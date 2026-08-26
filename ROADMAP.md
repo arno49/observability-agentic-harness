@@ -493,6 +493,40 @@ real-Docker files run twice in a row clean, matching the same
 "a single green run doesn't prove a real-Docker mechanism isn't flaky"
 discipline the R1 mechanism phase itself established.
 
+**Real TCR landed** (2026-08-26): `oah/validate/tcr.py`'s `compute_tcr`,
+R1's own primary metric per `docs/architecture.md` -- checked the
+project's actual definition before designing against it, since an
+earlier draft of this plan assumed the wrong thing: "TCR -- share of
+exercised user requests reconstructable end-to-end with no missing
+spans," about trace/span linkage integrity, **not** the "fallback with
+reason, clarification, escalation, restricted-attempt" business-outcome
+taxonomy `docs/validation.md`'s Metrics section separately calls
+"behavioral rates" (a materially different, still domain-specific metric
+that stays deferred). Verified for real with two Docker spikes before
+building against it: the OTLP-JSON `live_sandbox.py` already parses
+carries `traceId`/`spanId`/`parentSpanId` per span, with `parentSpanId`
+present only on child spans (confirmed with a real nested-span capture:
+a root span has no `parentSpanId` key at all; a child's `parentSpanId`
+matches its real parent's `spanId` exactly) -- `_parse_span_file` now
+captures all three, additive to the existing `{name, attributes}` shape,
+so `event_assertion.check_dto_dynamic`/`live_diff.check_unknown_attributes`
+(which only ever read `attributes`) are unaffected. `compute_tcr` groups
+captured spans by `trace_id`; a trace is complete when every span's
+parent (if any) points at a `span_id` captured within that *same* trace
+-- a dangling parent reference is exactly the "missing span" TCR is
+meant to catch. Reported under `live_execution.tcr`
+(`traces_total`/`traces_complete`/`tcr`/`incomplete_trace_ids`; `tcr` is
+`None`, never a fabricated `0.0`/`1.0`, when nothing was captured).
+**Still not promoting to `ladder_rung: "R1"`** -- the ladder table
+requires TCR *and* a latency-vs-budget comparison together; the budget
+half needs a genuine baseline (pre-instrumentation) live run to compute a
+real overhead delta, a materially bigger addition (running
+`run_live_sandbox` twice, against two different git states) not attempted
+here, named as the explicit next step. Proven with a real nested-span
+Docker test (`tests/test_live_sandbox.py`): a real parent+child span pair
+captured with correctly linked trace/span/parent IDs, not just the pure
+grouping logic in isolation. 469 tests passing (up from 461).
+
 ### E7 — Reference corpus & skill evals
 Curate open-source LLM apps across architectures (simple RAG chat, multi-agent
 system, queue-based pipeline) and, once SP10 lands, across languages (Python first;
