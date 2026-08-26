@@ -32,6 +32,33 @@ def _git_sha(path):
         return None
 
 
+class ContextLoadError(Exception):
+    """A caller must catch this and print+return 1, the same clean
+    'error: ...' treatment every other input-validation failure in this
+    CLI already gets. Found by adversarial review: 5 of the 6 --context-
+    accepting commands read and validated the file with no error handling
+    at all, so a missing file or malformed YAML (an everyday mistake --
+    hand-editing oah interview's own output.yaml is a real workflow, not
+    an adversarial input) produced a raw traceback instead."""
+
+
+def _load_context(path):
+    from oah.schemas import validate, SchemaValidationError
+    try:
+        text = Path(path).read_text()
+    except OSError as e:
+        raise ContextLoadError(f"could not read --context file {path!r}: {e}") from e
+    try:
+        context_data = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        raise ContextLoadError(f"--context file {path!r} is not valid YAML: {e}") from e
+    try:
+        validate("context", context_data)
+    except SchemaValidationError as e:
+        raise ContextLoadError(f"--context file {path!r} does not match context.schema.json: {e}") from e
+    return context_data
+
+
 # Which surface_map.json point `kind` each built S4 lens targets. S5's
 # check_every_surface_point_has_decision gate needs, per fragment, the
 # full set of points that fragment is expected to cover -- that set
@@ -122,6 +149,17 @@ def cmd_doctor(args):
 
 
 def cmd_estimate(args):
+    # Found by adversarial review: every sibling command validates the
+    # target is a real git repo before doing anything; estimate() didn't,
+    # so a typo'd/nonexistent path silently produced a confident-looking
+    # dollar estimate (detect_repo()'s rglob() over a nonexistent path
+    # just returns zero candidates, and the fixed-overhead pipeline
+    # stages still cost something) instead of an error like every other
+    # command gives for the same mistake.
+    if _git_sha(args.target) is None:
+        print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
+        return 1
+
     result = run_estimate(args.target, workflows=args.workflows)
     if args.json:
         print(json.dumps(result, indent=2))
@@ -266,10 +304,11 @@ def cmd_gaps(args):
 
     context = None
     if args.context:
-        context_data = yaml.safe_load(Path(args.context).read_text())
-        from oah.schemas import validate
-        validate("context", context_data)
-        context = context_data
+        try:
+            context = _load_context(args.context)
+        except ContextLoadError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
 
     surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
     inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
@@ -324,9 +363,11 @@ def cmd_design(args):
 
     context = None
     if args.context:
-        context_data = yaml.safe_load(Path(args.context).read_text())
-        validate("context", context_data)
-        context = context_data
+        try:
+            context = _load_context(args.context)
+        except ContextLoadError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
 
     surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
     if not surface_map["points"]:
@@ -419,9 +460,11 @@ def cmd_event_schema(args):
 
     context = None
     if args.context:
-        context_data = yaml.safe_load(Path(args.context).read_text())
-        validate("context", context_data)
-        context = context_data
+        try:
+            context = _load_context(args.context)
+        except ContextLoadError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
 
     surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
     if not surface_map["points"]:
@@ -490,9 +533,11 @@ def cmd_dtos(args):
 
     context = None
     if args.context:
-        context_data = yaml.safe_load(Path(args.context).read_text())
-        validate("context", context_data)
-        context = context_data
+        try:
+            context = _load_context(args.context)
+        except ContextLoadError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
 
     surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
     if not surface_map["points"]:
@@ -587,9 +632,11 @@ def cmd_readiness(args):
 
     context = None
     if args.context:
-        context_data = yaml.safe_load(Path(args.context).read_text())
-        validate("context", context_data)
-        context = context_data
+        try:
+            context = _load_context(args.context)
+        except ContextLoadError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
 
     surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
     inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
