@@ -2,14 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oah.dev/schemas/instrument_report.schema.json",
   "title": "S10 instrumentation report",
-  "description": "architecture.md S10, report-only mode only in this phase: for each DTO of a supported change.type, either a proposed diff (never written to the target repo) or a stated refusal reason. fix mode (real edits/commits) is not represented by this schema yet -- when it lands, mode's enum grows and an applied-and-committed status is added, not silently redefined.",
+  "description": "architecture.md S10. report-only: for each DTO of a supported change.type, either a proposed diff (never written to the target repo) or a stated refusal reason. fix: the same verification, but a successful result writes the file and creates one commit per DTO (commit_sha present); any failure past verification -- syntax-invalid content, a git error -- rolls back cleanly (docs/decisions/005-sp4-agent-mutation.md's own contract) and is recorded as status:'failed', never a silent skip.",
   "type": "object",
   "required": ["schema_version", "repo_git_sha", "mode", "results", "summary"],
   "additionalProperties": false,
   "properties": {
     "schema_version": { "const": "0.1.0" },
     "repo_git_sha": { "type": "string" },
-    "mode": { "const": "report-only" },
+    "mode": { "enum": ["report-only", "fix"] },
     "results": {
       "type": "array",
       "description": "One entry per DTO in the input implementation_dto.json, in the same order. Empty array is valid (no DTOs given).",
@@ -21,13 +21,14 @@
           "dto_id": { "type": "string" },
           "status": {
             "enum": ["applied", "refused", "unsupported", "failed"],
-            "description": "applied: agent produced a diff (not written). refused: agent checked preconditions/anchor against the real file and declined, with a reason -- SP4's dto-003 case, a correct outcome, not a bug. unsupported: change.type isn't one of the 4 this phase covers -- never attempted, not a silent skip. failed: the agent session itself errored (SDK/transport failure, malformed response) -- distinct from a considered refusal."
+            "description": "applied: report-only produced a diff (not written); fix wrote the file and committed it (commit_sha set). refused: agent checked preconditions/anchor against the real file and declined, with a reason -- SP4's dto-003 case, a correct outcome, not a bug. unsupported: change.type isn't one of the 4 this phase covers -- never attempted, not a silent skip. failed: the agent session errored, the agent's proposed content didn't parse, or (fix mode only) git itself rejected the commit -- in fix mode this always means a clean rollback happened, never a half-applied file."
           },
-          "diff": { "type": ["string", "null"], "description": "Proposed unified diff, present only when status is 'applied'. Never written to the target repo in this mode." },
+          "diff": { "type": ["string", "null"], "description": "report-only only: proposed unified diff, present only when status is 'applied'. Never written to the target repo." },
+          "commit_sha": { "type": ["string", "null"], "description": "fix only: the commit created for this DTO, present only when status is 'applied'." },
           "reason": { "type": ["string", "null"], "description": "Required context for refused/unsupported/failed; null for applied." },
           "syntax_valid": {
             "type": ["boolean", "null"],
-            "description": "ast.parse() sanity check on the proposed patched file content, present only when status is 'applied'. Informational only -- report-only never commits regardless of this value; SP4 found py_compile-equivalent checks insufficient for semantic bugs, so this is a cheap signal, not a verification gate."
+            "description": "ast.parse() sanity check on the agent's proposed patched file content, present only when a patch was produced (status 'applied', or 'failed' when this specific check is why). Informational in report-only mode (never commits regardless); a hard pre-commit gate in fix mode (syntax_valid:false is never committed) -- SP4 found py_compile-equivalent checks insufficient for semantic bugs, so even in fix mode this only catches the syntactic half, not oversold as more."
           }
         }
       }

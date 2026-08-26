@@ -8,6 +8,7 @@ import subprocess
 from unittest.mock import patch
 
 from oah.cli import cmd_instrument
+from oah.design.readiness_report import build_readiness_report
 
 
 def _init_git_repo(path):
@@ -16,8 +17,44 @@ def _init_git_repo(path):
                      "commit", "--allow-empty", "-q", "-m", "init"], cwd=path, check=True)
 
 
+def _write_git_target(tmp_path, content="response = client.messages.create(model='x')\n"):
+    """Unlike _init_git_repo (empty commit, app.py left untracked -- fine
+    for report-only tests, wrong for fix mode's clean-working-tree
+    precondition), this actually commits app.py so the tree starts clean."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text(content)
+    subprocess.run(["git", "init", "-q"], cwd=target, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=target, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.com", "-c", "user.name=t",
+                     "commit", "-q", "-m", "init"], cwd=target, check=True)
+    return target
+
+
 def _write_dtos_file(path, dtos):
     path.write_text(json.dumps({"schema_version": "0.1.0", "dtos": dtos}, indent=2))
+
+
+def _write_readiness_file(path, decision="ready_with_conditions"):
+    """Builds a real, schema-valid readiness_report.json via the actual
+    S9 assembler rather than a hand-typed fixture -- gap_model empty (or,
+    for a non-ready decision, one unaddressed p0 dark gap, which
+    _decide() maps straight to remediate_before_release)."""
+    event_schema = {"schema_version": "0.1.0", "repo_git_sha": "x", "attributes": [],
+                     "summary": {"attribute_count": 0, "otel_genai_count": 0,
+                                 "oah_extension_count": 0, "lenses_included": []}}
+    dtos = {"schema_version": "0.1.0", "dtos": []}
+    if decision == "ready_with_conditions":
+        gap_model = {"gaps": []}
+    elif decision == "remediate_before_release":
+        gap_model = {"gaps": [{"id": "gap-0001", "surface_point_ids": ["sp-0001"],
+                                "dimension": "generation_capture", "status": "dark",
+                                "priority": "p0", "rationale": "no capture at all"}]}
+    else:
+        raise ValueError(decision)
+    report = build_readiness_report(gap_model, [], [], event_schema, dtos, repo_git_sha="deadbeef")
+    assert report["recommendation"]["decision"] == decision
+    path.write_text(json.dumps(report, indent=2))
 
 
 DTO = {
@@ -206,3 +243,111 @@ def test_empty_dtos_list_is_a_clean_noop(tmp_path):
     args = argparse.Namespace(target=str(target), dtos=str(dtos_path), output=None, model=None)
     rc = cmd_instrument(args)
     assert rc == 0
+
+
+# --- --mode fix ----------------------------------------------------------
+
+def test_fix_mode_requires_readiness_flag(tmp_path):
+    target = _write_git_target(tmp_path)
+    dtos_path = tmp_path / "implementation_dto.json"
+    _write_dtos_file(dtos_path, [DTO])
+
+    args = argparse.Namespace(target=str(target), dtos=str(dtos_path), output=None,
+                               model=None, mode="fix", readiness=None)
+    rc = cmd_instrument(args)
+    assert rc == 1
+
+
+def test_fix_mode_refuses_when_readiness_decision_is_not_ready(tmp_path):
+    target = _write_git_target(tmp_path)
+    dtos_path = tmp_path / "implementation_dto.json"
+    _write_dtos_file(dtos_path, [DTO])
+    readiness_path = tmp_path / "readiness_report.json"
+    _write_readiness_file(readiness_path, decision="remediate_before_release")
+
+    args = argparse.Namespace(target=str(target), dtos=str(dtos_path), output=None, model=None,
+                               mode="fix", readiness=str(readiness_path))
+    with patch("oah.instrument.executor.apply_dto_fix") as fake_fix:
+        rc = cmd_instrument(args)
+    assert rc == 1
+    fake_fix.assert_not_called()
+
+
+def test_fix_mode_refuses_on_dirty_working_tree(tmp_path):
+    target = _write_git_target(tmp_path)
+    (target / "app.py").write_text("uncommitted local edit\n")  # dirty, never git-added
+
+    dtos_path = tmp_path / "implementation_dto.json"
+    _write_dtos_file(dtos_path, [DTO])
+    readiness_path = tmp_path / "readiness_report.json"
+    _write_readiness_file(readiness_path)
+
+    args = argparse.Namespace(target=str(target), dtos=str(dtos_path), output=None, model=None,
+                               mode="fix", readiness=str(readiness_path))
+    with patch("oah.instrument.executor.apply_dto_fix") as fake_fix:
+        rc = cmd_instrument(args)
+    assert rc == 1
+    fake_fix.assert_not_called()
+    # The precondition check itself must not have touched the dirty file.
+    assert (target / "app.py").read_text() == "uncommitted local edit\n"
+
+
+def test_fix_mode_end_to_end_writes_and_commits(tmp_path):
+    target = _write_git_target(tmp_path)
+    dtos_path = tmp_path / "implementation_dto.json"
+    _write_dtos_file(dtos_path, [DTO])
+    readiness_path = tmp_path / "readiness_report.json"
+    _write_readiness_file(readiness_path)
+
+    patched = "telemetry.emit()\nresponse = client.messages.create(model='x')\n"
+
+    def fake_apply_dto_fix(dto, target_repo, model=None):
+        return {"dto_id": dto["id"], "status": "applied", "commit_sha": "abc123",
+                "reason": None, "syntax_valid": True}
+
+    args = argparse.Namespace(target=str(target), dtos=str(dtos_path),
+                               output=str(tmp_path / "report.json"), model=None,
+                               mode="fix", readiness=str(readiness_path))
+    with patch("oah.instrument.executor.apply_dto_fix", side_effect=fake_apply_dto_fix):
+        rc = cmd_instrument(args)
+
+    assert rc == 0
+    report = json.loads((tmp_path / "report.json").read_text())
+    assert report["mode"] == "fix"
+    assert report["results"][0]["commit_sha"] == "abc123"
+    assert report["summary"] == {"total": 1, "applied": 1, "refused": 0, "unsupported": 0, "failed": 0}
+
+
+def test_report_only_and_fix_checkpoints_never_collide_on_the_same_run_id(tmp_path):
+    """Same --run-id used for a report-only run and then a fix run against
+    the same target must not let the fix run silently reuse the
+    report-only run's differently-shaped (diff, not commit_sha)
+    checkpointed result."""
+    target = _write_git_target(tmp_path)
+    dtos_path = tmp_path / "implementation_dto.json"
+    _write_dtos_file(dtos_path, [DTO])
+    readiness_path = tmp_path / "readiness_report.json"
+    _write_readiness_file(readiness_path)
+
+    def fake_report_only(dto, target_repo, model=None):
+        return {"dto_id": dto["id"], "status": "applied", "diff": "d", "reason": None, "syntax_valid": True}
+
+    def fake_fix(dto, target_repo, model=None):
+        return {"dto_id": dto["id"], "status": "applied", "commit_sha": "abc123",
+                "reason": None, "syntax_valid": True}
+
+    args1 = argparse.Namespace(target=str(target), dtos=str(dtos_path), output=None, model=None,
+                                mode="report-only", readiness=None, run_id="shared-run")
+    with patch("oah.instrument.executor.apply_dto_report_only", side_effect=fake_report_only):
+        rc1 = cmd_instrument(args1)
+    assert rc1 == 0
+
+    args2 = argparse.Namespace(target=str(target), dtos=str(dtos_path),
+                                output=str(tmp_path / "fix_report.json"), model=None,
+                                mode="fix", readiness=str(readiness_path), run_id="shared-run")
+    with patch("oah.instrument.executor.apply_dto_fix", side_effect=fake_fix) as fake_fix_mock:
+        rc2 = cmd_instrument(args2)
+    assert rc2 == 0
+    fake_fix_mock.assert_called_once()  # not skipped as "already checkpointed"
+    report2 = json.loads((tmp_path / "fix_report.json").read_text())
+    assert report2["results"][0]["commit_sha"] == "abc123"

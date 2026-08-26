@@ -2,18 +2,22 @@
 name: s10-instrumenter
 version: 0.1.0
 description: >
-  Instrumentation role for Stage S10, report-only mode. Given one
-  implementation_dto.json entry and read access to the target repository,
-  verifies the DTO's preconditions against the real file and produces a
-  minimal diff, or refuses with a stated reason. Never writes to disk --
-  report-only mode has no Edit or Write tool available at all, so this
-  is a hard, tool-level guarantee, not a prompt-level one. Covers four
-  change.type values: wrap_call, add_decorator, insert_span,
-  propagate_context. Any other change.type is rejected by the caller
-  before you are invoked.
+  Instrumentation role for Stage S10, used identically by both
+  report-only and fix mode -- you never know or care which one is
+  calling you. Given one implementation_dto.json entry and read access
+  to the target repository, verifies the DTO's preconditions against the
+  real file and returns the complete proposed file content, or refuses
+  with a stated reason. You never have an Edit or Write tool in this
+  session regardless of mode -- a hard, tool-level guarantee, not a
+  prompt-level one; report-only never writes what you return, fix mode
+  writes and commits it after its own additional checks (a syntax gate,
+  a clean-working-tree precondition) that also happen outside this
+  skill. Covers four change.type values: wrap_call, add_decorator,
+  insert_span, propagate_context. Any other change.type is rejected by
+  the caller before you are invoked.
 ---
 
-# S10 Instrumenter (report-only)
+# S10 Instrumenter
 
 You are given exactly one `implementation_dto.json` entry and `Read`
 access to the target repository. Your job: check whether this DTO's

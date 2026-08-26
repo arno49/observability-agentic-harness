@@ -2,12 +2,13 @@
 as test_disambiguate.py/test_design_lens.py: no live Claude Agent SDK
 session is available in this environment, so `_agent_runner` stands in
 for the real query()-based session throughout."""
+import subprocess
 import sys
 
 import pytest
 
 from oah.instrument.executor import (
-    MissingAgentSDKError, apply_dto_report_only, get_agent_runner,
+    MissingAgentSDKError, apply_dto_fix, apply_dto_report_only, get_agent_runner,
 )
 
 WRAP_CALL_DTO = {
@@ -31,6 +32,27 @@ def _write_target(tmp_path, content="response = client.messages.create(model='x'
     target.mkdir()
     (target / "app.py").write_text(content)
     return target
+
+
+def _write_git_target(tmp_path, content="response = client.messages.create(model='x')\n"):
+    target = _write_target(tmp_path, content)
+    subprocess.run(["git", "init", "-q"], cwd=target, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=target, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.com", "-c", "user.name=t",
+                     "commit", "-q", "-m", "init"], cwd=target, check=True)
+    return target
+
+
+def _git_log(target):
+    result = subprocess.run(["git", "-C", str(target), "log", "--oneline"],
+                             capture_output=True, text=True, check=True)
+    return result.stdout.strip().splitlines()
+
+
+def _git_status_clean(target):
+    result = subprocess.run(["git", "-C", str(target), "status", "--porcelain"],
+                             capture_output=True, text=True, check=True)
+    return result.stdout.strip() == ""
 
 
 def test_unsupported_change_type_never_calls_the_agent(tmp_path):
@@ -127,3 +149,102 @@ def test_missing_agent_sdk_surfaces_as_failed_result_not_a_crash(tmp_path, monke
     result = apply_dto_report_only(WRAP_CALL_DTO, target)  # no _agent_runner override
     assert result["status"] == "failed"
     assert "pip install 'oah[agent]'" in result["reason"]
+
+
+# --- apply_dto_fix -----------------------------------------------------
+
+PATCHED = "oah_telemetry.emit('start')\nresponse = client.messages.create(model='x')\n"
+
+
+def test_fix_writes_the_file_and_creates_one_commit(tmp_path):
+    target = _write_git_target(tmp_path)
+    log_before = _git_log(target)
+
+    def fake_runner(dto, target_repo, model):
+        return {"dto_id": dto["id"], "status": "applied", "patched_content": PATCHED, "reason": None}
+
+    result = apply_dto_fix(WRAP_CALL_DTO, target, _agent_runner=fake_runner)
+    assert result["status"] == "applied"
+    assert result["commit_sha"]
+    assert (target / "app.py").read_text() == PATCHED
+    assert _git_status_clean(target)
+    log_after = _git_log(target)
+    assert len(log_after) == len(log_before) + 1
+    assert "dto-0001" in log_after[0]
+
+
+def test_fix_refusal_never_touches_the_file_or_git(tmp_path):
+    target = _write_git_target(tmp_path)
+    original = (target / "app.py").read_text()
+    log_before = _git_log(target)
+
+    def fake_runner(dto, target_repo, model):
+        return {"dto_id": dto["id"], "status": "refused", "patched_content": None, "reason": "anchor not found"}
+
+    result = apply_dto_fix(WRAP_CALL_DTO, target, _agent_runner=fake_runner)
+    assert result["status"] == "refused"
+    assert result["commit_sha"] is None
+    assert (target / "app.py").read_text() == original
+    assert _git_log(target) == log_before
+    assert _git_status_clean(target)
+
+
+def test_fix_rolls_back_syntax_invalid_content_without_committing(tmp_path):
+    target = _write_git_target(tmp_path)
+    original = (target / "app.py").read_text()
+    log_before = _git_log(target)
+    broken = "response = client.messages.create(model='x'\n"  # unbalanced paren
+
+    def fake_runner(dto, target_repo, model):
+        return {"dto_id": dto["id"], "status": "applied", "patched_content": broken, "reason": None}
+
+    result = apply_dto_fix(WRAP_CALL_DTO, target, _agent_runner=fake_runner)
+    assert result["status"] == "failed"
+    assert "fails to parse" in result["reason"]
+    assert result["commit_sha"] is None
+    # The critical assertion: the file on disk is restored, not left broken.
+    assert (target / "app.py").read_text() == original
+    assert _git_log(target) == log_before
+    assert _git_status_clean(target)
+
+
+def test_fix_rolls_back_on_git_commit_failure(tmp_path):
+    target = _write_git_target(tmp_path)
+    original = (target / "app.py").read_text()
+    log_before = _git_log(target)
+
+    # A commit.gpgsign misconfiguration, a rejecting pre-commit hook, or any
+    # other git-level failure -- simulate by pointing GIT_AUTHOR/COMMITTER
+    # config at something git itself will refuse. Simplest reliable
+    # trigger: an empty commit message is rejected by git, but our code
+    # always supplies one -- so simulate directly by making the repo's
+    # .git/hooks/pre-commit reject everything.
+    hooks_dir = target / ".git" / "hooks"
+    hooks_dir.mkdir(exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o755)
+
+    def fake_runner(dto, target_repo, model):
+        return {"dto_id": dto["id"], "status": "applied", "patched_content": PATCHED, "reason": None}
+
+    result = apply_dto_fix(WRAP_CALL_DTO, target, _agent_runner=fake_runner)
+    assert result["status"] == "failed"
+    assert "git commit failed, rolled back" in result["reason"]
+    assert result["commit_sha"] is None
+    assert (target / "app.py").read_text() == original
+    assert _git_log(target) == log_before
+    assert _git_status_clean(target)
+
+
+def test_fix_unsupported_type_never_touches_git(tmp_path):
+    target = _write_git_target(tmp_path)
+    log_before = _git_log(target)
+    dto = {**WRAP_CALL_DTO, "change": {**WRAP_CALL_DTO["change"], "type": "add_compose_service"}}
+
+    calls = []
+    result = apply_dto_fix(dto, target, _agent_runner=lambda *a: calls.append(a))
+    assert result["status"] == "unsupported"
+    assert calls == []
+    assert _git_log(target) == log_before
+    assert _git_status_clean(target)

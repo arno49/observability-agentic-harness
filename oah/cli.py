@@ -755,21 +755,72 @@ def cmd_readiness(args):
 
 
 def cmd_instrument(args):
-    """S10, report-only mode only -- see oah/instrument/executor.py's
-    module docstring for exactly what's covered (4 of
-    implementation_dto.schema.json's 13 change.type values) and what
-    isn't (fix mode: real edits, git commit-per-DTO, rollback). Never
-    writes to the target repo in this mode. Checkpoints per applied DTO
-    via the same state_db.py S1's disambiguation resume path already
-    uses -- stage_id="s10", unit_id=dto["id"], per that module's own
-    docstring naming this exact usage."""
-    from oah.instrument.executor import apply_dto_report_only
+    """S10 -- see oah/instrument/executor.py's module docstring for
+    exactly what's covered (4 of implementation_dto.schema.json's 13
+    change.type values) and the shared verification path both modes use.
+    report-only never writes to the target repo. fix mode writes and
+    commits one DTO at a time, gated on two preconditions checked here
+    (not in executor.py, which has no opinion on whether a run should
+    start at all): a recorded S9 `ready`/`ready_with_conditions`
+    decision (architecture.md: "Fix mode does not proceed without a
+    recorded decision of ready or ready_with_conditions"), and a clean
+    git working tree in the target repo (a fix-mode rollback restores a
+    file to HEAD -- unsafe to do unconditionally if the user has their
+    own uncommitted changes sitting there). Checkpoints per DTO via the
+    same state_db.py S1's disambiguation resume path already uses --
+    stage_id="s10-{mode}" (mode-scoped so a report-only run and a fix
+    run sharing a --run-id can never reuse each other's differently-
+    shaped checkpointed result), unit_id=dto["id"]."""
+    from oah.instrument.executor import apply_dto_fix, apply_dto_report_only
     from oah.schemas import validate, SchemaValidationError
 
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
         return 1
+
+    mode = getattr(args, "mode", "report-only")
+
+    if mode == "fix":
+        readiness_path = getattr(args, "readiness", None)
+        if not readiness_path:
+            print("error: --mode fix requires --readiness <readiness_report.json> -- "
+                  "architecture.md: fix mode does not proceed without a recorded "
+                  "ready/ready_with_conditions decision", file=sys.stderr)
+            return 1
+        try:
+            readiness_data = json.loads(Path(readiness_path).read_text())
+        except OSError as e:
+            print(f"error: could not read --readiness file {readiness_path!r}: {e}", file=sys.stderr)
+            return 1
+        except json.JSONDecodeError as e:
+            print(f"error: --readiness file {readiness_path!r} is not valid JSON: {e}", file=sys.stderr)
+            return 1
+        try:
+            validate("readiness_report", readiness_data)
+        except SchemaValidationError as e:
+            print(f"error: --readiness file {readiness_path!r} does not match "
+                  f"readiness_report.schema.json: {e}", file=sys.stderr)
+            return 1
+        decision = readiness_data["recommendation"]["decision"]
+        if decision not in ("ready", "ready_with_conditions"):
+            print(f"error: --readiness file's recommendation is {decision!r} -- fix mode requires "
+                  f"'ready' or 'ready_with_conditions'", file=sys.stderr)
+            return 1
+
+        status = subprocess.run(["git", "-C", args.target, "status", "--porcelain"],
+                                 capture_output=True, text=True)
+        if status.returncode != 0:
+            print(f"error: git status failed in {args.target}: {status.stderr.strip()}", file=sys.stderr)
+            return 1
+        if status.stdout.strip():
+            print(f"error: {args.target} has uncommitted changes -- fix mode's rollback restores a "
+                  f"file to HEAD, which would discard your own uncommitted work. Commit or stash "
+                  f"first.", file=sys.stderr)
+            return 1
+
+        print(f"\n⚠️  fix mode: about to write to and commit into {args.target}. "
+              f"One commit per applied DTO; any failure rolls back cleanly.", file=sys.stderr)
 
     try:
         dtos_data = json.loads(Path(args.dtos).read_text())
@@ -792,6 +843,8 @@ def cmd_instrument(args):
 
     model = getattr(args, "model", None)
     run_id = getattr(args, "run_id", None) or f"run-{uuid.uuid4().hex[:12]}"
+    stage_id = f"s10-{mode}"
+    apply_dto = apply_dto_fix if mode == "fix" else apply_dto_report_only
 
     # Same resume pattern as cmd_map: reload an existing run_id's own
     # manifest rather than overwriting started_at/stages_completed --
@@ -807,11 +860,11 @@ def cmd_instrument(args):
         db.create_run(run_id, args.target, git_sha, manifest["started_at"])
         results = []
         for dto in dtos:
-            if db.is_checkpointed(run_id, "s10", dto["id"]):
-                results.append(db.get_checkpoint_result(run_id, "s10", dto["id"]))
+            if db.is_checkpointed(run_id, stage_id, dto["id"]):
+                results.append(db.get_checkpoint_result(run_id, stage_id, dto["id"]))
                 continue
-            result = apply_dto_report_only(dto, args.target, model=model)
-            db.checkpoint(run_id, "s10", dto["id"], result, _now())
+            result = apply_dto(dto, args.target, model=model)
+            db.checkpoint(run_id, stage_id, dto["id"], result, _now())
             results.append(result)
         db.mark_run_status(run_id, "completed", _now())
 
@@ -819,7 +872,7 @@ def cmd_instrument(args):
     for r in results:
         summary[r["status"]] += 1
     report = {
-        "schema_version": "0.1.0", "repo_git_sha": git_sha, "mode": "report-only",
+        "schema_version": "0.1.0", "repo_git_sha": git_sha, "mode": mode,
         "results": results, "summary": summary,
     }
     validate("instrument_report", report)
@@ -835,11 +888,15 @@ def cmd_instrument(args):
         print(json.dumps(report, indent=2))
 
     print(f"\nrun_id: {run_id}  (manifest: {rm.manifest_path(run_id)})", file=sys.stderr)
-    print(f"S10 report-only: {summary['applied']} applied, {summary['refused']} refused, "
+    print(f"S10 {mode}: {summary['applied']} applied, {summary['refused']} refused, "
           f"{summary['unsupported']} unsupported, {summary['failed']} failed", file=sys.stderr)
-    print("\nnote: report-only mode only -- no fix mode yet, nothing was written to the target "
-          "repo. Only 4 of 13 change.type values are supported; see oah/instrument/executor.py.",
-          file=sys.stderr)
+    if mode == "report-only":
+        print("\nnote: report-only mode -- nothing was written to the target repo. Only 4 of 13 "
+              "change.type values are supported; see oah/instrument/executor.py.", file=sys.stderr)
+    else:
+        print(f"\nnote: fix mode -- {summary['applied']} commit(s) created in {args.target}. Only "
+              "4 of 13 change.type values are supported; see oah/instrument/executor.py.",
+              file=sys.stderr)
     return 1 if summary["failed"] else 0
 
 
@@ -947,14 +1004,20 @@ def build_parser():
 
     p_instrument = sub.add_parser(
         "instrument",
-        help="S10, report-only mode only: verify + propose diffs for 4 of 13 DTO change types, never writes to the target repo",
+        help="S10: verify + apply 4 of 13 DTO change types (report-only diffs, or fix mode's real "
+             "commit-per-DTO gated on an S9 ready/ready_with_conditions decision)",
     )
     p_instrument.add_argument("target", help="Path to the target repository")
     p_instrument.add_argument("--dtos", required=True, help="Path to an implementation_dto.json from `oah dtos`")
     p_instrument.add_argument("-o", "--output", default=None, help="Write instrument_report.json here instead of stdout")
     p_instrument.add_argument("--run-id", default=None, help="Resume this run_id if already checkpointed, else start it")
-    p_instrument.add_argument("--mode", choices=["report-only"], default="report-only",
-                               help="Only report-only is built so far -- fix mode (real edits/commits) is not yet implemented")
+    p_instrument.add_argument("--mode", choices=["report-only", "fix"], default="report-only",
+                               help="report-only (default): propose diffs, never write. fix: write + commit "
+                                    "one DTO at a time, requires --readiness and a clean git working tree")
+    p_instrument.add_argument("--readiness", default=None,
+                               help="Path to a readiness_report.json from `oah readiness` -- required for "
+                                    "--mode fix, whose recommendation.decision must be 'ready' or "
+                                    "'ready_with_conditions' (architecture.md)")
     p_instrument.add_argument("--model", default=None, help=_AGENT_MODEL_HELP)
     p_instrument.set_defaults(func=cmd_instrument)
 
