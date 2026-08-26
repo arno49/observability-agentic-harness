@@ -300,8 +300,12 @@ def apply_dto_fix(dto, target_repo, model=None, _agent_runner=None):
         description = dto["change"].get("description")
         if description:
             message += f"\n\n{description}"
-        commit = subprocess.run(["git", "-C", str(target_repo), "commit", "-q", "-m", message],
-                                 capture_output=True, text=True)
+        commit = subprocess.run(
+            ["git", "-C", str(target_repo),
+             "-c", "user.name=OAH", "-c", "user.email=oah@localhost",
+             "commit", "-q", "-m", message],
+            capture_output=True, text=True,
+        )
 
     if add.returncode != 0 or commit.returncode != 0:
         subprocess.run(["git", "-C", str(target_repo), "checkout", "HEAD", "--", change_file],
