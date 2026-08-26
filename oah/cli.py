@@ -907,20 +907,24 @@ def cmd_validate(args):
     per-DTO event-emission assertion over one real sandboxed run
     (oah/validate/dynamic.py), and a static trace-ID-propagation check
     for propagate_context DTOs (oah/validate/propagation_checker.py) runs
-    unconditionally, same as the R4 static check. oah/validate/verdict.py's
-    compute_ladder_verdict is the one place that decides whether a run has
-    actually earned ladder_rung 'R2'/verdict 'validated' -- deliberately
-    conservative, see its own module docstring for the exact rule.
+    unconditionally, same as the R4 static check.
 
     An opt-in --live pass additionally starts the target as a real running
     service alongside a real local OTel collector (E6 R1's mechanism,
     oah/validate/live_sandbox.py) and drives --requests against it,
-    reporting real captured requests/latency/spans plus per-DTO event
-    assertions and an unknown-attribute check (oah/validate/live_diff.py)
-    under live_execution -- this does NOT move ladder_rung/verdict yet;
-    R1's own promotion rule (real TCR, a budget comparison, semantic
-    event_schema.json invariant checks) isn't built, named as the next
-    step in ROADMAP.md, not silently implied by this flag's existence.
+    reporting real captured requests/latency/spans, per-DTO event
+    assertions, an unknown-attribute check (oah/validate/live_diff.py),
+    and real TCR (oah/validate/tcr.py) under live_execution. --baseline
+    (on top of --live) additionally runs the target's real pre-
+    instrumentation code and reports real latency overhead vs. each
+    applied DTO's declared budget (oah/validate/overhead.py).
+
+    oah/validate/verdict.py's compute_ladder_verdict is the one place that
+    decides whether a run has actually earned ladder_rung 'R2' (--dynamic
+    evidence alone) or 'R1' (R2's requirements plus --live/--baseline
+    evidence: TCR exactly 1.0, overhead within budget) / verdict
+    'validated' -- deliberately conservative, see its own module docstring
+    for the exact rule.
 
     No checkpointing -- none of these make an LLM/agent call, and even
     --dynamic/--live's sandbox runs are cheap enough to always re-run in
@@ -1000,10 +1004,6 @@ def cmd_validate(args):
     regression_gate = dynamic_result["regression_gate"]
     event_assertions = dynamic_result["event_assertions"]
 
-    ladder_rung, verdict = compute_ladder_verdict(
-        dtos_data["dtos"], results, event_assertions, propagation_checks, regression_gate,
-    )
-
     live_execution = None
     if live:
         event_schema = None
@@ -1051,6 +1051,11 @@ def cmd_validate(args):
             "overhead_vs_budget": overhead_vs_budget,
             "reason": live_result["reason"],
         }
+
+    ladder_rung, verdict = compute_ladder_verdict(
+        dtos_data["dtos"], results, event_assertions, propagation_checks, regression_gate,
+        live_execution=live_execution,
+    )
 
     report = {
         "schema_version": "0.1.0", "repo_git_sha": git_sha,

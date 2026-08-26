@@ -251,12 +251,19 @@ declared `estimated_overhead_ms` budget under
 the real signed delta between the two runs, never clamped to zero; the
 budget is `null`/incomplete rather than silently `0` if any applied DTO
 never declared an estimate). Doubles the live-run cost/time — opt-in, not a
-default. **This still does not move `ladder_rung`/`verdict`** — that needs
-TCR and the overhead-vs-budget comparison tied together in
-`compute_ladder_verdict`, a separate follow-up, same "prove each real
-piece, then the promotion rule" split R2 already went through. R3
-(generated smoke) and the agentic audit panel aren't built — see
-[Requirements](#requirements-planned) and `ROADMAP.md`'s E6 entry.
+default.
+
+**`ladder_rung: "R1"` is now reachable** — `compute_ladder_verdict`
+promotes past R2 to `"R1"` (still `verdict: "validated"`) when every one of
+R2's own requirements holds *and* `--live` succeeded with a real
+`live_execution.tcr.tcr` of exactly `1.0` (every captured trace complete,
+none partial) *and* `--baseline` ran with `overhead_vs_budget.within_budget`
+`true`. This is the first time `oah validate` has been able to report R1
+at all — proven end to end with `--dynamic --live --baseline` combined in
+one real invocation
+(`tests/test_cli_validate_r1_promotion.py`). R3 (generated smoke) and the
+agentic audit panel aren't built — see [Requirements](#requirements-planned)
+and `ROADMAP.md`'s E6 entry.
 
 `oah backend-config` generates a real `otel-collector-config.yaml` for either
 `otel-only` (a vendor-neutral floor, exports to the collector's own `debug`

@@ -22,6 +22,14 @@ def _gate(status):
     return {"status": status, "reason": None}
 
 
+def _live_execution(status="ok", tcr=1.0, overhead_status="ok", within_budget=True):
+    return {
+        "status": status,
+        "tcr": {"tcr": tcr},
+        "overhead_vs_budget": {"status": overhead_status, "within_budget": within_budget},
+    }
+
+
 def test_regression_gate_failed_forces_validation_failed_regardless_of_dtos():
     dtos = [_dto("d1")]
     rung, verdict = compute_ladder_verdict(
@@ -130,3 +138,78 @@ def test_mixed_dtos_one_failing_blocks_promotion_for_the_whole_run():
         _gate("passed"),
     )
     assert (rung, verdict) == ("R4", "needs_review")
+
+
+def _r2_earning_args():
+    """A minimal set of args that would earn R2 on their own -- used as
+    the base for every R1 test below, since R1 is a strict superset."""
+    dtos = [_dto("d1")]
+    return (
+        dtos, [_static("d1")], [_event("d1", "observed")],
+        [_propagation("d1", "not_applicable")], _gate("passed"),
+    )
+
+
+def test_live_execution_none_stays_at_r2():
+    rung, verdict = compute_ladder_verdict(*_r2_earning_args(), live_execution=None)
+    assert (rung, verdict) == ("R2", "validated")
+
+
+def test_full_r1_evidence_promotes_to_r1():
+    rung, verdict = compute_ladder_verdict(*_r2_earning_args(), live_execution=_live_execution())
+    assert (rung, verdict) == ("R1", "validated")
+
+
+def test_live_execution_not_ok_stays_at_r2():
+    rung, verdict = compute_ladder_verdict(
+        *_r2_earning_args(), live_execution=_live_execution(status="build_failed"),
+    )
+    assert (rung, verdict) == ("R2", "validated")
+
+
+def test_tcr_less_than_one_stays_at_r2():
+    """A partially-complete trace set is real evidence of a real gap --
+    not close enough to round up to R1."""
+    rung, verdict = compute_ladder_verdict(*_r2_earning_args(), live_execution=_live_execution(tcr=0.9))
+    assert (rung, verdict) == ("R2", "validated")
+
+
+def test_tcr_none_no_traces_captured_stays_at_r2():
+    rung, verdict = compute_ladder_verdict(*_r2_earning_args(), live_execution=_live_execution(tcr=None))
+    assert (rung, verdict) == ("R2", "validated")
+
+
+def test_overhead_not_ok_stays_at_r2():
+    rung, verdict = compute_ladder_verdict(
+        *_r2_earning_args(), live_execution=_live_execution(overhead_status="not_attempted"),
+    )
+    assert (rung, verdict) == ("R2", "validated")
+
+
+def test_over_budget_stays_at_r2():
+    rung, verdict = compute_ladder_verdict(
+        *_r2_earning_args(), live_execution=_live_execution(within_budget=False),
+    )
+    assert (rung, verdict) == ("R2", "validated")
+
+
+def test_r2_own_requirements_still_gate_r1_even_with_full_live_evidence():
+    """A DTO that fails R2's own bar blocks R1 too -- R1 can never be
+    reached by R1 evidence alone, R2's requirements always apply first."""
+    dtos = [_dto("d1")]
+    rung, verdict = compute_ladder_verdict(
+        dtos, [_static("d1")], [_event("d1", "not_observed")],
+        [_propagation("d1", "not_applicable")], _gate("passed"),
+        live_execution=_live_execution(),
+    )
+    assert (rung, verdict) == ("R4", "needs_review")
+
+
+def test_regression_gate_failed_forces_validation_failed_even_with_full_r1_evidence():
+    dtos = [_dto("d1")]
+    rung, verdict = compute_ladder_verdict(
+        dtos, [_static("d1")], [_event("d1", "observed")],
+        [_propagation("d1", "not_applicable")], _gate("failed"),
+        live_execution=_live_execution(),
+    )
+    assert (rung, verdict) == ("R4", "validation_failed")
