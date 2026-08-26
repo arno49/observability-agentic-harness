@@ -56,6 +56,27 @@ def check_every_surface_point_has_decision(fragment, surface_map_point_ids):
     return Finding("every_surface_point_has_decision", True, "every surface point covered")
 
 
+def check_no_phantom_surface_points(fragment, surface_map_point_ids):
+    """Every lens's own SKILL.md states, verbatim, a Hard rule: 'Do not
+    design signals for points not in the input batch.' The gate above only
+    checks the missing direction (a real point with no signal); this
+    checks the other direction (a signal naming a point ID that was never
+    in the input at all) -- found by adversarial review to have no
+    enforcement anywhere, meaning a hallucinated point ID silently passed
+    schema validation, every existing S5 gate, and would have flowed
+    into S7's merged event schema and S8's DTO generation undetected."""
+    known = set(surface_map_point_ids)
+    phantom = set()
+    for signal in fragment.get("signals", []):
+        phantom.update(set(signal.get("surface_point_ids", [])) - known)
+    if phantom:
+        return Finding(
+            "no_phantom_surface_points", False,
+            f"signal(s) reference surface point ID(s) not in this fragment's input batch: {sorted(phantom)}",
+        )
+    return Finding("no_phantom_surface_points", True, "no signal references a point outside the input batch")
+
+
 def check_signals_name_decision_and_role(fragment):
     bad = [s["name"] for s in fragment.get("signals", [])
            if not _non_trivial(s.get("supports_decision")) or not _non_trivial(s.get("acting_role"))]
@@ -166,6 +187,7 @@ def check_decision_menu_resumption_paired(fragment):
 
 ALL_GATES = [
     check_every_surface_point_has_decision,
+    check_no_phantom_surface_points,
     check_signals_name_decision_and_role,
     check_fields_map_to_otel_or_extension,
     check_pii_masked_above_tier,
@@ -179,6 +201,7 @@ ALL_GATES = [
 # Gates that need surface_map_point_ids as a second argument, vs. fragment-only.
 _NEEDS_POINT_IDS = {
     check_every_surface_point_has_decision,
+    check_no_phantom_surface_points,
     check_latency_budget_declared_per_point,
 }
 

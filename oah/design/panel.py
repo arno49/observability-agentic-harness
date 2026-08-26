@@ -86,7 +86,33 @@ def run_persona(skill_name, design_fragments, repo_git_sha, context=None, model=
         joined = "; ".join(f"{'/'.join(str(p) for p in e.path)}: {e.message}" for e in errors)
         raise PanelReviewError(f"model output failed schema validation: {joined}")
 
+    expected_overall = _expected_overall(parsed["findings"])
+    if parsed["overall"] != expected_overall:
+        raise PanelReviewError(
+            f"overall={parsed['overall']!r} is inconsistent with its own findings "
+            f"(severities imply {expected_overall!r}) -- panel_verdict.schema.json's own rule: "
+            f"pass has no error findings, pass_with_findings has only warnings, fail has at "
+            f"least one error"
+        )
+
     return parsed
+
+
+def _expected_overall(findings):
+    """panel_verdict.schema.json's own documented rule, recomputed and
+    enforced rather than trusted from the model: 'pass: no findings at
+    error severity. pass_with_findings: only warning-severity findings.
+    fail: at least one error-severity finding.' Nothing previously checked
+    that a persona's own `overall` field actually agreed with its own
+    `findings` array -- found by adversarial review: a mocked SRE verdict
+    with overall="pass" and one error-severity finding passed schema
+    validation and every downstream S9 check cleanly, silently downgrading
+    what should have been remediate_before_release."""
+    if any(f["severity"] == "error" for f in findings):
+        return "fail"
+    if any(f["severity"] == "warning" for f in findings):
+        return "pass_with_findings"
+    return "pass"
 
 
 def run_cost_skeptic(design_fragments, repo_git_sha, context=None, model=None, _completion_fn=None):

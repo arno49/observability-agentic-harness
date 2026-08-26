@@ -111,3 +111,33 @@ def test_finding_missing_evidence_field_fails_schema():
     }
     with pytest.raises(PanelReviewError, match="schema validation"):
         run_cost_skeptic([FRAGMENT], "deadbeef", _completion_fn=lambda **kw: _fake_response(bad))
+
+
+def test_overall_inconsistent_with_error_finding_rejected():
+    """Found by adversarial review: nothing previously checked that a
+    persona's own `overall` field agreed with its own `findings` array --
+    an `overall: "pass"` with an error-severity finding passed schema
+    validation cleanly, silently downgrading what should be a fail."""
+    bad = {
+        "schema_version": "0.1.0", "persona": "cost_skeptic", "repo_git_sha": "deadbeef",
+        "overall": "pass",
+        "findings": [{
+            "category": "retention", "severity": "error", "gate": "cs-x",
+            "summary": "unbounded capture, no retention note", "evidence": ["x"],
+        }],
+    }
+    with pytest.raises(PanelReviewError, match="inconsistent with its own findings"):
+        run_cost_skeptic([FRAGMENT], "deadbeef", _completion_fn=lambda **kw: _fake_response(bad))
+
+
+def test_overall_pass_with_findings_required_when_only_warnings():
+    bad = {
+        "schema_version": "0.1.0", "persona": "cost_skeptic", "repo_git_sha": "deadbeef",
+        "overall": "pass",
+        "findings": [{
+            "category": "sampling", "severity": "warning", "gate": "cs-y",
+            "summary": "no sampling policy addressed", "evidence": ["x"],
+        }],
+    }
+    with pytest.raises(PanelReviewError, match="inconsistent with its own findings"):
+        run_cost_skeptic([FRAGMENT], "deadbeef", _completion_fn=lambda **kw: _fake_response(bad))

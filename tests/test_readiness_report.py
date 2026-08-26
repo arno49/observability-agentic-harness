@@ -9,6 +9,12 @@ EMPTY_EVENT_SCHEMA = {"schema_version": "0.1.0", "repo_git_sha": "deadbeef", "at
                        "summary": {"attribute_count": 0, "otel_genai_count": 0, "oah_extension_count": 0, "lenses_included": []}}
 EMPTY_GAP_MODEL = {"schema_version": "0.1.0", "repo_git_sha": "deadbeef", "gaps": []}
 EMPTY_DTOS = {"schema_version": "0.1.0", "dtos": []}
+SOME_DTOS = {"schema_version": "0.1.0", "dtos": [{
+    "id": "dto-0001", "gap_id": "gap-0001", "surface_point_ids": ["sp-0001"],
+    "change": {"type": "wrap_call", "file": "app.py", "anchor": "run"},
+    "expected_events": [{"event_type": "generation", "required_attributes": []}],
+    "risk": "low", "rollout_step": 1,
+}]}
 
 
 def test_clean_design_is_ready_with_conditions_not_ready_outright():
@@ -112,9 +118,10 @@ def test_rollout_ordering_limitation_reflects_whether_context_was_supplied():
     """This claim was stale before: it unconditionally said gap-priority-
     only even after S8 started using real workflow-criticality ordering
     whenever --context is supplied. Must reflect which one actually
-    happened this run."""
+    happened this run. Uses SOME_DTOS (not EMPTY_DTOS) since the claim is
+    specifically about how DTOs that exist were ordered."""
     no_context_report = build_readiness_report(
-        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS, repo_git_sha="deadbeef",
+        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, SOME_DTOS, repo_git_sha="deadbeef",
     )
     assert any("gap-priority-only" in lim for lim in no_context_report["known_limitations"])
 
@@ -123,11 +130,31 @@ def test_rollout_ordering_limitation_reflects_whether_context_was_supplied():
         "workflows": [{"name": "billing", "criticality": "critical"}],
     }
     with_context_report = build_readiness_report(
-        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS,
+        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, SOME_DTOS,
         context=context, repo_git_sha="deadbeef",
     )
     assert any("real workflow-criticality" in lim for lim in with_context_report["known_limitations"])
     assert not any("gap-priority-only" in lim for lim in with_context_report["known_limitations"])
+
+
+def test_rollout_ordering_limitation_does_not_apply_when_no_dtos_exist():
+    """Found by adversarial review: this claim used to be derived purely
+    from whether context.yaml had workflows, ignoring the `dtos` argument
+    entirely (accepted but never read) -- so it asserted a real ordering
+    rule had been followed even when zero DTOs existed for it to apply
+    to. Must say ordering doesn't apply, not claim either ordering
+    happened, when dtos is empty -- even with a real workflow context."""
+    context = {
+        "schema_version": "0.1.0", "repo_git_sha": "deadbeef", "interviewed_at": "2026-01-01T00:00:00Z",
+        "workflows": [{"name": "billing", "criticality": "critical"}],
+    }
+    report = build_readiness_report(
+        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS,
+        context=context, repo_git_sha="deadbeef",
+    )
+    assert any("does not apply" in lim for lim in report["known_limitations"])
+    assert not any("real workflow-criticality" in lim for lim in report["known_limitations"])
+    assert not any("gap-priority-only" in lim for lim in report["known_limitations"])
 
 
 def test_missing_persona_verdicts_surfaced_as_unknown():

@@ -108,6 +108,26 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
     if not workflow_names:
         unknown.append("no context.yaml interview has run -- workflow criticality, PII presence, and governance answers are all unknown")
 
+    has_dtos = bool(dtos.get("dtos"))
+    if not has_dtos:
+        # Found by adversarial review: this claim used to be derived
+        # purely from whether context.yaml had workflows, ignoring `dtos`
+        # entirely (the parameter was accepted but never read) -- so it
+        # asserted a real ordering rule had been followed even when zero
+        # DTOs existed for it to apply to. Don't claim either ordering
+        # happened when there's nothing to have ordered.
+        rollout_limitation = "no DTOs were generated this run -- rollout_step ordering does not apply."
+    elif workflow_names:
+        rollout_limitation = (
+            "rollout_step ordering follows architecture.md S7's real workflow-criticality "
+            "rule (this run had --context)."
+        )
+    else:
+        rollout_limitation = (
+            "rollout_step ordering is gap-priority-only, not real workflow-criticality-"
+            "ordered -- no context.yaml was supplied to this run."
+        )
+
     known_limitations = [
         "All nine S4 lenses are built, but several are still narrower than "
         "architecture.md's full per-lens ask. tracing only distinguishes same-process "
@@ -116,13 +136,7 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
         "isn't detected at all yet). tools is detected via a structural pattern match "
         "(`<expr>.type == \"tool_use\"`), not a resolved SDK call -- it locates dispatch "
         "sites, not the specific handler/arguments/result at each one.",
-        (
-            "rollout_step ordering follows architecture.md S7's real workflow-criticality "
-            "rule (this run had --context)."
-            if workflow_names else
-            "rollout_step ordering is gap-priority-only, not real workflow-criticality-"
-            "ordered -- no context.yaml was supplied to this run."
-        ),
+        rollout_limitation,
     ]
 
     report = {
