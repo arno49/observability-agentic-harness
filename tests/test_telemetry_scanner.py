@@ -117,6 +117,26 @@ except Exception:
     assert inventory["summary"]["logger_call_sites"] == 1
     assert inventory["summary"]["swallowed_exceptions"] == 1
     assert inventory["summary"]["has_existing_otel"] is False
+    assert inventory["vendor_dependencies"] == []
+    assert inventory["summary"]["vendor_dependencies_count"] == 0
+    assert inventory["summary"]["has_commercial_apm"] is False
+
+
+def test_build_telemetry_inventory_includes_package_json_vendor_dependencies(tmp_path):
+    """A target repo can have a package.json (a JS/TS frontend alongside a
+    Python backend, or a --language typescript target scanned for S1)
+    regardless of whether its *source* is Python-scanned above -- this runs
+    unconditionally, not gated on --language."""
+    import json
+    (tmp_path / "package.json").write_text(json.dumps({
+        "name": "app", "dependencies": {"newrelic": "^14.0.0", "@opentelemetry/api": "^1.9.0"},
+    }))
+    inventory = build_telemetry_inventory(tmp_path, git_sha="deadbeef")
+    validate("telemetry_inventory", inventory)
+    assert inventory["summary"]["vendor_dependencies_count"] == 2
+    assert inventory["summary"]["has_commercial_apm"] is True
+    vendors = {v["vendor"] for v in inventory["vendor_dependencies"]}
+    assert vendors == {"new_relic", "opentelemetry"}
 
 
 # --- Regressions for bugs found by adversarial review ------------------

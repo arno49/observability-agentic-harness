@@ -407,7 +407,12 @@ ROADMAP.md     milestones, epics, spikes
   corpus-verified at 100% recall — `docs/decisions/014`) with no
   LLM-disambiguation counterpart yet, so a TS run never has candidates left
   for `map`'s disambiguation pass to resolve. Java is unstarted. See
-  ROADMAP.md's E11 entry for status.
+  ROADMAP.md's E11 entry for status. `oah inventory` (S2) separately picks up
+  a target's `package.json` automatically, regardless of `--language`,
+  matching declared dependencies against a verified vendor table
+  (OpenTelemetry JS, Dynatrace, New Relic, Splunk, Datadog, Sentry, common
+  logging/metrics libraries) — `docs/decisions/015`. TypeScript source-level
+  scanning (logger call sites, error handling) is not built yet.
 - `pip install oah` alone is enough for `doctor`, `estimate`, `map --no-disambiguate`,
   `inventory`, `gaps`, and `interview` — fully deterministic, no LLM credential.
 - `pip install "oah[llm]"` plus an `ANTHROPIC_API_KEY` (or another provider

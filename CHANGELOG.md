@@ -55,6 +55,16 @@
   E11-TS decision record's "swap adapters without touching downstream" claim
   didn't actually hold until this fix. `run_manifest.json`'s pre-existing
   `primary_language` field is no longer hardcoded to `"python"`.
+- S2 manifest-based vendor telemetry detection (`docs/decisions/015`):
+  `oah/discovery/manifest_scanner.py` scans a target repo's root
+  `package.json` dependencies against a verified vendor table (OpenTelemetry
+  JS, Dynatrace, New Relic, Splunk, Datadog, Sentry, winston, pino,
+  prom-client, StatsD clients) and reports them under a new
+  `vendor_dependencies` array in `telemetry_inventory.schema.json`
+  (additive; no existing field changed shape). Runs unconditionally inside
+  `build_telemetry_inventory`, no new CLI flag. Deliberately the smaller
+  half of S2's TypeScript gap -- real source-level TS logger/error-handling
+  scanning remains unbuilt, named as follow-up.
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a

@@ -18,6 +18,7 @@ import tree_sitter_python as tspython
 from tree_sitter import Language, Parser
 
 from oah import __version__ as _OAH_VERSION
+from oah.discovery.manifest_scanner import scan_package_json
 
 _LANGUAGE = Language(tspython.language())
 
@@ -327,6 +328,14 @@ def build_telemetry_inventory(repo_root, git_sha, harness_version=_OAH_VERSION):
         metrics.extend(result["metrics_libraries"])
         error_handling.extend(result["error_handling"])
 
+    # Manifest-declared, not source-confirmed -- a separate evidence tier
+    # from the source-import scan above (module docstring). Unconditional,
+    # not gated on any --language flag: a package.json is real signal
+    # whether or not this repo's *source* is Python-scanned above -- a
+    # Python backend with a JS frontend subdirectory is a real shape this
+    # should still see, not just a TS-only target.
+    vendor_dependencies = scan_package_json(repo_root, ids)
+
     return {
         "schema_version": "0.1.0",
         "repo": {"path": str(repo_root), "git_sha": git_sha},
@@ -335,10 +344,16 @@ def build_telemetry_inventory(repo_root, git_sha, harness_version=_OAH_VERSION):
         "existing_otel_usage": otel_usage,
         "metrics_libraries": metrics,
         "error_handling": error_handling,
+        "vendor_dependencies": vendor_dependencies,
         "summary": {
             "files_scanned": files_scanned,
             "logger_call_sites": len(loggers),
             "swallowed_exceptions": sum(1 for e in error_handling if e["pattern"] == "swallowed"),
             "has_existing_otel": len(otel_usage) > 0,
+            "vendor_dependencies_count": len(vendor_dependencies),
+            "has_commercial_apm": any(
+                v["category"] == "apm_tracing" and v["vendor"] != "opentelemetry"
+                for v in vendor_dependencies
+            ),
         },
     }

@@ -908,18 +908,34 @@ SPA in front of a Java CMS. `oah/discovery/typescript_adapter.py` (E11-TS phase
 1, `docs/decisions/014`) is now real and corpus-verified at 100% recall — S1
 itself can map this stack's SDK calls, routes, and fetch calls — and is now
 reachable through the real CLI via `--language typescript` (CLI language
-dispatch, landed above), not just as a module-level import. What's still
-missing before a service pack can actually be piloted against that stack: S2's
-TS vendor/manifest detection (next paragraph), and E12 itself (still blocked on
-Java/AEM being explicitly out of v1 regardless, per `docs/decisions/011`).
+dispatch, landed above), not just as a module-level import. S2's
+manifest-based vendor detection also now runs against this stack's
+`package.json` (next paragraph). What's still missing before a service pack
+can actually be piloted against that stack: S2's TypeScript **source-level**
+scan (next paragraph — logger call sites, error handling), and E12 itself
+(still blocked on Java/AEM being explicitly out of v1 regardless, per
+`docs/decisions/011`).
 
-**S2 needs its own small epic alongside.** The telemetry inventory scanner is
-Python-specific and recognises only stdlib logging, OpenTelemetry and
-prometheus/statsd/datadog. It cannot read `package.json` or `tsconfig.json` and
-does not recognise any commercial APM or log platform. For any non-Python
-candidate the inventory is the weakest link in the pipeline — and the cheapest
-one to fix, since vendor detection is pattern matching over manifests, not
-parsing.
+**S2 needs its own small epic alongside — manifest half landed.** The
+telemetry inventory scanner is Python-specific and recognises only stdlib
+logging, OpenTelemetry and prometheus/statsd/datadog via source scanning. It
+could not read `package.json` and did not recognise any commercial APM or log
+platform. **`oah/discovery/manifest_scanner.py` landed** (2026-08-27,
+`docs/decisions/015`): `oah inventory` (and everything downstream of
+`build_telemetry_inventory`) now scans the target repo root's `package.json`
+against a real, verified vendor table — OpenTelemetry JS, Dynatrace, New
+Relic, Splunk (`@splunk/otel`, itself an OTel JS distribution — kept as its
+own vendor identifier, not folded into `opentelemetry`), Datadog, Sentry,
+winston, pino, prom-client, and StatsD clients — unconditionally, no new CLI
+flag, zero output change for a repo with no `package.json`. Two real gaps
+named, not silently dropped: nested/monorepo `package.json` files aren't
+scanned (root only), and a real TypeScript **source-level** scan (logger call
+sites, error-handling classification — the deeper equivalent of
+`telemetry_scanner.py`'s own tree-sitter walk, for TS/JS grammar) remains
+fully unbuilt, comparable in size to E11-TS's own S1 port. A real, named
+limit of manifest-only detection: Dynatrace's actual auto-instrumentation
+runs as a host-level OneAgent process, not an npm dependency at all, so its
+absence from `package.json` does not mean "no Dynatrace."
 
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe

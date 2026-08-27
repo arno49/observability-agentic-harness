@@ -82,13 +82,37 @@
         }
       }
     },
+    "vendor_dependencies": {
+      "type": "array",
+      "description": "Manifest-declared (package.json), not source-confirmed -- a separate, weaker evidence tier from existing_otel_usage's source-level import scan. A declared dependency shows the repo has some telemetry vendor wired up somewhere, not that it's actually imported/used.",
+      "items": {
+        "type": "object",
+        "required": ["id", "file", "line", "vendor", "package", "category"],
+        "properties": {
+          "id": { "type": "string" },
+          "file": { "type": "string", "description": "The manifest the dependency was declared in, e.g. package.json" },
+          "line": { "type": "integer", "minimum": 1 },
+          "vendor": {
+            "enum": ["opentelemetry", "dynatrace", "new_relic", "splunk", "datadog", "sentry",
+                     "winston", "pino", "prometheus", "statsd"]
+          },
+          "package": { "type": "string", "description": "The exact declared npm package name, e.g. @opentelemetry/sdk-node" },
+          "category": { "enum": ["apm_tracing", "error_tracking", "logging", "metrics"] }
+        }
+      }
+    },
     "summary": {
       "type": "object",
       "properties": {
         "files_scanned": { "type": "integer" },
         "logger_call_sites": { "type": "integer" },
         "swallowed_exceptions": { "type": "integer" },
-        "has_existing_otel": { "type": "boolean" }
+        "has_existing_otel": { "type": "boolean" },
+        "vendor_dependencies_count": { "type": "integer" },
+        "has_commercial_apm": {
+          "type": "boolean",
+          "description": "True if a non-OpenTelemetry APM vendor (Dynatrace, New Relic, Splunk, Datadog) is a declared dependency."
+        }
       }
     }
   }
