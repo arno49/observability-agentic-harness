@@ -650,12 +650,29 @@ validate's own source-reading paths -- named as real, separate follow-up
 work, not silently assumed covered. TS/Java adapters have no
 ambiguous-candidate path yet, so neither needed the same wiring.
 
+**Phase 2: private-gateway mode landed** (2026-08-27, `docs/decisions/031`)
+-- a real finding, not new runtime behavior: verified directly against
+litellm's own installed source (not docs, not assumed) that
+`oah/llm_client.py`'s delegation straight to `litellm.completion(...)`
+means a base-URL override (`ANTHROPIC_API_BASE`/`ANTHROPIC_BASE_URL`) and
+mTLS (`SSL_CERTIFICATE`/`SSL_VERIFY`, passed straight to httpx's own
+`cert`/`verify` params) were **already working today, via plain
+environment variables, with zero OAH code involved** -- "unbuilt" was
+wrong; it was built-but-invisible. Re-implementing what litellm already
+does correctly was rejected; `oah/doctor.py` gained `_check_llm_gateway()`
+(informational, never blocking) so the config choice isn't silently
+invisible before a run starts. Real, named boundary: only the default
+model's provider env vars are checked; a non-default `--model` relies on
+that provider's own equivalent, matching `missing_credentials()`'s
+existing precedent. S10's Agent SDK calls (Anthropic-pinned, not
+LiteLLM-routed) were not investigated -- a real, separate question.
+
 **Still fully unbuilt, named not implied**: sweeping redaction into every
 other stage that reads source; a directory allowlist specifically for
-S1-S9's *read* scope (S10's write-side allowlist is real); private-gateway
-mode (`base_url` override + mTLS) for `oah/llm_client.py` and S10's Agent
-SDK calls; the red-team-exercise DoD itself at a larger scale than SP7's
-own four fixtures.
+S1-S9's *read* scope (S10's write-side allowlist is real); whether S10's
+Agent SDK calls have an equivalent private-gateway mechanism; the
+red-team-exercise DoD itself at a larger scale than SP7's own four
+fixtures.
 
 ### E9 — Backend targets
 OTel-only emitter (floor), self-hosted Langfuse target (compose + config generation),

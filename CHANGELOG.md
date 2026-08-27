@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Added
+- E8 phase 2: private-gateway visibility (`docs/decisions/031`). Verified
+  directly against litellm's own installed source that a base-URL
+  override (`ANTHROPIC_API_BASE`/`ANTHROPIC_BASE_URL`) and mTLS
+  (`SSL_CERTIFICATE`/`SSL_VERIFY`) already work today via plain
+  environment variables, with zero OAH code involved -- E8's own
+  "private-gateway mode: unbuilt" was wrong, it was built-but-invisible
+  inside a dependency. Not re-implemented; `oah doctor` gained a new
+  `llm_gateway` check (informational, never blocking) surfacing whether
+  either override is active before a run starts.
 - E8 phase 1: secret-pattern redaction (`docs/decisions/030`). New
   `oah/security/redaction.py` -- provider-specific patterns (AWS,
   Anthropic, OpenAI, GitHub, Slack, JWT, PEM private keys) plus a generic

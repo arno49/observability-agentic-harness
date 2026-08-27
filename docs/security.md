@@ -28,9 +28,16 @@ a real, named follow-up, not claimed done; artifacts store code *references*
 excluded from skill context by default.
 
 **T3 — Data egress to model provider.** Analysis necessarily sends code excerpts to
-the LLM. *Mitigations:* private-gateway mode mirroring VVAH (`base_url` override +
-mTLS client certs) for enterprises; directory allowlist so only in-scope paths are
-ever read; "read only what instrumentation requires" rule in every skill.
+the LLM. *Mitigations:* private-gateway mode (`base_url` override + mTLS client
+certs) for enterprises — real, verified directly against litellm's own installed
+source (docs/decisions/031): `litellm.completion()` natively reads
+`ANTHROPIC_API_BASE`/`ANTHROPIC_BASE_URL` (base-URL override, for the default
+Anthropic-routed model) and `SSL_CERTIFICATE`/`SSL_VERIFY` (mTLS client cert +
+CA/server verification), with zero OAH code between the env var and the outbound
+HTTPS call — `oah doctor`'s new `llm_gateway` check surfaces whether either is
+active before a run starts, so the config isn't silently invisible; directory
+allowlist so only in-scope paths are ever read; "read only what instrumentation
+requires" rule in every skill.
 
 **T4 — Harmful code mutation (S10).** *Mitigations:* one commit per DTO, human gate
 at S9 before fix mode, target test suite as a regression gate in S11, clean rollback

@@ -91,6 +91,36 @@ def _check_llm_credentials():
     return Check("llm_credentials", True, "configured — ANTHROPIC_API_KEY is set")
 
 
+def _check_llm_gateway():
+    """Informational, not blocking. Surfaces whether a private-gateway
+    override is active before a run starts, rather than leaving it
+    invisible (E8, docs/decisions/031). No OAH code implements the
+    override itself -- verified directly against litellm's own installed
+    source: `litellm.completion()` reads ANTHROPIC_API_BASE/
+    ANTHROPIC_BASE_URL (for the default Anthropic-routed model -- a
+    different --model relies on that provider's own equivalent env var,
+    litellm's job to resolve, not this check's) and SSL_CERTIFICATE/
+    SSL_VERIFY (mTLS client cert + CA/server verification) NATIVELY, with
+    zero OAH code sitting between the env var and the outbound HTTPS
+    call. This check's only job is visibility of an otherwise-silent
+    config choice."""
+    base = os.environ.get("ANTHROPIC_API_BASE") or os.environ.get("ANTHROPIC_BASE_URL")
+    cert = os.environ.get("SSL_CERTIFICATE")
+    verify = os.environ.get("SSL_VERIFY")
+    if not base and not cert:
+        return Check("llm_gateway", True,
+                      "default (no private-gateway override -- set ANTHROPIC_API_BASE "
+                      "and/or SSL_CERTIFICATE to route through one)")
+    parts = []
+    if base:
+        parts.append(f"api_base={base}")
+    if cert:
+        parts.append(f"client_cert={cert}")
+    if verify:
+        parts.append(f"ssl_verify={verify}")
+    return Check("llm_gateway", True, "private gateway active: " + ", ".join(parts))
+
+
 def _check_schemas_dir():
     from oah.schemas import SCHEMAS_DIR
     required = ["surface_map", "gap_model", "implementation_dto", "readiness_report", "run_manifest"]
@@ -126,6 +156,7 @@ def run(target_path=None):
         _check_litellm(),
         _check_claude_agent_sdk(),
         _check_llm_credentials(),
+        _check_llm_gateway(),
         _check_schemas_dir(),
     ]
     if target_path is not None:
