@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- Signal provenance summary (`docs/decisions/027`): a new top-level
+  `signal_provenance` field on `validation_report` combines `--dynamic`'s
+  and `--live`'s per-DTO provenance into one real, report-level answer
+  (`oah/validate/event_assertion.py`'s `summarize_provenance`).
+  Deliberately not wired into `ladder_rung`/`verdict`'s own promotion
+  rule -- an informational answer, not a new gate.
 - `route_is_templated`/`cardinality_guard` (`docs/decisions/026`): the
   last of `docs/decisions/011`'s two named new gates. A new optional
   `cardinality_guard: {is_templated, unavailable_reason}` field on any

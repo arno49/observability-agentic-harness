@@ -1164,6 +1164,20 @@ new, always-passing finding on every fragment) -- a real, expected
 consequence the snapshot test's own docstring already names its remedy
 for; regenerated, six-line diff, confirmed nothing else shifted.
 
+**Signal provenance summary landed** (2026-08-27, `docs/decisions/027`)
+-- `docs/decisions/025`'s own named follow-up: a report-level
+`signal_provenance` field (`oah/validate/event_assertion.py`'s new
+`summarize_provenance`) combining `--dynamic`'s and `--live`'s event
+assertions into one real answer to "were OAH's own changes load-bearing?"
+Deliberately NOT wired into `compute_ladder_verdict`'s own promotion rule
+-- `docs/decisions/011` posed provenance as a question the report answers,
+not a new gating threshold; whether it should ever gate promotion is a
+real, separate, undecided question. Verified end to end on a real
+combined `oah validate --dynamic --live --baseline` Docker run: one
+`unknown` (from `--dynamic`'s own capture mechanism) plus one
+`harness_instrumented` (from `--live`'s real OTLP-JSON capture of the
+same span) in one real report.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

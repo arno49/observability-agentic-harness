@@ -160,6 +160,15 @@ def test_dynamic_and_live_and_baseline_together_reach_ladder_rung_r1(tmp_path):
     assert live["overhead_vs_budget"]["status"] == "ok", live["overhead_vs_budget"]
     assert live["overhead_vs_budget"]["within_budget"] is True, live["overhead_vs_budget"]
 
+    # docs/decisions/027: the real, combined report-level provenance
+    # summary -- one "unknown" from --dynamic's own console-exporter
+    # capture (structurally can't carry instrumentation_scope) plus one
+    # "harness_instrumented" from --live's own OTLP-JSON capture of the
+    # same tracer.get_tracer(__name__) span, run as the real service.
+    assert result["signal_provenance"] == {
+        "auto_instrumentation": 0, "harness_instrumented": 1, "unknown": 1,
+    }
+
     # the actual point of this whole phase:
     assert result["ladder_rung"] == "R1"
     assert result["verdict"] == "validated"

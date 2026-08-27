@@ -126,7 +126,11 @@ edited, verified against a live OTel SDK capture
 `route_is_templated` gate is also real now — a self-contained
 `cardinality_guard` field any lens's signal can set, gate-checked for
 internal consistency, no point-kind cross-referencing needed
-([026](docs/decisions/026-route-is-templated-gate.md)). LLM
+([026](docs/decisions/026-route-is-templated-gate.md)). A validation
+report can now also answer, in aggregate, whether OAH's own instrumentation
+work was load-bearing — a new `signal_provenance` field, informational
+only, not wired into ladder-rung promotion
+([027](docs/decisions/027-signal-provenance-summary.md)). LLM
 observability was still the right place to start: it's where OTel semantic
 conventions and APM tooling are least mature, so it's where a gap-modeling harness
 added the most value first.

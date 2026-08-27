@@ -1020,7 +1020,7 @@ def cmd_validate(args):
     full."""
     from oah.validate.checker import check_dto_static
     from oah.validate.dynamic import run_dynamic_validation
-    from oah.validate.event_assertion import check_dto_dynamic
+    from oah.validate.event_assertion import check_dto_dynamic, summarize_provenance
     from oah.validate.live_diff import check_unknown_attributes
     from oah.validate.tcr import compute_tcr
     from oah.validate.baseline import run_baseline_live_sandbox
@@ -1146,6 +1146,14 @@ def cmd_validate(args):
         live_execution=live_execution,
     )
 
+    # docs/decisions/011's own S11 addition, phase 2 (docs/decisions/025's
+    # own named follow-up): a report-level answer to "were OAH's own
+    # changes load-bearing," combining --dynamic's and --live's event
+    # assertions (whichever ran) rather than leaving provenance as a
+    # per-DTO detail nobody rolls up.
+    live_event_assertions_for_summary = live_execution["event_assertions"] if live_execution else []
+    signal_provenance = summarize_provenance(event_assertions, live_event_assertions_for_summary)
+
     report = {
         "schema_version": "0.1.0", "repo_git_sha": git_sha,
         "ladder_rung": ladder_rung, "verdict": verdict,
@@ -1153,6 +1161,7 @@ def cmd_validate(args):
         "event_assertions": event_assertions,
         "propagation_checks": propagation_checks,
         "live_execution": live_execution,
+        "signal_provenance": signal_provenance,
         "results": results, "summary": summary,
     }
     validate("validation_report", report)
@@ -1164,6 +1173,9 @@ def cmd_validate(args):
         print(json.dumps(report, indent=2))
 
     print(f"\nladder_rung: {ladder_rung}  verdict: {verdict}", file=sys.stderr)
+    print(f"signal_provenance: {signal_provenance['auto_instrumentation']} auto_instrumentation, "
+          f"{signal_provenance['harness_instrumented']} harness_instrumented, "
+          f"{signal_provenance['unknown']} unknown", file=sys.stderr)
     print(f"S11 R4 (static): {summary['present']} present, {summary['absent']} absent, "
           f"{summary['skipped']} skipped", file=sys.stderr)
     print(f"regression_gate: {regression_gate['status']}"

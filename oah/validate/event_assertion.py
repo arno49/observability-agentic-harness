@@ -93,3 +93,21 @@ def check_dto_dynamic(dto, spans):
     # not just the first one found.
     provenances = sorted({_classify_provenance(span.get("instrumentation_scope")) for span in matching_spans})
     return _result(dto_id, "observed", provenance=provenances)
+
+
+def summarize_provenance(*event_assertion_lists):
+    """Report-level answer to docs/decisions/011's own question ("were
+    OAH's own changes load-bearing?") -- counts how many DTO observations
+    across one or more event_assertions lists (e.g. both the top-level
+    --dynamic list and live_execution's own --live list, when both ran)
+    fall into each provenance category. Not exclusive per DTO, matching
+    check_dto_dynamic's own list-not-scalar provenance field: a DTO
+    observed via both an auto-instrumented and a harness-instrumented span
+    counts toward both categories, the same honesty the per-DTO field
+    already has."""
+    counts = {"auto_instrumentation": 0, "harness_instrumented": 0, "unknown": 0}
+    for event_assertions in event_assertion_lists:
+        for ea in event_assertions:
+            for p in ea.get("provenance", []):
+                counts[p] += 1
+    return counts
