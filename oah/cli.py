@@ -152,16 +152,27 @@ def _design_all_lenses(points, git_sha, lens_fns, LensDesignError, pack, context
     manual grep audit after the fact, never by a test. One shared
     implementation, called identically from every command, makes that
     whole bug class structurally impossible instead of merely
-    well-intentioned."""
+    well-intentioned.
+
+    Point-kind filtering happens HERE, once, driven by the pack's own
+    lenses[].target_kinds -- not inside each design_* function (E12's own
+    "prove the split with a second real pack" effort found every filtering
+    lens but tracing hardcoded a literal kind string instead, docs/decisions/016;
+    genai's own behavior happened to match because the pack was extracted
+    from those exact literals, but a differently-shaped pack silently got
+    zero points and a None fragment no matter what its manifest declared)."""
     expected = {entry["lens"] for entry in pack["lenses"]}
     assert set(lens_fns) == expected, (
         f"lens_fns must cover exactly the pack's lens roster -- got {sorted(lens_fns)}, "
         f"expected {sorted(expected)}"
     )
+    target_kinds_by_lens = _target_kinds_for_pack(pack)
     fragments = []
     for lens_name, design_fn in lens_fns.items():
+        target_kinds = target_kinds_by_lens[lens_name]
+        lens_points = points if target_kinds is None else [p for p in points if p.get("kind") in target_kinds]
         try:
-            fragment = design_fn(points, git_sha, context=context, model=model)
+            fragment = design_fn(lens_points, git_sha, context=context, model=model)
         except LensDesignError as e:
             print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
             continue

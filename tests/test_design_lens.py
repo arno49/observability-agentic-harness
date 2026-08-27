@@ -39,7 +39,13 @@ def test_no_points_never_calls_the_model():
     assert calls == []
 
 
-def test_filters_to_llm_generation_kind_only():
+def test_does_not_filter_by_kind_filtering_is_the_callers_job():
+    """docs/decisions/016: point-kind filtering used to be hardcoded here
+    (kind == "llm_generation"), which silently broke for any pack whose
+    lenses[].target_kinds differ from genai's. Filtering now happens once,
+    in oah/cli.py's _design_all_lenses, driven by the loaded pack's own
+    data -- this function is a pure pass-through, like design_tracing
+    already was."""
     calls = []
 
     def fake(**kwargs):
@@ -49,8 +55,7 @@ def test_filters_to_llm_generation_kind_only():
     other_kind = {"id": "sp-0002", "kind": "retrieval", "file": "app.py", "line": 20}
     design_generation_capture([POINT, other_kind], "deadbeef", _completion_fn=fake)
     sent = json.loads(calls[0]["messages"][1]["content"])
-    assert len(sent["points"]) == 1
-    assert sent["points"][0]["id"] == "sp-0001"
+    assert len(sent["points"]) == 2
 
 
 def test_prompt_uses_real_skill_instructions_not_a_copy():

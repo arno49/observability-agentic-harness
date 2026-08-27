@@ -51,7 +51,12 @@ def test_no_points_never_calls_the_model():
     assert calls == []
 
 
-def test_filters_to_llm_generation_kind_only():
+def test_does_not_filter_by_kind_filtering_is_the_callers_job():
+    """docs/decisions/016: filtering moved to oah/cli.py's _design_all_lenses,
+    driven by the loaded pack's own lenses[].target_kinds -- this fix is
+    what actually makes the service pack's own ops-lens reuse real (the
+    pack sets target_kinds: null for ops; the old hardcoded llm_generation
+    filter here would have silently discarded every service-domain point)."""
     calls = []
 
     def fake(**kwargs):
@@ -61,8 +66,7 @@ def test_filters_to_llm_generation_kind_only():
     other_kind = {"id": "sp-0002", "kind": "retrieval", "file": "app.py", "line": 20}
     design_ops([POINT, other_kind], "deadbeef", _completion_fn=fake)
     sent = json.loads(calls[0]["messages"][1]["content"])
-    assert len(sent["points"]) == 1
-    assert sent["points"][0]["id"] == "sp-0001"
+    assert len(sent["points"]) == 2
 
 
 def test_prompt_uses_real_skill_instructions_not_a_copy():

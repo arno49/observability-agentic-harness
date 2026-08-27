@@ -1,7 +1,9 @@
 """Regression tests for oah.design.lens's tracing wiring — same mocked-
 _completion_fn reasoning as test_design_lens.py: no live API key in this
-environment. Unlike every other lens, design_tracing does NOT filter by
-kind -- tracing is cross-cutting per architecture.md."""
+environment. Tracing is cross-cutting per architecture.md (target_kinds:
+null) -- design_tracing never filtered by kind, and since
+docs/decisions/016 every other lens's design_* wrapper shares that same
+pass-through contract now too."""
 import json
 from types import SimpleNamespace
 
@@ -43,10 +45,13 @@ def test_no_points_never_calls_the_model():
     assert calls == []
 
 
-def test_does_not_filter_by_kind_unlike_every_other_lens():
-    """The one lens that must NOT drop points of other kinds -- tracing is
-    cross-cutting, so a retrieval point and an llm_generation point must
-    both reach the model in the same batch."""
+def test_does_not_filter_by_kind():
+    """Tracing is cross-cutting -- a retrieval point and an llm_generation
+    point must both reach the model in the same batch. Every other lens's
+    design_* wrapper now shares this same pass-through contract too
+    (docs/decisions/016): point-kind filtering happens once, in
+    oah/cli.py's _design_all_lenses, driven by the loaded pack's own
+    lenses[].target_kinds, not hardcoded per lens function."""
     calls = []
 
     def fake(**kwargs):

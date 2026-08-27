@@ -84,7 +84,13 @@ literals scattered through `oah/cli.py`, `oah/design/gates.py`,
 [docs/decisions/011](docs/decisions/011-service-domain-pack-architecture.md). E13
 extracted that seam with zero behavior change (`oah/domains/loader.py` loads and
 validates a pack manifest against `schemas/domain_pack.schema.json`); a second,
-non-AI domain pack is now a real, planned epic (E12) rather than a stub. LLM
+non-AI domain pack (`domains/service/pack.json`, ordinary request-driven
+services) is now real and in progress (E12) rather than a stub — its three
+reused-unchanged lenses (`tracing`, `ops`, `pii-governance`) are verified
+against real service-domain points with zero `SKILL.md` edits
+([docs/decisions/016](docs/decisions/016-e12-service-pack-phase1.md)); new
+detector registries, the anti-redundancy gate, and two new lenses remain
+unbuilt. LLM
 observability was still the right place to start: it's where OTel semantic
 conventions and APM tooling are least mature, so it's where a gap-modeling harness
 added the most value first.

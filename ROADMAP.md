@@ -937,6 +937,31 @@ limit of manifest-only detection: Dynatrace's actual auto-instrumentation
 runs as a host-level OneAgent process, not an npm dependency at all, so its
 absence from `package.json` does not mean "no Dynatrace."
 
+**E12 phase 1 landed** (2026-08-27, `docs/decisions/016`): every blocker
+above (E13, E11-TS + CLI dispatch, SP11, SP12) is now real, so E12 itself
+started. `domains/service/pack.json`: seven point kinds (`declarative_route`,
+`http_server_route`, `http_client_call`, `db_query`, `queue_producer`,
+`queue_consumer`, `scheduled_job`) and the three lenses the ADR names as
+reused **unchanged** (`tracing`, `ops`, `pii-governance`) — verified for
+real against the real pack, real `SKILL.md` files (zero edits), and real S5
+gates, closing E12's own DoD (b). A real bug surfaced and fixed along the
+way, not routed around: every `design_*` wrapper in `oah/design/lens.py`
+but `design_tracing` hardcoded its own point-kind filter literal instead of
+reading it from the loaded pack's `lenses[].target_kinds` — invisible with
+only the genai pack (extracted from those exact literals in E13), but a
+second real pack's `ops`/`pii-governance` entries would have silently
+received zero points and returned `None` regardless of what their manifest
+declared. Filtering now happens once, pack-driven, in `oah/cli.py`'s
+`_design_all_lenses`. `schemas/domain_pack.schema.json`'s `detected_by`
+enum gains `fixed_pass` for E11-TS's own hardcoded (not registry-driven)
+detector passes — declaring `declarative_route`/`http_client_call` under it
+closes `docs/decisions/014`'s own named gap (both already detected, owned
+by no pack until now). **Still fully unbuilt, named not implied**:
+`telemetry-cost`/`slo`/`dependency` (need genuine new skill content), five
+new S1 registries (`http_server_route`/`db_query`/`queue_*`/`scheduled_job`),
+the anti-redundancy gate, `docs/decisions/011`'s own new S5 gates, S11
+signal provenance, and a real corpus fixture (DoD (a)).
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

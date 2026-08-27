@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Added
+- E12 phase 1 (`docs/decisions/016`): `domains/service/pack.json`, the
+  service domain pack's skeleton -- seven point kinds and the three lenses
+  (`tracing`, `ops`, `pii-governance`) reused unchanged from genai, verified
+  for real against real SKILL.md files and real S5 gates. Fixed a real bug
+  found along the way: every `design_*` wrapper but `design_tracing`
+  hardcoded its own point-kind filter instead of reading the loaded pack's
+  `lenses[].target_kinds` -- filtering now happens once, pack-driven, in
+  `oah/cli.py`'s `_design_all_lenses`. `schemas/domain_pack.schema.json`'s
+  `detected_by` enum gains `fixed_pass` for E11-TS's hardcoded (not
+  registry-driven) detector passes.
 - SP11 resolved: DB/messaging/RPC/browser semantic-convention stability
   checked against primary sources (`docs/decisions/012`). `db.*` is stable
   for the spans/collection-name/operation-duration attributes E12 needs;

@@ -1,0 +1,79 @@
+{
+  "schema_version": "0.1.0",
+  "name": "service",
+  "version": "0.1.0",
+  "description": "The service domain pack (E12, docs/decisions/011): ordinary request-driven services, the concrete test of the pipeline-core/domain-pack split E13 extracted. This first landing (docs/decisions/016) is deliberately the smallest honest slice, not the full epic: only the three lenses the ADR names as reused UNCHANGED from the genai pack (tracing, ops, pii-governance) are declared here, proven to run against real service-domain points with zero SKILL.md edits. telemetry-cost (adapted, not reused), slo and dependency (new) all need genuine new skill content -- burn-rate derivation, error-budget policy, dependency-criticality rules -- and are explicit follow-up work, not attempted here. Same posture for the anti-redundancy gate (auto_instrumentation_baseline is declared below but no gate reads it yet) and for db_query/queue_producer/queue_consumer/scheduled_job/http_server_route S1 detection (all declared_undetected -- no registry or adapter pass produces them yet). declarative_route and http_client_call are the one real exception: E11-TS's TypeScript adapter already emits both via fixed passes (SP12, docs/decisions/013), previously undetected by any loaded pack (docs/decisions/014's own named gap) -- declaring them here is what makes those already-detected points visible to S3's gap model for the first time.",
+
+  "point_kinds": [
+    { "kind": "declarative_route", "dimension": "routing", "rollout_rank": 0, "detected_by": "fixed_pass" },
+    { "kind": "http_server_route", "dimension": "routing", "rollout_rank": 0, "detected_by": "declared_undetected" },
+    { "kind": "http_client_call", "dimension": "dependency", "detected_by": "fixed_pass" },
+    { "kind": "db_query", "dimension": "db", "detected_by": "declared_undetected" },
+    { "kind": "queue_producer", "dimension": "dependency", "detected_by": "declared_undetected" },
+    { "kind": "queue_consumer", "dimension": "routing", "detected_by": "declared_undetected" },
+    { "kind": "scheduled_job", "dimension": "scheduling", "detected_by": "declared_undetected" }
+  ],
+
+  "registries": [],
+
+  "lenses": [
+    { "lens": "tracing", "skill": "s4-tracing", "target_kinds": null, "emits": ["design_fragment"], "reused_from": "genai" },
+    { "lens": "ops", "skill": "s4-ops", "target_kinds": null, "emits": ["design_fragment"], "reused_from": "genai" },
+    { "lens": "pii-governance", "skill": "s4-pii-governance", "target_kinds": ["http_server_route", "declarative_route", "db_query"], "emits": ["design_fragment"], "reused_from": "genai" }
+  ],
+
+  "semconv_namespaces": [
+    {
+      "namespace": "http",
+      "stability": "stable",
+      "pin": "1.44.0",
+      "schema_url": "https://opentelemetry.io/schemas/1.44.0"
+    },
+    {
+      "namespace": "db",
+      "stability": "stable",
+      "pin": "1.44.0",
+      "schema_url": "https://opentelemetry.io/schemas/1.44.0"
+    },
+    {
+      "namespace": "messaging",
+      "stability": "development",
+      "pin": "1.44.0",
+      "schema_url": "https://opentelemetry.io/schemas/1.44.0"
+    }
+  ],
+
+  "attribute_kind_values": ["otel_semconv", "oah_extension"],
+
+  "advisory_contradiction_pairs": [],
+
+  "gates": [],
+
+  "auto_instrumentation_baseline": {
+    "mechanism": ["opentelemetry-instrument (eBPF/zero-code auto-instrumentation)"],
+    "covered_signals": [
+      {
+        "attribute": "http.route",
+        "stability": "stable",
+        "source": "https://opentelemetry.io/schemas/1.44.0",
+        "caveat": "Only when the framework's own router exposes a low-cardinality template to the instrumentation library -- a raw/untemplated path (e.g. AEM resolving a URL to a content path by resource type) is not covered and needs the pack's own cardinality_guard design, not this baseline."
+      },
+      {
+        "attribute": "http.server.request.duration",
+        "stability": "stable",
+        "source": "https://opentelemetry.io/schemas/1.44.0"
+      },
+      {
+        "attribute": "http.client.request.duration",
+        "stability": "stable",
+        "source": "https://opentelemetry.io/schemas/1.44.0"
+      },
+      {
+        "attribute": "error.type",
+        "stability": "stable",
+        "source": "https://opentelemetry.io/schemas/1.44.0",
+        "caveat": "Conditionally required (\"if request has ended with an error\") on the HTTP duration histograms, per docs/decisions/012 finding 6 -- not present on every data point, only error ones."
+      }
+    ]
+  }
+}

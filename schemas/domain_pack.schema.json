@@ -40,8 +40,8 @@
           },
           "detected_by": {
             "type": "string",
-            "enum": ["registry", "structural_pattern", "declared_undetected"],
-            "description": "How S1 finds this kind. 'declared_undetected' is honest vocabulary for a kind the pack names but cannot yet detect; core must report such kinds in run_manifest.json rather than let them look covered."
+            "enum": ["registry", "structural_pattern", "fixed_pass", "declared_undetected"],
+            "description": "How S1 finds this kind. 'fixed_pass' is a language adapter's own hardcoded detector logic that isn't driven by a registries[] table entry or a structural_pattern content_signal -- e.g. E11-TS's declarative_registration (JSX <Route>, route-object arrays) and global_unimported_callee (bare fetch(...)) passes, which emit kind: declarative_route / http_client_call regardless of which pack is loaded. Declaring such a kind here is what makes an already-detected-but-previously-unowned point visible to S3's gap model, since gap_model.py's dimension lookup is pack-derived. 'declared_undetected' is honest vocabulary for a kind the pack names but cannot yet detect; core must report such kinds in run_manifest.json rather than let them look covered."
           }
         }
       }

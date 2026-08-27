@@ -97,47 +97,53 @@ def design_lens(skill_name, points, repo_git_sha, context=None, model=None, _com
 
 
 def design_generation_capture(points, repo_git_sha, context=None, model=None, _completion_fn=None):
-    llm_gen_points = [p for p in points if p.get("kind") == "llm_generation"]
-    return design_lens("s4-generation-capture", llm_gen_points, repo_git_sha, context, model, _completion_fn)
+    return design_lens("s4-generation-capture", points, repo_git_sha, context, model, _completion_fn)
 
 
 def design_pii_governance(points, repo_git_sha, context=None, model=None, _completion_fn=None):
-    llm_gen_points = [p for p in points if p.get("kind") == "llm_generation"]
-    return design_lens("s4-pii-governance", llm_gen_points, repo_git_sha, context, model, _completion_fn)
+    return design_lens("s4-pii-governance", points, repo_git_sha, context, model, _completion_fn)
 
 
 def design_cost(points, repo_git_sha, context=None, model=None, _completion_fn=None):
-    llm_gen_points = [p for p in points if p.get("kind") == "llm_generation"]
-    return design_lens("s4-cost", llm_gen_points, repo_git_sha, context, model, _completion_fn)
+    return design_lens("s4-cost", points, repo_git_sha, context, model, _completion_fn)
 
 
 def design_ops(points, repo_git_sha, context=None, model=None, _completion_fn=None):
-    llm_gen_points = [p for p in points if p.get("kind") == "llm_generation"]
-    return design_lens("s4-ops", llm_gen_points, repo_git_sha, context, model, _completion_fn)
+    return design_lens("s4-ops", points, repo_git_sha, context, model, _completion_fn)
 
 
 def design_retrieval(points, repo_git_sha, context=None, model=None, _completion_fn=None):
-    retrieval_points = [p for p in points if p.get("kind") == "retrieval"]
-    return design_lens("s4-retrieval", retrieval_points, repo_git_sha, context, model, _completion_fn)
+    return design_lens("s4-retrieval", points, repo_git_sha, context, model, _completion_fn)
 
 
 def design_feedback(points, repo_git_sha, context=None, model=None, _completion_fn=None):
-    feedback_points = [p for p in points if p.get("kind") == "feedback_ingest"]
-    return design_lens("s4-feedback", feedback_points, repo_git_sha, context, model, _completion_fn)
+    return design_lens("s4-feedback", points, repo_git_sha, context, model, _completion_fn)
 
 
 def design_realtime_multimodal(points, repo_git_sha, context=None, model=None, _completion_fn=None):
-    realtime_points = [p for p in points if p.get("kind") == "realtime_session"]
-    return design_lens("s4-realtime-multimodal", realtime_points, repo_git_sha, context, model, _completion_fn)
+    return design_lens("s4-realtime-multimodal", points, repo_git_sha, context, model, _completion_fn)
 
 
 def design_tracing(points, repo_git_sha, context=None, model=None, _completion_fn=None):
-    """Unlike every other lens's wrapper, this does not filter by kind --
-    tracing is cross-cutting (architecture.md), so it designs a
-    propagation-risk signal for points of any kind S1 has detected."""
     return design_lens("s4-tracing", points, repo_git_sha, context, model, _completion_fn)
 
 
 def design_tools(points, repo_git_sha, context=None, model=None, _completion_fn=None):
-    tool_points = [p for p in points if p.get("kind") == "tool_call"]
-    return design_lens("s4-tools", tool_points, repo_git_sha, context, model, _completion_fn)
+    return design_lens("s4-tools", points, repo_git_sha, context, model, _completion_fn)
+
+
+# Every design_* wrapper above is now a pure pass-through -- NONE of them
+# filter by point kind internally. That used to be a per-function hardcoded
+# literal (design_ops filtered to kind == "llm_generation", etc.), found by
+# E12's own "prove the split with a second real pack" effort to be a real,
+# latent bug in E13's own extraction: those literals never came from a
+# pack's own lenses[].target_kinds at all, so a lens designed for a second
+# pack whose target_kinds differ from genai's (or is an empty match) would
+# silently receive zero relevant points and return None, no matter what the
+# pack manifest declared (docs/decisions/016). target_kinds filtering now
+# happens exactly once, in oah/cli.py's _design_all_lenses, driven by the
+# loaded pack's own data -- the same place _point_ids_for_fragment already
+# reads it from, for the same reason. design_tracing was already correct by
+# construction (cross-cutting, target_kinds: null, never filtered) and is
+# now simply consistent with every other lens's contract instead of a
+# documented exception to it.
