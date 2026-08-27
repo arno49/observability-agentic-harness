@@ -137,8 +137,8 @@
           "namespace": { "type": "string", "description": "Attribute prefix, e.g. 'http', 'db', 'messaging', 'gen_ai'." },
           "stability": {
             "type": "string",
-            "enum": ["stable", "development", "deprecated", "removed", "unknown"],
-            "description": "The four OTel stability stages plus 'unknown' for a namespace whose maturity this project has not verified against primary sources."
+            "enum": ["stable", "release_candidate", "development", "deprecated", "removed", "unknown"],
+            "description": "OTel's stability stages (including the intermediate 'release_candidate' rung some namespaces use, e.g. rpc.* per docs/decisions/012) plus 'unknown' for a namespace whose maturity this project has not verified against primary sources."
           },
           "pin": {
             "type": "string",

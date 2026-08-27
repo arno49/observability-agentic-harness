@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+- SP11 resolved: DB/messaging/RPC/browser semantic-convention stability
+  checked against primary sources (`docs/decisions/012`). `db.*` is stable
+  for the spans/collection-name/operation-duration attributes E12 needs;
+  `messaging.*` is development (with a real `receive`-is-CLIENT-not-CONSUMER
+  span-kind wrinkle for `queue_consumer`); `rpc.*` sits at OTel's
+  intermediate "release candidate" stage, a rung `domain_pack.schema.json`'s
+  `stability` enum didn't have a name for until this change (added, purely
+  additive, no existing pack uses it); `browser.*` is development but
+  ordinary client request timing already rides on the already-stable
+  `http.client.*` namespace. `error.type` confirmed stable and conditionally
+  required on both HTTP duration histograms, so a good/valid-event
+  availability SLI is computable from metrics alone, no spans required.
+
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a
   concrete, sequenced epic — service domain pack (ordinary request-driven
