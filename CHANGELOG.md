@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Added
+- `oah estimate` gains `--language`/`--pack` (`docs/decisions/035`). It
+  always hardcoded the Python adapter with no language flag at all, so a
+  TypeScript target silently reported `candidate_call_sites: 0` (not an
+  error) and every downstream cost figure was wrong by construction. New
+  `_detect_counts` dispatches phase 1's free pre-scan by language, same
+  shape as `map`/`gaps`/`inventory`. Verified on a real target repo: 0 ->
+  375 candidate call sites, $0.67 -> $16.40 total estimate.
+
 - `oah gaps --context` now actually re-weights priority for TypeScript
   targets (`docs/decisions/034`). `workflow_hint` was previously set only
   by Python's LLM disambiguation pass, so it was never populated on a

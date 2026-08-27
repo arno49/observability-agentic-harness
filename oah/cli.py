@@ -305,7 +305,9 @@ def cmd_estimate(args):
         print(f"error: --workflows must be >= 0, got {args.workflows}", file=sys.stderr)
         return 1
 
-    result = run_estimate(args.target, workflows=args.workflows)
+    pack = _load_pack_for_args(args)
+    result = run_estimate(args.target, workflows=args.workflows,
+                           language=getattr(args, "language", "python"), pack=pack)
     if args.json:
         print(json.dumps(result, indent=2))
     else:
@@ -1321,6 +1323,8 @@ def build_parser():
     p_estimate.add_argument("--workflows", type=int, default=None,
                               help="Known workflow count, if you have it (default: assumed)")
     p_estimate.add_argument("--json", action="store_true", help="Machine-readable output")
+    p_estimate.add_argument("--language", choices=["python", "typescript", "java"], default="python", help=_LANGUAGE_HELP)
+    p_estimate.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_estimate.set_defaults(func=cmd_estimate)
 
     p_map = sub.add_parser("map", help="S1 deterministic surface mapping (no LLM disambiguation yet)")

@@ -215,7 +215,7 @@ Implemented today (S1–S9, S10 — both modes, S11's R4 slice, E9's backend con
 
 ```
 oah doctor <target>                              # check credentials, backends, repo access
-oah estimate <target>                            # scope & cost estimate — spends nothing
+oah estimate <target> [--language {python,typescript,java}] [--pack {genai,service}]  # scope & cost estimate — spends nothing
 oah map <target> [-o out.json] [--no-disambiguate] [--model MODEL]  # S1: surface map (standalone audit)
 oah inventory <target> [-o out.json]              # S2: existing telemetry inventory
 oah interview <target> [-o context.yaml] [--surface-map surface_map.json]  # S3: interactive owner interview
@@ -501,7 +501,13 @@ ROADMAP.md     milestones, epics, spikes
   Python's interview flow too — the owner never saw the LLM's hints
   before this either). Verified end to end: 118 of 375 real points on the
   motivating repo now match an interviewed workflow and get re-weighted
-  by criticality, versus 0 before.
+  by criticality, versus 0 before. `oah estimate` had the same class of
+  bug, found the same way (`docs/decisions/035`): it always hardcoded the
+  Python adapter with no `--language` flag at all, so a TypeScript target
+  silently reported `candidate_call_sites: 0` (not an error) and every
+  downstream dollar figure was wrong by construction. Now takes
+  `--language`/`--pack` like its siblings; verified on the same repo: 0 →
+  375 candidate call sites, $0.67 → $16.40 total estimate.
 - `pip install oah` alone is enough for `doctor`, `estimate`, `map --no-disambiguate`,
   `inventory`, `gaps`, and `interview` — fully deterministic, no LLM credential.
 - `pip install "oah[llm]"` plus an `ANTHROPIC_API_KEY` (or another provider

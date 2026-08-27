@@ -16,8 +16,6 @@ import json
 import math
 from pathlib import Path
 
-from oah.discovery.python_adapter import detect_repo
-
 CONSTANTS_PATH = Path(__file__).parent / "estimate_constants.json"
 
 
@@ -29,10 +27,36 @@ def _cost(input_tokens, output_tokens, pricing):
     return input_tokens * pricing["base_input_per_token"] + output_tokens * pricing["output_per_token"]
 
 
-def estimate(repo_path, workflows=None, constants=None):
+def _detect_counts(repo_path, language, pack):
+    """Phase 1's own S1 dispatch, mirroring oah/cli.py's _build_surface_map
+    (docs/decisions/035): found by a real target-repo assessment that
+    `estimate()` had ALWAYS hardcoded the Python adapter, with no
+    --language at all -- a TypeScript/Java target silently got
+    `candidate_call_sites: 0` (an empty rglob over the wrong file
+    extension), not an error, making every stage's cost estimate wrong by
+    construction rather than honestly absent. python_adapter.detect_repo
+    returns (resolved, ambiguous) -- the only adapter with an LLM
+    disambiguation counterpart; typescript_adapter/java_adapter.detect_repo
+    return a plain resolved list (E11-TS/E11-Java's own stated scope
+    boundary: neither has ever produced an ambiguous candidate), normalized
+    here to the same 2-tuple shape so every caller below is unchanged."""
+    if language == "typescript":
+        from oah.discovery.typescript_adapter import detect_repo
+        return detect_repo(repo_path, pack=pack), []
+    if language == "java":
+        from oah.discovery.java_adapter import detect_repo
+        return detect_repo(repo_path, pack=pack), []
+    from oah.discovery.python_adapter import detect_repo
+    return detect_repo(repo_path)
+
+
+def estimate(repo_path, workflows=None, constants=None, language="python", pack=None):
     """Returns a dict: per-stage cost breakdown, total, +-40% range, and the
     driver counts the formula actually ran on (so the caller can see what
-    was measured vs. assumed)."""
+    was measured vs. assumed). `language`/`pack` (defaults byte-identical
+    to every caller before docs/decisions/035) select which S1 adapter the
+    free phase-1 pre-scan runs -- python by default, matching every
+    pre-existing caller exactly."""
     constants = constants or load_constants()
     pricing = constants["pricing"]
     units = constants["per_unit_tokens"]
@@ -41,7 +65,7 @@ def estimate(repo_path, workflows=None, constants=None):
     ratios = constants["derived_ratios"]
 
     # Phase 1: free pre-scan (S1's own detector, scan-only).
-    resolved, ambiguous = detect_repo(repo_path)
+    resolved, ambiguous = _detect_counts(repo_path, language, pack)
     C = len(resolved) + len(ambiguous)
     A = len(ambiguous)
     P = C

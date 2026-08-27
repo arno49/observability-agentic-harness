@@ -39,3 +39,59 @@ def test_estimate_workflows_assumed_flag(tmp_path):
     explicit = estimate(tmp_path, workflows=5)
     assert explicit["driver_counts"]["workflows_assumed"] is False
     assert explicit["driver_counts"]["workflows"] == 5
+
+
+# --- --language dispatch (docs/decisions/035) ------------------------------
+# estimate() always hardcoded the Python adapter -- found while assessing a
+# real TypeScript target repo: candidate_call_sites silently came back 0
+# (an empty rglob over *.py), not an error, making every downstream cost
+# number wrong by construction rather than honestly absent.
+
+def test_estimate_default_language_unchanged_python_only(tmp_path):
+    """Byte-identical default: a .ts file present must NOT be counted
+    unless --language typescript is explicitly requested."""
+    (tmp_path / "app.ts").write_text(
+        'import Anthropic from "@anthropic-ai/sdk";\nconst c = new Anthropic();\n'
+        'c.messages.create({model: "x"});\n'
+    )
+    result = estimate(tmp_path)
+    assert result["driver_counts"]["candidate_call_sites"] == 0
+
+
+def test_estimate_language_typescript_counts_real_ts_points(tmp_path):
+    (tmp_path / "app.ts").write_text(
+        'import Anthropic from "@anthropic-ai/sdk";\nconst c = new Anthropic();\n'
+        'c.messages.create({model: "x"});\n'
+    )
+    result = estimate(tmp_path, language="typescript")
+    assert result["driver_counts"]["candidate_call_sites"] == 1
+    assert result["driver_counts"]["ambiguous_candidates"] == 0
+    assert result["per_stage_usd"]["s8"] > 0
+
+
+def test_estimate_language_java_counts_real_java_points(tmp_path):
+    (tmp_path / "App.java").write_text(
+        "import com.anthropic.client.okhttp.AnthropicOkHttpClient;\n"
+        "public class App {\n"
+        "    void run() {\n"
+        "        var client = AnthropicOkHttpClient.fromEnv();\n"
+        "        client.messages().create(null);\n"
+        "    }\n"
+        "}\n"
+    )
+    result = estimate(tmp_path, language="java")
+    assert result["driver_counts"]["candidate_call_sites"] == 1
+
+
+def test_estimate_typescript_respects_pack(tmp_path):
+    from oah.domains.loader import load_pack
+    (tmp_path / "app.ts").write_text(
+        'import express from "express";\n'
+        "const app = express();\n"
+        'app.get("/x", (req, res) => { res.send("ok"); });\n'
+    )
+    default_pack = estimate(tmp_path, language="typescript")
+    assert default_pack["driver_counts"]["candidate_call_sites"] == 0  # genai pack: no Express registry
+
+    service_pack = estimate(tmp_path, language="typescript", pack=load_pack("service"))
+    assert service_pack["driver_counts"]["candidate_call_sites"] == 1

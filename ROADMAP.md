@@ -1370,6 +1370,21 @@ re-weighted by interviewed criticality (12 bumped to `p0`: dark coverage
 on a high-criticality, direct-PII workflow), versus 0 matched before this
 phase.
 
+**`oah estimate` gains `--language`/`--pack`** (2026-08-27,
+`docs/decisions/035`): the same class of bug as the two entries above, found
+the same way — `oah estimate` always hardcoded the Python adapter, no
+`--language` flag existed on it at all (unlike `map`/`gaps`/`inventory`/
+`dtos`/`readiness`, which all gained one already), so a TypeScript target
+silently reported `candidate_call_sites: 0`, not an error, making every
+downstream per-stage dollar figure wrong by construction. Fixed with the
+same normalize-then-dispatch shape as every prior language fix: a new
+`_detect_counts` calls the right adapter's `detect_repo` and wraps a
+plain resolved-list return (TS/Java, no LLM-disambiguation counterpart) as
+`(resolved, [])` so the rest of the cost formula is unchanged. Verified on
+the motivating repo: 0 → 375 candidate call sites, $0.67 → $16.40 total
+estimate (most of the swing is S10's per-DTO agentic-session cost, now
+computed against the real point count instead of zero).
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and
