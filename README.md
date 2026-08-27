@@ -110,7 +110,10 @@ lenses are now real** — three reused, one adapted, two new — and a real,
 hand-authored fixture proves S1→S9 compose end to end through the whole
 pack ([022](docs/decisions/022-e12-dod-a-mechanism-proof.md), a mechanism
 proof, honestly distinguished from the real vendored-corpus version of
-E12's DoD (a), which is E7's own separate territory). Four more S1
+E12's DoD (a), which is E7's own separate territory). A second S1
+registry, `pg` (`db_query`), landed with zero adapter code changes —
+`Client`/`Pool` + `.query()` was already the exact shape the adapter
+supports ([023](docs/decisions/023-e12-pg-registry.md)). Three more S1
 registries remain unbuilt. LLM
 observability was still the right place to start: it's where OTel semantic
 conventions and APM tooling are least mature, so it's where a gap-modeling harness

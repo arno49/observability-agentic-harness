@@ -1072,10 +1072,21 @@ handled it. **Named honestly**: the fixture is hand-authored, not a
 vendored real-world repository — E7's own real-corpus territory remains
 the stronger, still-unattempted version of DoD (a).
 
-**Still fully unbuilt, named not implied**: four more S1 registries
-(`db_query`/`queue_*`/`scheduled_job` — meaning `slo`/`dependency` today
-only reach `http_server_route`/`declarative_route`/`http_client_call`/
-`queue_producer` points, not `db_query`), `route_is_templated`/
+**E12 phase 7 landed** (2026-08-27, `docs/decisions/023`): the `pg`
+registry (`db_query`) — the second S1 registry, and unlike Express, zero
+adapter code changes: `pg`'s `Client`/`Pool` constructors + single
+`.query()` method are the exact `receiver_method_suffix` shape
+Anthropic/Pinecone/LangSmith already use, already fully implemented, so
+this landed as pure pack data. Verified against node-postgres's own docs
+before building (both classes real/current, no dual-purpose-method
+ambiguity the way Express's `.get()` had). Deliberately narrow, three real
+gaps named: CommonJS `require()` (no registry in this pack has ever
+supported it), the default-import-then-destructure form (still common for
+pg < 8.15), and `new pg.Client()` namespace-member construction (the same
+class of gap `express.Router()` left named).
+
+**Still fully unbuilt, named not implied**: three more S1 registries
+(`queue_producer`/`queue_consumer`/`scheduled_job`), `route_is_templated`/
 `cardinality_guard`, S11 signal provenance, and a real vendored-corpus
 fixture (E7's own territory).
 

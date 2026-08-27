@@ -406,3 +406,82 @@ def test_express_route_visible_to_gap_model_via_service_pack():
                      "loggers": [], "existing_otel_usage": []}
         gap_model = build_gap_model(surface_map, inventory, pack=pack)
         assert gap_model["gaps"][0]["dimension"] == "routing"
+
+
+# --- E12 phase 7: the pg registry (docs/decisions/023) --------------------
+
+def test_pg_query_detected_with_service_pack_named_import(tmp_path):
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "db.ts", (
+        'import { Client } from "pg";\n'
+        "const client = new Client();\n"
+        'async function run() {\n'
+        '  await client.query("SELECT * FROM users WHERE id = $1", [1]);\n'
+        "}\n"
+    ))
+    points = detect_repo(tmp_path, pack=pack)
+    assert len(points) == 1
+    assert points[0]["kind"] == "db_query"
+    assert points[0]["framework"] == "pg"
+    assert points[0]["sync_nature"] == "async"
+
+
+def test_pg_pool_query_also_detected(tmp_path):
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "db.ts", (
+        'import { Pool } from "pg";\n'
+        "const pool = new Pool();\n"
+        'pool.query("SELECT 1");\n'
+    ))
+    points = detect_repo(tmp_path, pack=pack)
+    assert len(points) == 1
+    assert points[0]["kind"] == "db_query"
+
+
+def test_pg_require_form_not_detected_named_gap(tmp_path):
+    """CommonJS require() is a real, named gap -- no registry in this pack
+    has ever supported it, confirmed here rather than silently assumed."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "db.ts", (
+        'const { Client } = require("pg");\n'
+        "const client = new Client();\n"
+        'client.query("SELECT 1");\n'
+    ))
+    assert detect_repo(tmp_path, pack=pack) == []
+
+
+def test_default_pack_never_detects_pg_queries(tmp_path):
+    """Zero behavior change for every existing caller -- pg is service-domain
+    vocabulary, not genai's."""
+    from oah.discovery.typescript_adapter import detect_repo
+    _write_ts(tmp_path, "db.ts", (
+        'import { Client } from "pg";\n'
+        "const client = new Client();\n"
+        'client.query("SELECT 1");\n'
+    ))
+    assert detect_repo(tmp_path) == []
+
+
+def test_pg_query_visible_to_gap_model_as_db_dimension():
+    from oah.discovery.typescript_adapter import build_surface_map
+    from oah.discovery.gap_model import build_gap_model
+    import tempfile
+    from pathlib import Path
+
+    pack = load_pack("service")
+    with tempfile.TemporaryDirectory() as d:
+        _write_ts(Path(d), "db.ts", (
+            'import { Client } from "pg";\n'
+            "const client = new Client();\n"
+            'client.query("SELECT 1");\n'
+        ))
+        surface_map, _ = build_surface_map(Path(d), git_sha="deadbeef", pack=pack)
+        assert surface_map["points"][0]["kind"] == "db_query"
+
+        inventory = {"schema_version": "0.1.0", "repo": {"path": "<test>", "git_sha": "deadbeef"},
+                     "loggers": [], "existing_otel_usage": []}
+        gap_model = build_gap_model(surface_map, inventory, pack=pack)
+        assert gap_model["gaps"][0]["dimension"] == "db"

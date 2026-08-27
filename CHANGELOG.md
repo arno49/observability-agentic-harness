@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Added
+- E12 phase 7 (`docs/decisions/023`): the `pg` registry (`db_query`) --
+  zero adapter code changes, since `pg`'s `Client`/`Pool` + `.query()`
+  is the same `receiver_method_suffix` shape already implemented.
+  Verified against node-postgres's own docs before building.
 - E12 DoD (a) mechanism proof (`docs/decisions/022`):
   `tests/test_e12_service_pack_integration.py` drives the real S1->S9
   chain against a hand-authored Express+fetch TypeScript fixture through
