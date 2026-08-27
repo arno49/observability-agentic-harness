@@ -28,6 +28,15 @@
       "license_note": "no LICENSE file present at pinned commit; analyzed read-only, never vendored/redistributed",
       "ts_files": 11,
       "architecture_category": "module-level mutable client assigned in one function (initLLM), read in another — cross-function indirection with no class involved"
+    },
+    {
+      "id": "cocktail-app",
+      "language": "typescript",
+      "repo_url": "https://github.com/Majkan1/Cocktail-App",
+      "commit": "dc18271a2bd09a1af870bca90c3a30b4cd4b79d6",
+      "license": "MIT",
+      "ts_files": 3,
+      "architecture_category": "SP12: React Router v7 JSX <Route> declarative registration (one dynamic path-parameter route, one wildcard fallback) + two global fetch() calls, one nested inside a .map(async ...) callback. Real application surface is a single 132-line src/App.tsx -- no createBrowserRouter/route-object-array form present in this repo, so that syntactic variant of the declarative_registration shape remains prototype-verified only, not corpus-verified (see docs/decisions/013)."
     }
   ]
 }

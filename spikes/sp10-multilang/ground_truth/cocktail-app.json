@@ -1,0 +1,21 @@
+{
+  "repo_id": "cocktail-app",
+  "sites": [
+    {
+      "file": "src/App.tsx", "line": 9, "shape": "declarative_registration",
+      "note": "JSX <Route path=\"/page/:pageId\" .../> -- dynamic path parameter (:pageId), the fixture's real journey route"
+    },
+    {
+      "file": "src/App.tsx", "line": 10, "shape": "declarative_registration",
+      "note": "JSX <Route path=\"*\" .../> -- catch-all/wildcard fallback route (redirects to /page/1), still a real Route registration with a path attribute, not a normal journey route"
+    },
+    {
+      "file": "src/App.tsx", "line": 39, "shape": "global_unimported_callee",
+      "note": "top-level fetch() call inside the FetchCoctails async closure (a useEffect callback)"
+    },
+    {
+      "file": "src/App.tsx", "line": 48, "shape": "global_unimported_callee",
+      "note": "fetch() call nested one level deeper, inside allCocktails.map(async (cocktail) => ...) -- template-literal URL interpolating cocktail.id; tests that the detector's unbounded AST recursion finds calls inside nested callbacks, not just top-level statements"
+    }
+  ]
+}

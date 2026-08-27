@@ -15,6 +15,23 @@
   `http.client.*` namespace. `error.type` confirmed stable and conditionally
   required on both HTTP duration histograms, so a good/valid-event
   availability SLI is computable from metrics alone, no spans required.
+- SP12 resolved: two TS detector shapes the Python adapter doesn't have --
+  declarative route registration (JSX `<Route>`, `createBrowserRouter`
+  route-object arrays) and a global unimported callee (bare `fetch(...)`)
+  -- prototyped in `spikes/sp10-multilang/ts-adapter/detect.js`
+  (`docs/decisions/013`). 14/14 (100%) recall, 0 false positives across 4
+  real TS corpus repos (3 existing + one newly sourced, `cocktail-app`,
+  MIT-licensed); `wechatbot`'s ground truth extended with 6 real `fetch()`
+  sites the new shape surfaced as unrecorded, same precedent
+  `docs/decisions/011` already set. `schemas/domain_pack.schema.json`'s
+  `detector_shape` enum gains `declarative_registration` and
+  `global_unimported_callee` (purely additive). Two design-time bugs
+  caught and fixed by the spike's own smoke test before real corpus code
+  was even touched: path parameters (`:id`) live inside React Router's
+  string literal itself, not as a separate JS expression; a file-wide
+  shadow check for `fetch` wrongly suppressed unrelated genuine global
+  calls elsewhere in the same file, fixed with a real (partial) lexical
+  scope walk.
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a

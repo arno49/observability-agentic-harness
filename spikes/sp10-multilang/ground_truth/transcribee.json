@@ -1,6 +1,6 @@
 {
   "repo_id": "transcribee",
   "sites": [
-    {"file": "index.ts", "line": 385, "method": "messages.create", "note": "module-level const, default import (import Anthropic from '@anthropic-ai/sdk')"}
+    {"file": "index.ts", "line": 385, "shape": "receiver_method_suffix", "method": "messages.create", "note": "module-level const, default import (import Anthropic from '@anthropic-ai/sdk')"}
   ]
 }

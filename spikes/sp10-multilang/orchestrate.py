@@ -33,7 +33,11 @@ class LanguageAdapter:
 
     def detect(self, target_path):
         """Yield candidate dicts: file, line, confidence, resolved_sdk,
-        chain, reason, language — the same six keys regardless of adapter."""
+        chain, reason, language — the same seven keys regardless of adapter.
+        The TS adapter also adds `shape` (SP12, docs/decisions/013) naming
+        which detection pass produced a candidate, and `has_path_parameter`
+        on declarative_registration candidates only -- both additive, so
+        eval.py's exact (file, line) scoring is unaffected either way."""
         raise NotImplementedError
 
 

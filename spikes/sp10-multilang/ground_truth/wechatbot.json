@@ -1,6 +1,12 @@
 {
   "repo_id": "wechatbot",
   "sites": [
-    {"file": "src/llm.ts", "line": 32, "method": "messages.create", "note": "receiver is a module-level `let client: Anthropic | null = null` (src/llm.ts:16), assigned inside initLLM() (line 21), read inside a different function (getResponse-equivalent, line 32) — no class involved, so this needed file-wide (not function- or class-scoped) tracking to resolve, the TS-side analogue of SP1's Python self-attr class prescan but one level broader"}
+    {"file": "src/llm.ts", "line": 32, "shape": "receiver_method_suffix", "method": "messages.create", "note": "receiver is a module-level `let client: Anthropic | null = null` (src/llm.ts:16), assigned inside initLLM() (line 21), read inside a different function (getResponse-equivalent, line 32) — no class involved, so this needed file-wide (not function- or class-scoped) tracking to resolve, the TS-side analogue of SP1's Python self-attr class prescan but one level broader"},
+    {"file": "src/api.ts", "line": 51, "shape": "global_unimported_callee", "note": "SP12 addition (docs/decisions/013): real global fetch() call, POST with options object -- this repo's ground truth predates the global_unimported_callee detector shape and never recorded it; added in the same change that landed the shape, per docs/decisions/011's own precedent, not left to surface as a false positive"},
+    {"file": "src/auth.ts", "line": 65, "shape": "global_unimported_callee", "note": "SP12 addition: real global fetch() call, GET, QR-code endpoint"},
+    {"file": "src/auth.ts", "line": 76, "shape": "global_unimported_callee", "note": "SP12 addition: real global fetch() call with a custom header option"},
+    {"file": "src/cdn.ts", "line": 50, "shape": "global_unimported_callee", "note": "SP12 addition: real global fetch() call, CDN download"},
+    {"file": "src/cdn.ts", "line": 61, "shape": "global_unimported_callee", "note": "SP12 addition: real global fetch() call, CDN download (second call site, same file)"},
+    {"file": "src/cdn.ts", "line": 111, "shape": "global_unimported_callee", "note": "SP12 addition: real global fetch() call inside a retry loop (attempt 1..3), POST with options object"}
   ]
 }
