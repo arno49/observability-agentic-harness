@@ -58,12 +58,31 @@ def _fragment_for(lens_name, point_ids):
     }
 
 
+def _minimal_slo_spec(point_ids):
+    return {
+        "schema_version": "0.1.0", "repo_git_sha": "deadbeef",
+        "surface_point_ids": point_ids,
+        "indicator": {"name": "test-journey availability",
+                      "good_event_definition": "error.type absent", "aggregation_method": "ratio_of_counts"},
+        "objective": {"target": 0.999, "period_days": 30, "up_predicate": "error.type absent",
+                      "granularity": "1m", "brownout_classification": "not modeled in this test fixture"},
+        "alert_tiers": [{"tier": "fast_burn", "budget_fraction": 0.02, "detection_window_hours": 1,
+                         "short_window_hours": 0.0833, "short_window_rationale": "test",
+                         "burn_rate_multiplier": 14.4}],
+        "error_budget_policy": {"steps": [{"step": "page", "entry_criterion_tier": "fast_burn",
+                                            "exit_criterion": "test"}]},
+    }
+
+
 def test_service_pack_loads_and_declares_its_lenses():
     pack = load_pack("service")
-    assert {l["lens"] for l in pack["lenses"]} == {"tracing", "ops", "pii-governance", "telemetry-cost"}
+    assert {l["lens"] for l in pack["lenses"]} == {"tracing", "ops", "pii-governance", "telemetry-cost", "slo"}
     reused = {l["lens"] for l in pack["lenses"] if l.get("reused_from") == "genai"}
     assert reused == {"tracing", "ops", "pii-governance"}
     assert "reused_from" not in next(l for l in pack["lenses"] if l["lens"] == "telemetry-cost")
+    assert "reused_from" not in next(l for l in pack["lenses"] if l["lens"] == "slo")
+    slo_entry = next(l for l in pack["lenses"] if l["lens"] == "slo")
+    assert slo_entry["emits"] == ["design_fragment", "slo_spec"]
     assert {pk["kind"] for pk in pack["point_kinds"]} == {
         "declarative_route", "http_server_route", "http_client_call",
         "db_query", "queue_producer", "queue_consumer", "scheduled_job",
@@ -85,24 +104,33 @@ def test_design_all_lenses_filters_each_lens_by_the_packs_own_target_kinds():
     assert target_kinds_by_lens["ops"] is None
     assert target_kinds_by_lens["telemetry-cost"] is None
     assert target_kinds_by_lens["pii-governance"] == ["http_server_route", "declarative_route", "db_query"]
+    assert target_kinds_by_lens["slo"] == ["http_server_route", "declarative_route"]
 
     received = {}
+    emits_by_lens = {entry["lens"]: entry["emits"] for entry in pack["lenses"]}
 
     def make_fake(lens_name):
         def fake(points, repo_git_sha, context=None, model=None):
             received[lens_name] = {p["id"] for p in points}
-            return _fragment_for(lens_name, [p["id"] for p in points])
+            point_ids = [p["id"] for p in points]
+            fragment = _fragment_for(lens_name, point_ids)
+            if len(emits_by_lens[lens_name]) == 1:
+                return fragment
+            return {"design_fragment": fragment, "slo_spec": _minimal_slo_spec(point_ids)}
         return fake
 
     lens_fns = {entry["lens"]: make_fake(entry["lens"]) for entry in pack["lenses"]}
-    fragments = _design_all_lenses(SERVICE_POINTS, "deadbeef", lens_fns, LensDesignError, pack)
+    fragments, extra_artifacts = _design_all_lenses(SERVICE_POINTS, "deadbeef", lens_fns, LensDesignError, pack)
+    assert set(extra_artifacts) == {"slo"}  # the only current multi-emit lens
+    assert set(extra_artifacts["slo"]) == {"slo_spec"}
 
     all_ids = {p["id"] for p in SERVICE_POINTS}
     assert received["tracing"] == all_ids
     assert received["ops"] == all_ids
     assert received["telemetry-cost"] == all_ids
     assert received["pii-governance"] == {"sp-0001", "sp-0002", "sp-0003"}  # excludes queue_producer
-    assert len(fragments) == 4
+    assert received["slo"] == {"sp-0001", "sp-0002"}  # http_server_route + declarative_route only
+    assert len(fragments) == 5
 
 
 def test_reused_lens_functions_run_for_real_against_service_points_no_skill_md_edit():
@@ -113,7 +141,9 @@ def test_reused_lens_functions_run_for_real_against_service_points_no_skill_md_e
     skills/s4-telemetry-cost (the service pack's own adapted skill), real
     output-schema validation, only the LLM call itself mocked (no live API
     key in this environment, same reasoning every other lens test in this
-    suite uses)."""
+    suite uses). design_slo's own real-function proof lives in
+    tests/test_slo_lens.py -- its two-part {design_fragment, slo_spec}
+    return shape doesn't fit this loop's single-fragment assumption."""
     pack = load_pack("service")
     target_kinds_by_lens = _target_kinds_for_pack(pack)
 

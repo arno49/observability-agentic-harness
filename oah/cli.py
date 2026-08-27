@@ -142,6 +142,18 @@ def _target_kinds_for_pack(pack):
     return {entry["lens"]: entry["target_kinds"] for entry in pack["lenses"]}
 
 
+def _emits_for_pack(pack):
+    """{lens_name: emits} -- which artifact_type(s) a lens's own design_*
+    function returns (docs/decisions/011 Finding 1, docs/decisions/020).
+    Every lens before the slo lens emits exactly ["design_fragment"] and
+    its design_* function returns that fragment directly; a lens whose
+    emits has more than one entry returns a wrapper {artifact_type: value}
+    instead -- design_lens() itself doesn't need to know or care, since it
+    just validates+returns whatever the skill's own output.schema.json
+    declares; _design_all_lenses is what unpacks the difference."""
+    return {entry["lens"]: entry["emits"] for entry in pack["lenses"]}
+
+
 def _lens_fns_for_pack(pack, lens_module):
     """One shared {lens_name: design_fn} builder, replacing four
     hand-duplicated dict literals this file used to write out
@@ -187,25 +199,44 @@ def _design_all_lenses(points, git_sha, lens_fns, LensDesignError, pack, context
     lens but tracing hardcoded a literal kind string instead, docs/decisions/016;
     genai's own behavior happened to match because the pack was extracted
     from those exact literals, but a differently-shaped pack silently got
-    zero points and a None fragment no matter what its manifest declared)."""
+    zero points and a None fragment no matter what its manifest declared).
+
+    Returns (fragments, extra_artifacts). A lens whose lenses[].emits is
+    exactly ["design_fragment"] (every lens before slo) has its raw result
+    appended to `fragments` directly, unchanged from before this docstring
+    was updated. A lens with more than one emits entry (docs/decisions/020)
+    returns {artifact_type: value} instead -- its own "design_fragment" key
+    still feeds `fragments` (so S5/S7/S8's existing signal-list-shaped
+    consumption needs no change), and every OTHER key lands in
+    extra_artifacts[lens_name], for callers that know what to do with a
+    second artifact type (e.g. cmd_design surfacing an slo_spec)."""
     expected = {entry["lens"] for entry in pack["lenses"]}
     assert set(lens_fns) == expected, (
         f"lens_fns must cover exactly the pack's lens roster -- got {sorted(lens_fns)}, "
         f"expected {sorted(expected)}"
     )
     target_kinds_by_lens = _target_kinds_for_pack(pack)
+    emits_by_lens = _emits_for_pack(pack)
     fragments = []
+    extra_artifacts = {}
     for lens_name, design_fn in lens_fns.items():
         target_kinds = target_kinds_by_lens[lens_name]
         lens_points = points if target_kinds is None else [p for p in points if p.get("kind") in target_kinds]
         try:
-            fragment = design_fn(lens_points, git_sha, context=context, model=model)
+            result = design_fn(lens_points, git_sha, context=context, model=model)
         except LensDesignError as e:
             print(f"warning: {lens_name} lens design failed, continuing without it: {e}", file=sys.stderr)
             continue
-        if fragment:
-            fragments.append(fragment)
-    return fragments
+        if not result:
+            continue
+        if len(emits_by_lens[lens_name]) == 1:
+            fragments.append(result)
+        else:
+            fragment = result.get("design_fragment")
+            if fragment:
+                fragments.append(fragment)
+            extra_artifacts[lens_name] = {k: v for k, v in result.items() if k != "design_fragment"}
+    return fragments, extra_artifacts
 
 
 def _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError, context=None, model=None):
@@ -453,6 +484,7 @@ def cmd_design(args):
     from oah.design import lens as lens_module
     from oah.design.lens import LensDesignError
     from oah.design.gates import run_gates, gates_passed
+    from oah.design.slo_gates import run_slo_gates
     from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
     from oah.schemas import validate
 
@@ -480,8 +512,8 @@ def cmd_design(args):
     lens_fns = _lens_fns_for_pack(pack, lens_module)
     target_kinds_by_lens = _target_kinds_for_pack(pack)
     model = getattr(args, "model", None)
-    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
-                                    context=context, model=model)
+    fragments, extra_artifacts = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
+                                                      context=context, model=model)
 
     if not fragments:
         print("No points of a kind any built lens covers to design for.", file=sys.stderr)
@@ -490,6 +522,13 @@ def cmd_design(args):
     findings = []
     for fragment in fragments:
         findings.extend(run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map, target_kinds_by_lens), pack=pack))
+    # slo_spec (and any future non-design_fragment artifact) needs its own
+    # gate set -- run_gates() only ever understands a design_fragment's own
+    # flat signal-list shape (docs/decisions/020).
+    for lens_name, artifacts in extra_artifacts.items():
+        slo_spec = artifacts.get("slo_spec")
+        if slo_spec is not None:
+            findings.extend(run_slo_gates(slo_spec))
     s5_passed = gates_passed(findings)
 
     persona_fns = {"cost_skeptic": run_cost_skeptic, "sre": run_sre, "security": run_security}
@@ -503,6 +542,12 @@ def cmd_design(args):
         "gates_passed": s5_passed,
         "panel_verdicts": verdicts,
     }
+    if extra_artifacts:
+        # A multi-emit lens's own non-design_fragment artifacts (e.g. slo's
+        # slo_spec, docs/decisions/020) -- S5/S6 above only ever see the
+        # design_fragment half; this is the one place a human/reviewer sees
+        # the rest, since S7-S9 don't consume these yet.
+        output["extra_artifacts"] = extra_artifacts
     if args.output:
         Path(args.output).write_text(json.dumps(output, indent=2) + "\n")
         print(f"Wrote {args.output}")
@@ -568,8 +613,8 @@ def cmd_event_schema(args):
 
     lens_fns = _lens_fns_for_pack(pack, lens_module)
     model = getattr(args, "model", None)
-    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
-                                    context=context, model=model)
+    fragments, _extra_artifacts = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
+                                                       context=context, model=model)
 
     if not fragments:
         print("No points of a kind any built lens covers to build an event schema from.", file=sys.stderr)
@@ -632,8 +677,8 @@ def cmd_dtos(args):
 
     lens_fns = _lens_fns_for_pack(pack, lens_module)
     model = getattr(args, "model", None)
-    fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
-                                    context=context, model=model)
+    fragments, _extra_artifacts = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
+                                                       context=context, model=model)
 
     if not fragments:
         print("No points of a kind any built lens covers to generate DTOs for.", file=sys.stderr)
@@ -730,8 +775,8 @@ def cmd_readiness(args):
     if surface_map["points"]:
         lens_fns = _lens_fns_for_pack(pack, lens_module)
         target_kinds_by_lens = _target_kinds_for_pack(pack)
-        fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
-                                        context=context, model=model)
+        fragments, _extra_artifacts = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
+                                                           context=context, model=model)
 
         if fragments:
             gate_findings = [

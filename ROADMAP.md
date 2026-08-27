@@ -1013,12 +1013,35 @@ phase — `docs/decisions/011`'s new-gate list is entirely `slo`-shaped;
 `telemetry-cost` satisfies the ten existing domain-neutral gates
 unchanged, proven by a real `run_gates` call in this phase's own tests.
 
-**Still fully unbuilt, named not implied**: `slo`/`dependency` (the two
-genuinely new lenses — real domain-content research still needed:
-burn-rate derivation, dependency-criticality/extra-nine rule), four more
-S1 registries (`db_query`/`queue_*`/`scheduled_job`),
-`docs/decisions/011`'s own new S5 gates (`slo`/`dependency`-gated), S11
-signal provenance, and a real corpus fixture (DoD (a)).
+**E12 phase 5 landed** (2026-08-27, `docs/decisions/020`): the `slo` lens
+— the deferred multi-artifact work E13's own decision record named
+("`lenses[].emits` ships... extending `design_lens()`'s return contract
+was scoped out... E12 does that when the slo lens actually needs a second
+artifact type") landed here, driven by the first lens that actually needs
+it. `design_lens()` itself needed no change (it already returns whatever
+the skill's own output schema declares); `oah/cli.py`'s
+`_design_all_lenses` now unpacks a multi-emit lens's `{artifact_type:
+value}` result, feeding `design_fragment` into the existing S5/S7 pipeline
+unchanged and surfacing everything else (a new `extra_artifacts` return
+value) for callers that know what to do with it — `cmd_design` is the only
+one that does today, under a new `extra_artifacts` output key.
+`schemas/slo_spec.schema.json` (indicator/objective/alert-tiers/error-budget-policy)
+and `oah/design/slo_gates.py` (7 gates: burn-rate recomputation verified
+against `docs/decisions/011`'s own worked table — 2%/1h→14.4, 5%/6h→6,
+10%/1d→3, 10%/3d→1 at a 30-day period — paired short-window validity,
+policy exit criteria, dangling-tier-reference checks, objective
+completeness, target-not-1.0, and percentile-averaging refusal). No
+formula supplied for the short-window ratio itself — the ADR's own
+finding that no reviewed source derives it; the skill requires stated
+rationale instead of a copied constant.
+
+**Still fully unbuilt, named not implied**: the `dependency` lens (the
+last one — edge criticality, the extra-nine rule, budget split between
+own and dependency failures), four more S1 registries
+(`db_query`/`queue_*`/`scheduled_job`), `route_is_templated`/
+`cardinality_guard`/`critical_dependency_extra_nine` (deliberately left
+for `telemetry-cost`/`dependency` rather than batched into this phase),
+S11 signal provenance, and a real corpus fixture (DoD (a)).
 
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe

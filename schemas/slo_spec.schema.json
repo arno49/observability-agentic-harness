@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/slo_spec.schema.json",
+  "title": "SLO specification (S4 slo lens's second artifact)",
+  "description": "docs/decisions/011 Finding 1: an SLO specification is not expressible as a list of event attributes the way design_fragment's signals are -- an indicator, objective, paired-window burn-rate alert tiers, and an error-budget policy are a different shape. Emitted alongside design_fragment by the slo lens (lenses[].emits, docs/decisions/020). budget_fraction and detection_window are declared inputs; burn_rate_multiplier is computed from them and gate-verified (oah/design/slo_gates.py); short_window_rationale is required prose because the pack can compute the first and cannot derive the second (docs/decisions/011 Finding 3 -- the one-twelfth short-window ratio some published SLO guides use has no derivation in any reviewed source, so this schema requires a stated rationale per tier rather than silently assuming that ratio).",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "surface_point_ids", "indicator", "objective", "alert_tiers", "error_budget_policy"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "surface_point_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Which surface_map.json points this SLO covers -- typically the http_server_route/declarative_route points for one critical business journey."
+    },
+    "indicator": {
+      "type": "object",
+      "required": ["name", "good_event_definition", "aggregation_method"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "e.g. 'booking-checkout availability'" },
+        "description": { "type": "string" },
+        "good_event_definition": {
+          "type": "string",
+          "description": "The concrete predicate distinguishing a good event from a bad one, e.g. 'http.server.request.duration sample with error.type absent' (docs/decisions/012 finding 6: error.type is stable + conditionally required on the HTTP duration histograms, so this is computable from metrics alone)."
+        },
+        "aggregation_method": {
+          "type": "string",
+          "enum": ["ratio_of_counts", "raw_histogram_bucket", "single_pass_percentile"],
+          "description": "How the indicator's value is computed from raw events. 'ratio_of_counts' (good/total) and 'raw_histogram_bucket' (a real percentile computed once, over the true underlying distribution) are valid. 'single_pass_percentile' names the same thing as 'raw_histogram_bucket' when the source is a single histogram, not an average -- there is deliberately NO enum value for averaging multiple precomputed percentiles (e.g. averaging each instance's own local p99), which is not a valid percentile of the combined distribution and is a real, common statistical error this schema refuses to name as a legitimate option."
+        }
+      }
+    },
+    "objective": {
+      "type": "object",
+      "required": ["target", "period_days", "up_predicate", "granularity", "brownout_classification"],
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1,
+          "description": "e.g. 0.999. Never 1.0 -- a target of exactly 1.0 declares zero error budget, which makes every alert tier's burn-rate math meaningless (any failure at all exhausts the budget instantly) and is never a real operational target."
+        },
+        "period_days": { "type": "integer", "minimum": 1, "description": "e.g. 30 -- the window the target and error budget are computed over." },
+        "up_predicate": { "type": "string", "description": "The concrete condition under which this indicator counts as 'up' for a given time slice." },
+        "granularity": { "type": "string", "description": "The time-slice size the up_predicate is evaluated at, e.g. '1m', '5m'." },
+        "brownout_classification": {
+          "type": "string",
+          "description": "How a partial-degradation state (elevated latency/error rate short of full outage) is classified against this objective -- an SLO with no answer here silently either double-counts or ignores brownouts, both wrong."
+        }
+      }
+    },
+    "alert_tiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["tier", "budget_fraction", "detection_window_hours", "short_window_hours",
+                     "short_window_rationale", "burn_rate_multiplier"],
+        "additionalProperties": false,
+        "properties": {
+          "tier": { "type": "string", "description": "e.g. 'fast_burn', 'slow_burn' -- referenced by error_budget_policy.steps[].entry_criterion_tier." },
+          "budget_fraction": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Fraction of the total error budget this tier alerts on consuming, e.g. 0.02 for 2%." },
+          "detection_window_hours": { "type": "number", "exclusiveMinimum": 0 },
+          "short_window_hours": {
+            "type": "number", "exclusiveMinimum": 0,
+            "description": "A second, shorter window paired with detection_window_hours (multi-window burn-rate alerting) so a real spike alerts fast without a single-window alert also firing on noise."
+          },
+          "short_window_rationale": {
+            "type": "string",
+            "description": "Required prose, not a formula -- docs/decisions/011 Finding 3 found no derivation anywhere in the reviewed corpus for the specific short-window ratio (e.g. detection_window / 12) some published guides use uncredited. State why THIS window was chosen, not just that a window exists."
+          },
+          "burn_rate_multiplier": {
+            "type": "number", "exclusiveMinimum": 0,
+            "description": "Computed, not asserted: budget_fraction * (period_days * 24) / detection_window_hours -- gate-verified against the other three fields (oah/design/slo_gates.py's check_burn_rate_matches_declared_inputs)."
+          }
+        }
+      }
+    },
+    "error_budget_policy": {
+      "type": "object",
+      "required": ["steps"],
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["step", "entry_criterion_tier", "exit_criterion"],
+            "additionalProperties": false,
+            "properties": {
+              "step": { "type": "string", "description": "e.g. 'freeze non-critical deploys'" },
+              "entry_criterion_tier": {
+                "type": "string",
+                "description": "Must name a tier that actually exists in this spec's own alert_tiers[] -- gate-verified, never a dangling reference."
+              },
+              "exit_criterion": {
+                "type": "string",
+                "description": "The concrete, checkable condition under which this policy step ends -- required for every step, same discipline design_fragment.schema.json's decision_menu_steps already applies to pause/freeze/throttle."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

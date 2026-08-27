@@ -141,7 +141,21 @@ def design_tools(points, repo_git_sha, context=None, model=None, _completion_fn=
     return design_lens("s4-tools", points, repo_git_sha, context, model, _completion_fn)
 
 
-# Every design_* wrapper above is now a pure pass-through -- NONE of them
+def design_slo(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+    """The service pack's own new lens (docs/decisions/011, docs/decisions/020)
+    -- no genai-pack equivalent. Unlike every other design_* function, its
+    return value is NOT a bare design_fragment: s4-slo/io/output.schema.json
+    requires a wrapper {design_fragment, slo_spec}, since an SLO structure
+    (indicator/objective/alert-tiers/error-budget-policy) isn't expressible
+    as a flat signal list. design_lens() itself needs no change to support
+    this -- it already just validates+returns whatever the skill's own
+    output schema declares; oah/cli.py's _design_all_lenses is what
+    unpacks the wrapper, driven by this lens's own pack-declared
+    lenses[].emits (["design_fragment", "slo_spec"])."""
+    return design_lens("s4-slo", points, repo_git_sha, context, model, _completion_fn)
+
+
+# Every design_* wrapper above design_slo is a pure pass-through -- NONE of them
 # filter by point kind internally. That used to be a per-function hardcoded
 # literal (design_ops filtered to kind == "llm_generation", etc.), found by
 # E12's own "prove the split with a second real pack" effort to be a real,

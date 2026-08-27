@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s4-slo/output.schema.json",
+  "title": "S4 slo lens — output",
+  "description": "Unlike every other lens's io/output.schema.json, this is NOT a bare design_fragment -- docs/decisions/011 Finding 1: an SLO specification (indicator/objective/alert-tiers/error-budget-policy) is not expressible as a flat signal list. This lens's own lenses[].emits is [\"design_fragment\", \"slo_spec\"] (docs/decisions/020); output is a wrapper object carrying both, self-contained (mirroring schemas/design_fragment.schema.json and schemas/slo_spec.schema.json respectively) rather than $ref'd across the skills/ and schemas/ directory boundary, matching every other lens's io/ schemas' own precedent.",
+  "type": "object",
+  "required": ["design_fragment", "slo_spec"],
+  "additionalProperties": false,
+  "properties": {
+    "design_fragment": {
+      "type": "object",
+      "required": ["schema_version", "lens", "repo_git_sha", "signals", "failure_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "const": "0.1.0" },
+        "lens": { "const": "slo" },
+        "repo_git_sha": { "type": "string" },
+        "failure_mode": { "const": "fail_open" },
+        "signals": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The event-schema-shaped half of this lens's output -- what SLI-relevant attribute(s) this design depends on (e.g. surfacing error.type, or an oah.slo.* pointer back to which slo_spec covers this point). The full SLO structure itself lives in slo_spec, not here.",
+          "items": {
+            "type": "object",
+            "required": ["name", "surface_point_ids", "maps_to", "sensitivity_tier",
+                         "supports_decision", "acting_role"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "surface_point_ids": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+              "maps_to": {
+                "type": "object",
+                "required": ["kind"],
+                "properties": {
+                  "kind": { "enum": ["otel_semconv", "oah_extension"] },
+                  "attribute": { "type": "string" }
+                }
+              },
+              "sensitivity_tier": { "enum": ["public", "internal", "confidential", "restricted"] },
+              "pii_masked": { "type": "boolean" },
+              "supports_decision": { "type": "string" },
+              "acting_role": { "type": "string" },
+              "latency_overhead_budget_ms": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "consistency_assertions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["description", "fields_involved"],
+            "properties": {
+              "description": { "type": "string" },
+              "fields_involved": { "type": "array", "minItems": 2, "items": { "type": "string" } }
+            }
+          }
+        },
+        "decision_menu_steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["step", "type"],
+            "properties": {
+              "step": { "type": "string" },
+              "type": { "enum": ["pause", "freeze", "throttle", "continue", "escalate", "rollback"] },
+              "resumption_condition": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "slo_spec": {
+      "type": "object",
+      "description": "Same shape as schemas/slo_spec.schema.json -- the source of truth for the slo_spec concept.",
+      "required": ["schema_version", "repo_git_sha", "surface_point_ids", "indicator", "objective", "alert_tiers", "error_budget_policy"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "const": "0.1.0" },
+        "repo_git_sha": { "type": "string" },
+        "surface_point_ids": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "indicator": {
+          "type": "object",
+          "required": ["name", "good_event_definition", "aggregation_method"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "description": { "type": "string" },
+            "good_event_definition": { "type": "string" },
+            "aggregation_method": { "enum": ["ratio_of_counts", "raw_histogram_bucket", "single_pass_percentile"] }
+          }
+        },
+        "objective": {
+          "type": "object",
+          "required": ["target", "period_days", "up_predicate", "granularity", "brownout_classification"],
+          "additionalProperties": false,
+          "properties": {
+            "target": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+            "period_days": { "type": "integer", "minimum": 1 },
+            "up_predicate": { "type": "string" },
+            "granularity": { "type": "string" },
+            "brownout_classification": { "type": "string" }
+          }
+        },
+        "alert_tiers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["tier", "budget_fraction", "detection_window_hours", "short_window_hours",
+                         "short_window_rationale", "burn_rate_multiplier"],
+            "additionalProperties": false,
+            "properties": {
+              "tier": { "type": "string" },
+              "budget_fraction": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+              "detection_window_hours": { "type": "number", "exclusiveMinimum": 0 },
+              "short_window_hours": { "type": "number", "exclusiveMinimum": 0 },
+              "short_window_rationale": { "type": "string" },
+              "burn_rate_multiplier": { "type": "number", "exclusiveMinimum": 0 }
+            }
+          }
+        },
+        "error_budget_policy": {
+          "type": "object",
+          "required": ["steps"],
+          "additionalProperties": false,
+          "properties": {
+            "steps": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["step", "entry_criterion_tier", "exit_criterion"],
+                "additionalProperties": false,
+                "properties": {
+                  "step": { "type": "string" },
+                  "entry_criterion_tier": { "type": "string" },
+                  "exit_criterion": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Added
+- E12 phase 5 (`docs/decisions/020`): the `slo` lens and multi-artifact
+  lens support. `oah/cli.py`'s `_design_all_lenses` now unpacks a lens
+  whose `emits` has more than one entry into `(fragments, extra_artifacts)`
+  -- the deferred work E13 named ("extending design_lens()'s return
+  contract... E12 does that when the slo lens actually needs a second
+  artifact type"). New `schemas/slo_spec.schema.json` and
+  `oah/design/slo_gates.py` (7 gates, including burn-rate recomputation
+  verified against `docs/decisions/011`'s own worked table). `skills/s4-slo/`
+  emits `{design_fragment, slo_spec}` -- the one skill in this project
+  whose output isn't a bare `design_fragment`.
 - E12 phase 4 (`docs/decisions/019`): the `telemetry-cost` lens
   (`skills/s4-telemetry-cost/`), adapted from genai's `cost` -- token
   accounting becomes cardinality/sampling/retention accounting.

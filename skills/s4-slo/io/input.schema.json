@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s4-slo/input.schema.json",
+  "title": "S4 slo lens — input",
+  "description": "Unlike telemetry-cost/tracing/ops, the slo lens is NOT cross-cutting -- an SLO is defined per critical business journey, and the journeys ARE the routes (docs/decisions/011). points is filtered to http_server_route/declarative_route kinds by the caller.",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "points"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "points": {
+      "type": "array",
+      "minItems": 1,
+      "description": "surface_map.json points of kind http_server_route or declarative_route only -- the lens designs one SLO per distinguishable route/journey, not one per point.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "file", "line"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "enum": ["http_server_route", "declarative_route"] },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "symbol": { "type": "string" },
+          "framework": { "type": "string" },
+          "has_path_parameter": { "type": "boolean" },
+          "gap_status": { "enum": ["dark", "partial", "covered"] },
+          "gap_priority": { "enum": ["p0", "p1", "p2", "p3"] }
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "context.yaml, if an interview has run -- this lens's own primary input for WHICH routes need an SLO at all: a route with no known-critical workflow is real service surface, but SLO effort should concentrate on p0/critical journeys first, named explicitly here rather than left implicit.",
+      "properties": {
+        "workflows": { "type": "array" }
+      }
+    }
+  }
+}
