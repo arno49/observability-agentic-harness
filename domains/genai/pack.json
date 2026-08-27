@@ -16,6 +16,7 @@
     {
       "framework": "anthropic-sdk",
       "surface_kind": "llm_generation",
+      "language": "python",
       "sdk_module": "anthropic",
       "constructor_names": ["Anthropic", "AsyncAnthropic"],
       "method_suffixes": [["messages", "create"], ["messages", "stream"]],
@@ -23,8 +24,19 @@
       "confidence_note": "Suffix match on the last two attribute-chain segments (not the full dotted path) -- resolves client.beta.prompt_caching.messages.create correctly without enumerating every beta-namespace prefix by hand. Grounded in the SP1 spike's real 3-repo corpus (docs/decisions/003), 100% recall."
     },
     {
+      "framework": "anthropic-sdk",
+      "surface_kind": "llm_generation",
+      "language": "typescript",
+      "sdk_module": "@anthropic-ai/sdk",
+      "constructor_names": ["Anthropic", "AsyncAnthropic"],
+      "method_suffixes": [["messages", "create"], ["messages", "stream"]],
+      "detector_shape": "receiver_method_suffix",
+      "confidence_note": "Same suffix shape as the python entry above -- the SDK's call surface is the same across languages, only sdk_module differs. Grounded in the SP10 spike's real 3-repo TS corpus (docs/decisions/004) plus a fourth repo added for SP12 (docs/decisions/013), 100% recall (14/14, 0 FP) across all three TS detector shapes combined. E11-TS (docs/decisions/014) is what actually consumes this entry -- oah/discovery/registry.py filters registries by language."
+    },
+    {
       "framework": "pinecone-sdk",
       "surface_kind": "retrieval",
+      "language": "python",
       "sdk_module": "pinecone",
       "constructor_names": ["Index"],
       "method_suffixes": [["query"]],
@@ -34,6 +46,7 @@
     {
       "framework": "langsmith-sdk",
       "surface_kind": "feedback_ingest",
+      "language": "python",
       "sdk_module": "langsmith",
       "constructor_names": ["Client"],
       "method_suffixes": [["create_feedback"]],
@@ -43,6 +56,7 @@
     {
       "framework": "livekit-sdk",
       "surface_kind": "realtime_session",
+      "language": "python",
       "sdk_module": "livekit.rtc",
       "constructor_names": ["Room"],
       "method_suffixes": [["connect"]],
@@ -52,9 +66,10 @@
     {
       "framework": "anthropic-sdk",
       "surface_kind": "tool_call",
+      "language": "python",
       "detector_shape": "structural_pattern",
       "content_signal": { "attribute_path": ["type"], "equals_value": "tool_use" },
-      "confidence_note": "\"tool_use\" is Anthropic's own real content-block-type string (the Messages API's response shape) -- a structurally different detection strategy from every registry-based check above, since a tool_use dispatch site is application-defined logic reacting to a response's own content, not a call into a client. Not receiver-resolved, so treated as real but lower-confidence than a resolved-receiver signature match."
+      "confidence_note": "\"tool_use\" is Anthropic's own real content-block-type string (the Messages API's response shape) -- a structurally different detection strategy from every registry-based check above, since a tool_use dispatch site is application-defined logic reacting to a response's own content, not a call into a client. Not receiver-resolved, so treated as real but lower-confidence than a resolved-receiver signature match. Python-only: no TS evidence exists for this pattern (E11-TS's own stated scope boundary, docs/decisions/014)."
     }
   ],
 

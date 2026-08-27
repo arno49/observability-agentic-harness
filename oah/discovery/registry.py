@@ -34,17 +34,30 @@ from oah.domains.loader import load_pack
 
 _RECEIVER_SHAPES = ("receiver_method_suffix", "module_function_call")
 
+# A registry entry with no "language" field predates E11-TS's TypeScript
+# adapter (docs/decisions/014) and was always implicitly Python-only --
+# this default keeps every pack that existed before that field was added
+# byte-identical (E13's own guarantee), not a new assumption.
+_DEFAULT_LANGUAGE = "python"
 
-def _receiver_entries(pack):
-    return [r for r in pack.get("registries", []) if r["detector_shape"] in _RECEIVER_SHAPES]
+
+def _receiver_entries(pack, language):
+    return [
+        r for r in pack.get("registries", [])
+        if r["detector_shape"] in _RECEIVER_SHAPES and r.get("language", _DEFAULT_LANGUAGE) == language
+    ]
 
 
-def build_registry_index(pack):
+def build_registry_index(pack, language=_DEFAULT_LANGUAGE):
     """Returns (registries, constructor_names, module_to_registry,
     all_method_suffixes, suffix_lengths) for the receiver/method-suffix
-    detector, derived from `pack` instead of a fixed literal list. Assumes
-    no two registries in the pack share an sdk_module -- MODULE_TO_REGISTRY
-    depends on that, same invariant this module always had."""
+    detector, derived from `pack`'s entries for `language` instead of a
+    fixed literal list. Assumes no two same-language registries in the pack
+    share an sdk_module -- MODULE_TO_REGISTRY depends on that, same
+    invariant this module always had (a Python and a TypeScript registry
+    MAY share an sdk_module string in principle, but never collide in
+    practice since each language's MODULE_TO_REGISTRY is built and consumed
+    separately)."""
     registries = [
         {
             "constructor_names": frozenset(r.get("constructor_names") or []),
@@ -53,7 +66,7 @@ def build_registry_index(pack):
             "surface_kind": r["surface_kind"],
             "framework": r["framework"],
         }
-        for r in _receiver_entries(pack)
+        for r in _receiver_entries(pack, language)
     ]
     constructor_names = frozenset().union(*(r["constructor_names"] for r in registries)) if registries else frozenset()
     module_to_registry = {r["sdk_module"]: r for r in registries}
@@ -62,14 +75,17 @@ def build_registry_index(pack):
     return registries, constructor_names, module_to_registry, all_method_suffixes, suffix_lengths
 
 
-def structural_pattern_registries(pack):
+def structural_pattern_registries(pack, language=_DEFAULT_LANGUAGE):
     """registries[] entries shaped for the structural content-signal
-    detector (detector_shape == structural_pattern), each carrying
-    content_signal (attribute_path, equals_value), the surface_kind/
-    emits_kind to report, and the framework label -- e.g. the
+    detector (detector_shape == structural_pattern) for `language`, each
+    carrying content_signal (attribute_path, equals_value), the
+    surface_kind/emits_kind to report, and the framework label -- e.g. the
     tool_use-dispatch check (attribute_path=["type"], equals_value=
     "tool_use", emits kind "tool_call")."""
-    return [r for r in pack.get("registries", []) if r["detector_shape"] == "structural_pattern"]
+    return [
+        r for r in pack.get("registries", [])
+        if r["detector_shape"] == "structural_pattern" and r.get("language", _DEFAULT_LANGUAGE) == language
+    ]
 
 
 _GENAI_PACK = load_pack("genai")

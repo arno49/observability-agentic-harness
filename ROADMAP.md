@@ -722,6 +722,22 @@ M2 closes; Java follows using the same bar, timeboxed independently so a slow Ja
 port doesn't block M2. *Depends on:* SP10, E2. *Starts immediately after SP10's
 decision record lands — not deferred to post-M4.*
 
+**TS phase 1 landed** (2026-08-26, `docs/decisions/014`). `oah/discovery/typescript_adapter.py`
+— a real, tree-sitter-based (not SP10's own Node/compiler-API spike, which SP10's
+own decision explicitly named evidence-only, not a component to carry forward)
+S1 adapter reaching the DoD's own recall bar for real: 14/14 (100%), 0 false
+positives, verified against all four real corpus repos SP10+SP12 already
+pinned (`transcribee`, `llm-document-ocr`, `wechatbot`, `cocktail-app`), all
+three detector shapes (receiver/method-suffix, SP12's declarative route
+registration, SP12's global unimported callee). `schemas/domain_pack.schema.json`'s
+`registries[]` gained a `language` field so one pack (`genai`) can declare
+per-language SDK registries for the same domain, and `domains/genai/pack.json`
+now has a real TypeScript Anthropic-SDK entry. **Not yet done, named explicitly**:
+CLI language dispatch (every command still hardcodes the Python adapter — zero
+user-visible change from this phase), a vendored TS corpus fixture + multi-language
+`oah/eval_corpus.py` scoring (E7's territory), S2's TS vendor/manifest detection,
+and Java (untouched, per this epic's own priority order).
+
 ### E13 — Domain pack extraction *(pipeline core; prerequisite for E12)*
 There is no object called a domain pack today: domain-ness is sixteen literals
 scattered across `oah/cli.py`, `oah/design/gates.py`, `oah/discovery/gap_model.py`,
@@ -862,12 +878,16 @@ verified.
 prerequisite for *evidence* (the GenAI pack proven end to end) but no longer for
 *design*.
 
-**E11-TS is now a hard blocker, not parallel work.** The first candidate
-consumer's stack contains no Python at all: a React/TypeScript SPA in front of a
-Java CMS. S1 cannot map it today — the TypeScript adapter exists only as a
-211-line prototype under `spikes/sp10-multilang/` and was never promoted into
-`oah/`. Whatever the sequencing preference, no service pack can be piloted
-against that stack until the TS adapter is real.
+**E11-TS is now a hard blocker, not parallel work — partially resolved.** The
+first candidate consumer's stack contains no Python at all: a React/TypeScript
+SPA in front of a Java CMS. `oah/discovery/typescript_adapter.py` (E11-TS phase
+1, `docs/decisions/014`) is now real and corpus-verified at 100% recall — S1
+itself can map this stack's SDK calls, routes, and fetch calls. What's still
+missing before a service pack can actually be piloted against that stack: CLI
+language dispatch (`oah/cli.py` still hardcodes the Python adapter for every
+command), S2's TS vendor/manifest detection (next paragraph), and E12 itself
+(still blocked on Java/AEM being explicitly out of v1 regardless, per
+`docs/decisions/011`).
 
 **S2 needs its own small epic alongside.** The telemetry inventory scanner is
 Python-specific and recognises only stdlib logging, OpenTelemetry and

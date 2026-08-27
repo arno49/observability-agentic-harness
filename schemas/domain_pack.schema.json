@@ -57,6 +57,11 @@
         "properties": {
           "framework": { "type": "string" },
           "surface_kind": { "type": "string" },
+          "language": {
+            "type": "string",
+            "enum": ["python", "typescript"],
+            "description": "Which language adapter this registry entry is for. Omitted means 'python' -- every registry entry before E11-TS's TypeScript adapter landed was implicitly Python-only, so this default keeps every existing pack byte-identical. Domain and language are orthogonal: one pack can declare registries for the same SDK in more than one language (e.g. genai's Anthropic registry has both a python and a typescript entry, same method_suffixes, different sdk_module string) rather than needing a second manifest per language."
+          },
           "sdk_module": { "type": "string", "description": "Required for receiver_method_suffix/module_function_call shapes; absent for structural_pattern (a content-signal match has no resolved import to key on)." },
           "constructor_names": { "type": "array", "items": { "type": "string" } },
           "method_suffixes": {

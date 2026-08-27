@@ -32,6 +32,21 @@
   shadow check for `fetch` wrongly suppressed unrelated genuine global
   calls elsewhere in the same file, fixed with a real (partial) lexical
   scope walk.
+- E11-TS phase 1: `oah/discovery/typescript_adapter.py`, a real,
+  tree-sitter-based S1 adapter for TypeScript/TSX (`docs/decisions/014`).
+  SP10 already decided against porting `detect.js` (the Node/compiler-API
+  spike) into `oah/` -- this is a fresh implementation of SP10's own
+  three-phase shape plus SP12's two detector shapes, against
+  `tree-sitter-typescript` instead (pure-Python, no Node.js runtime
+  dependency). Reaches the exact recall SP10+SP12 already measured: 14/14
+  (100%), 0 false positives, verified against all 4 real corpus repos.
+  `schemas/domain_pack.schema.json`'s `registries[]` gained a `language`
+  field (purely additive) so one pack can declare per-language SDK
+  registries for the same domain; `domains/genai/pack.json` now has a real
+  TypeScript Anthropic-SDK entry alongside the Python one. Not yet wired
+  into `oah/cli.py`'s command dispatch or vendored into `corpus/` -- named
+  explicitly as follow-up work, zero user-visible CLI change from this
+  phase.
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a
