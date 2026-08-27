@@ -1280,8 +1280,17 @@ def cmd_interview(args):
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
         return 1
 
+    surface_map = None
+    surface_map_path = getattr(args, "surface_map", None)
+    if surface_map_path:
+        try:
+            surface_map = json.loads(Path(surface_map_path).read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"error: could not read --surface-map {surface_map_path}: {e}", file=sys.stderr)
+            return 1
+
     try:
-        context = run_interview(git_sha)
+        context = run_interview(git_sha, surface_map=surface_map)
     except InterviewAborted:
         print("\ninterview cancelled — no context.yaml written.", file=sys.stderr)
         return 1
@@ -1344,6 +1353,12 @@ def build_parser():
     p_interview.add_argument("target", help="Path to the target repository")
     p_interview.add_argument("-o", "--output", default=None,
                               help="Write context.yaml here instead of stdout (never auto-written into the target repo)")
+    p_interview.add_argument("--surface-map", default=None,
+                              help="Path to an already-built surface_map.json (e.g. from `oah map -o`). When given, "
+                                   "S1's own workflow_hint guesses are shown before the workflow questions "
+                                   "(docs/decisions/034) -- naming a workflow with the exact same text is what makes "
+                                   "`oah gaps --context` actually weight it; without this, a made-up name almost "
+                                   "never matches.")
     p_interview.set_defaults(func=cmd_interview)
 
     p_design = sub.add_parser("design", help="S4 (all nine lenses) + S5 gates + S6 panel (all three personas)")

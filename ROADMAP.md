@@ -1345,6 +1345,31 @@ cross-file-resolved), 0 → 688 error_handling entries, and `oah gaps` moved
 from 100% `dark` to 265 dark / 110 partial. Java still has no S2 scanner —
 a real, named gap, not silently claimed.
 
+**`--context`-weighted priority becomes real for TypeScript**
+(2026-08-27, `docs/decisions/034`): running `oah gaps --context
+context.yaml` against the same motivating repo, with a real completed `oah
+interview`, produced ZERO change in priority — `workflow_hint` (the field
+S3's `_find_workflow` matches against a `context.yaml` workflow name) is
+populated only by Python's LLM disambiguation pass; the TypeScript adapter
+has never had one, so the field was never set on a single TS point.
+`oah/discovery/typescript_adapter.py` gained `_infer_workflow_hint`,
+deterministic and model-free: a route's own static path segments when
+present, else the defining file's module name (camelCase-split, a common
+suffix like `Service`/`Api`/`Client` stripped) — wired into all four
+point-emission sites, 375/375 points on the real repo now carry a hint. A
+second, independent problem surfaced while fixing the first: even with
+hints populated, `_find_workflow` requires an EXACT string match, and `oah
+interview` never showed the interviewee what hints existed at all, for
+*either* language — the owner was always typing workflow names blind.
+`oah interview` gained `--surface-map surface_map.json`: when given, it
+prints S1's own hints (most-frequent first, with point counts) before
+asking for workflow names, so naming a workflow to match one verbatim
+actually connects it. Verified end to end: three workflows named to match
+three printed hints exactly → 118 of 375 real points matched and
+re-weighted by interviewed criticality (12 bumped to `p0`: dark coverage
+on a high-criticality, direct-PII workflow), versus 0 matched before this
+phase.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

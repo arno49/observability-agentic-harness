@@ -509,3 +509,65 @@ def test_reexport_through_a_further_file_is_a_named_gap(tmp_path):
     ))
     resolved = detect_repo(tmp_path, pack=_CROSSFILE_PACK)
     assert resolved == []
+
+
+# --- workflow_hint (docs/decisions/034) ------------------------------------
+# This adapter has no LLM-disambiguation pass (E11-TS's own stated scope
+# boundary), so workflow_hint was never populated on a single TypeScript
+# point before this -- oah gaps --context was a structural no-op for every
+# TS/JS target. Deterministic here: a route's own static path segments, or
+# the defining file's own module name.
+
+def test_workflow_hint_from_route_literal(tmp_path):
+    resolved = _detect(tmp_path, """
+import { Route } from "react-router-dom";
+function App() {
+  return <Route path="/portfolios/:id/sql-analysis" element={<SqlAnalysis />} />;
+}
+""", filename="App.tsx")
+    assert resolved[0]["workflow_hint"] == "portfolios sql-analysis"
+
+
+def test_workflow_hint_from_module_name_strips_common_suffix(tmp_path):
+    path = _write(tmp_path, "api/portfolioService.ts", (
+        'import axios from "axios";\n'
+        "const client = axios.create({});\n"
+        'client.get("/x");\n'
+    ))
+    from oah.discovery.registry import build_registry_index
+    resolved = detect_file(path, tmp_path, pack={
+        "schema_version": "0.1.0", "name": "t", "version": "0.1.0",
+        "point_kinds": [{"kind": "http_client_call", "dimension": "dependency", "detected_by": "registry"}],
+        "registries": [
+            {"framework": "axios", "detector_shape": "chain_hop", "language": "typescript",
+             "sdk_module": "axios", "constructor_names": ["axios"], "via_method": "create",
+             "produces_module": "axios#instance"},
+            {"framework": "axios", "surface_kind": "http_client_call", "language": "typescript",
+             "sdk_module": "axios#instance", "method_suffixes": [["get"]], "detector_shape": "receiver_method_suffix"},
+        ],
+        "lenses": [{"lens": "tracing", "skill": "s4-tracing", "target_kinds": None, "emits": ["design_fragment"]}],
+        "semconv_namespaces": [{"namespace": "test", "stability": "unknown", "pin": "0"}],
+    })
+    assert resolved[0]["workflow_hint"] == "portfolio"
+
+
+def test_workflow_hint_camel_case_module_name_split(tmp_path):
+    from oah.discovery.typescript_adapter import _infer_workflow_hint
+    assert _infer_workflow_hint("src/api/sqlMetadataService.ts") == "sql metadata"
+    assert _infer_workflow_hint("src/api/JCLControlCardService.ts") == "jcl control card"
+
+
+def test_workflow_hint_prefers_route_literal_over_module_name():
+    from oah.discovery.typescript_adapter import _infer_workflow_hint
+    assert _infer_workflow_hint("src/App.tsx", "/global-search") == "global-search"
+
+
+def test_workflow_hint_present_on_declarative_route_and_fetch(tmp_path):
+    resolved = _detect(tmp_path, """
+import { Route } from "react-router-dom";
+function App() {
+  return <Route path="/administration" element={<Administration />} />;
+}
+async function load() { return fetch("/x"); }
+""", filename="App.tsx")
+    assert all("workflow_hint" in p for p in resolved)

@@ -150,3 +150,48 @@ def test_eof_partway_through_interview_also_raises_cleanly():
 
     with pytest.raises(InterviewAborted):
         run_interview("deadbeef", ask=ask, print_fn=lambda *a: None)
+
+
+# --- Surfacing S1's workflow_hint guesses (docs/decisions/034) -------------
+# `_find_workflow` (gap_model.py) requires an exact (stripped/lowered)
+# string match between a point's workflow_hint and a workflow name typed
+# here -- without seeing the actual hints S1 found, the owner has no real
+# way to type a name that connects to anything.
+
+def _surface_map_with_hints(hints):
+    return {"points": [{"id": f"sp-{i:04d}", "workflow_hint": h} for i, h in enumerate(hints)]}
+
+
+def test_workflow_hint_counts_sorted_by_frequency():
+    from oah.interview import _workflow_hint_counts
+    sm = _surface_map_with_hints(["billing", "billing", "support", "billing", None, "support"])
+    assert _workflow_hint_counts(sm) == [("billing", 3), ("support", 2)]
+
+
+def test_workflow_hint_counts_ignores_points_with_no_hint():
+    from oah.interview import _workflow_hint_counts
+    sm = {"points": [{"id": "sp-0001"}, {"id": "sp-0002", "workflow_hint": "billing"}]}
+    assert _workflow_hint_counts(sm) == [("billing", 1)]
+
+
+def test_surface_map_hints_printed_before_workflow_questions():
+    sm = _surface_map_with_hints(["portfolio", "portfolio", "chat"])
+    printed = []
+    answers = [
+        "1", "portfolio", "critical", "none", "", "", "", "", "", "",
+        "n", "n", "",
+    ]
+    run_interview("deadbeef", ask=_scripted(answers), print_fn=lambda *a: printed.append(" ".join(str(x) for x in a)),
+                  surface_map=sm)
+    joined = "\n".join(printed)
+    assert "'portfolio'" in joined and "(2 points)" in joined
+    assert "'chat'" in joined and "(1 point)" in joined
+
+
+def test_no_surface_map_prints_nothing_extra_byte_identical_default():
+    """Default (no surface_map) must behave exactly as before
+    docs/decisions/034 -- no hint banner, no change to the question flow."""
+    printed = []
+    answers = ["1", "support-chat", "high", "indirect", "", "", "", "", "", "", "n", "n", ""]
+    run_interview("deadbeef", ask=_scripted(answers), print_fn=lambda *a: printed.append(" ".join(str(x) for x in a)))
+    assert not any("candidate workflow names" in line for line in printed)

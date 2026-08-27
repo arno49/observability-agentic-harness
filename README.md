@@ -218,7 +218,7 @@ oah doctor <target>                              # check credentials, backends, 
 oah estimate <target>                            # scope & cost estimate — spends nothing
 oah map <target> [-o out.json] [--no-disambiguate] [--model MODEL]  # S1: surface map (standalone audit)
 oah inventory <target> [-o out.json]              # S2: existing telemetry inventory
-oah interview <target> [-o context.yaml]          # S3: interactive owner interview
+oah interview <target> [-o context.yaml] [--surface-map surface_map.json]  # S3: interactive owner interview
 oah gaps <target> [--context context.yaml] [-o out.json]        # S3: gap model
 oah design <target> [--context context.yaml] [-o out.json] [--model MODEL]      # S4 lenses + S5 gates + S6 panel
 oah event-schema <target> [--context context.yaml] [-o out.json] [--model MODEL]  # S7: event schema
@@ -490,7 +490,18 @@ ROADMAP.md     milestones, epics, spikes
   (swallowed/logged/reraised). Verified end to end on that repo: `oah gaps`
   went from 100% `dark` (S2 structurally blind to the target's own source)
   to 265 dark / 110 partial once S2 could see it. Java has no S2 scanner
-  yet — a named gap, not silently claimed.
+  yet — a named gap, not silently claimed. `--context`-weighted priority
+  (`docs/decisions/034`) is now real for TypeScript too: `workflow_hint`
+  was previously set only by Python's LLM disambiguation pass, so
+  `oah gaps --context` was a silent no-op on every TS target — the
+  TypeScript adapter now infers it deterministically from a route's own
+  path segments or the defining file's module name (no model call), and
+  `oah interview --surface-map surface_map.json` prints S1's own hints
+  before asking for workflow names (a real, independent fix that benefits
+  Python's interview flow too — the owner never saw the LLM's hints
+  before this either). Verified end to end: 118 of 375 real points on the
+  motivating repo now match an interviewed workflow and get re-weighted
+  by criticality, versus 0 before.
 - `pip install oah` alone is enough for `doctor`, `estimate`, `map --no-disambiguate`,
   `inventory`, `gaps`, and `interview` — fully deterministic, no LLM credential.
 - `pip install "oah[llm]"` plus an `ANTHROPIC_API_KEY` (or another provider

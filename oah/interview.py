@@ -130,16 +130,51 @@ def _interview_trust_boundary(ask, print_fn):
     return entry
 
 
-def run_interview(repo_git_sha, ask=input, print_fn=print):
+def _workflow_hint_counts(surface_map):
+    """{hint: point_count} from a surface_map's own points, most-common
+    first -- docs/decisions/034. S1's workflow_hint (Python: the LLM
+    disambiguation pass; TypeScript: deterministic module/route-derived,
+    docs/decisions/034) is only ever a best-effort GUESS at a product
+    workflow name; `oah/discovery/gap_model.py`'s own `_find_workflow`
+    requires it to literally match (stripped/lowered) a workflow name the
+    owner types here. Surfacing the actual hints S1 found, before asking
+    for workflow names, is what closes that loop in practice -- without
+    this, the owner has no way to know what string would actually connect
+    a point to the workflow they're about to name."""
+    counts = {}
+    for point in surface_map.get("points", []):
+        hint = point.get("workflow_hint")
+        if hint:
+            counts[hint] = counts.get(hint, 0) + 1
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def run_interview(repo_git_sha, ask=input, print_fn=print, surface_map=None):
+    """`surface_map` (default None -- byte-identical to every caller before
+    docs/decisions/034) is an already-built surface_map.json dict (e.g.
+    from `oah map -o surface_map.json`); when given, its points' own
+    workflow_hint values are shown to the interviewee before the workflow
+    questions, as candidate names worth reusing verbatim -- see
+    _workflow_hint_counts."""
     try:
-        return _run_interview_body(repo_git_sha, ask, print_fn)
+        return _run_interview_body(repo_git_sha, ask, print_fn, surface_map)
     except (EOFError, KeyboardInterrupt) as e:
         raise InterviewAborted("interview cancelled before completion") from e
 
 
-def _run_interview_body(repo_git_sha, ask, print_fn):
+def _run_interview_body(repo_git_sha, ask, print_fn, surface_map=None):
     print_fn("OAH owner interview (S3) — architecture.md's context.yaml. Answers weight gap "
               "prioritization; there's no wrong answer, only an honest or a guessed one.\n")
+
+    if surface_map is not None:
+        hint_counts = _workflow_hint_counts(surface_map)
+        if hint_counts:
+            print_fn("S1 found these candidate workflow names in the code (file/route-derived "
+                      "guesses, not verified) — naming a workflow below with the EXACT same text "
+                      "connects it to those surface points automatically:")
+            for hint, count in hint_counts[:15]:
+                print_fn(f"  {hint!r}  ({count} point{'s' if count != 1 else ''})")
+            print_fn("")
 
     n_workflows = _ask_int(ask, print_fn, "\nHow many workflows does this product have", minimum=1)
     workflows = [_interview_workflow(ask, print_fn, i + 1) for i in range(n_workflows)]

@@ -3,6 +3,19 @@
 ## [Unreleased]
 
 ### Added
+- `oah gaps --context` now actually re-weights priority for TypeScript
+  targets (`docs/decisions/034`). `workflow_hint` was previously set only
+  by Python's LLM disambiguation pass, so it was never populated on a
+  TypeScript point and `--context` was a silent no-op there. The
+  TypeScript adapter now infers it deterministically (a route's own path
+  segments, or the defining file's module name, no model call). Also
+  fixed a second, independent gap found while wiring this up: `oah
+  interview` never showed the interviewee what workflow_hint values
+  existed (for either language), so a typed workflow name almost never
+  matched anything -- new `--surface-map` flag prints S1's own hints,
+  most-frequent first, before asking for workflow names. Verified end to
+  end: 118 of 375 real points on a real target repo now match an
+  interviewed workflow and get re-weighted, versus 0 before.
 - S2 (existing telemetry inventory) now supports TypeScript
   (`docs/decisions/033`). Found by running the full pipeline against a real
   target repo: `oah inventory` reported 0 findings on a real ~450-file app

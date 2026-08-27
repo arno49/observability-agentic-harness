@@ -439,6 +439,40 @@ def _declarative_route_note(literal, prefix):
     return f"{prefix} with a static path literal{suffix}"
 
 
+# workflow_hint (docs/decisions/034): populated by S1's LLM disambiguation
+# pass for Python (skills/s1-surface-mapper/SKILL.md step 4 -- "best-effort
+# product workflow name inferred from module/route/symbol names"), which
+# this adapter has never had -- workflow_hint was therefore never set on a
+# single TypeScript point, making `oah gaps --context` a structural no-op
+# for every TS/JS target (found while assessing a real target repo,
+# docs/decisions/034's own retrospective). Deterministic here, no LLM
+# needed: the skill's own stated source signal (module/route/symbol names)
+# is exactly what a route's own static path segments or a defining file's
+# own module name already give us. A HINT, not a verified mapping --
+# S3's `_find_workflow` (oah/discovery/gap_model.py) still requires this to
+# literally match a context.yaml workflow name, exactly the same
+# already-approximate contract the Python-produced hint has always had;
+# nothing here guarantees the alignment, only that a hint now EXISTS to
+# align in the first place.
+_MODULE_SUFFIX_STRIP = re.compile(r"(?:Service|Api|Client|Controller|Store|Repository)$")
+_CAMEL_WORD = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
+
+
+def _infer_workflow_hint(rel_path, route_literal=None):
+    """A route's own static path segments win when present (closest to a
+    real product-facing name, e.g. "/portfolios/:id/sql-analysis" ->
+    "portfolios sql-analysis"); otherwise the defining file's own module
+    name, camelCase-split and a common suffix (Service/Api/Client/...)
+    stripped, e.g. "portfolioService.ts" -> "portfolio"."""
+    if route_literal:
+        segments = [s for s in route_literal.split("/") if s and not s.startswith(":") and s != "*"]
+        if segments:
+            return " ".join(segments[:2])
+    stem = _MODULE_SUFFIX_STRIP.sub("", Path(rel_path).stem)
+    words = _CAMEL_WORD.findall(stem)
+    return " ".join(w.lower() for w in words) if words else None
+
+
 _FUNCTION_LIKE_TYPES = frozenset({"function_declaration", "function_expression", "arrow_function", "method_definition"})
 
 
@@ -629,6 +663,9 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                             "detection": "signature",
                             "confidence": 0.95,
                             "notes": notes,
+                            "workflow_hint": _infer_workflow_hint(
+                                rel_path, literal if registry["surface_kind"] == "http_server_route" else None
+                            ),
                             **extra,
                         }))
                         next_id[0] += 1
@@ -673,6 +710,7 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                             "confidence": 0.95 if literal is not None else 0.3,
                             "has_path_parameter": _has_path_parameter(literal),
                             "notes": _declarative_route_note(literal, f"{callee} route-object array entry"),
+                            "workflow_hint": _infer_workflow_hint(rel_path, literal),
                         }))
                         next_id[0] += 1
 
@@ -691,6 +729,7 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                         "detection": "ast",
                         "confidence": 0.95,
                         "notes": "bare global fetch() call, unshadowed in its enclosing scope -- no receiver to resolve, unambiguous by construction",
+                        "workflow_hint": _infer_workflow_hint(rel_path),
                     }))
                     next_id[0] += 1
 
@@ -725,6 +764,7 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                         "confidence": 0.95 if literal is not None else 0.3,
                         "has_path_parameter": _has_path_parameter(literal),
                         "notes": _declarative_route_note(literal, "JSX <Route> element"),
+                        "workflow_hint": _infer_workflow_hint(rel_path, literal),
                     }))
                     next_id[0] += 1
 
