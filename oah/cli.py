@@ -90,16 +90,43 @@ _LANGUAGE_HELP = (
     "file extensions -- a mixed-language repo has no single right guess."
 )
 
+_PACK_HELP = (
+    "Which domain pack governs point-kind vocabulary, S1 registries, lenses, gates, "
+    "and semconv namespaces: genai (default -- LLM-application observability) or "
+    "service (docs/decisions/011, E12 -- ordinary request-driven services; only real "
+    "with --language typescript today, since the service pack's one S1 registry "
+    "(Express, docs/decisions/018) has no Python-adapter counterpart yet)."
+)
 
-def _build_surface_map(target, git_sha, language, disambiguated=None):
+
+def _build_surface_map(target, git_sha, language, pack=None, disambiguated=None):
     """The one place that decides which S1 adapter runs. Both adapters
     return the same (surface_map, still_ambiguous) 2-tuple shape, so every
-    call site downstream of this needs no per-language branching."""
+    call site downstream of this needs no per-language branching.
+
+    `pack` (the loaded pack dict, default None -- genai) selects which
+    pack's registries S1 matches against, e.g. load_pack("service") to
+    also resolve Express route registrations (docs/decisions/018). Only
+    threaded to the TypeScript adapter today -- python_adapter.py's own
+    registries remain genai-only (no Python service-domain registries
+    exist yet), a real, named scope boundary rather than a silent gap:
+    --pack service with --language python runs but finds nothing new."""
     if language == "typescript":
         from oah.discovery.typescript_adapter import build_surface_map
+        return build_surface_map(target, git_sha=git_sha, disambiguated=disambiguated, pack=pack)
     else:
         from oah.discovery.python_adapter import build_surface_map
-    return build_surface_map(target, git_sha=git_sha, disambiguated=disambiguated)
+        return build_surface_map(target, git_sha=git_sha, disambiguated=disambiguated)
+
+
+def _load_pack_for_args(args):
+    """Which domain pack a command runs against -- default genai, matching
+    every command's own pre-existing hardcoded behavior (E13's
+    byte-identical guarantee). --pack service (docs/decisions/016-018)
+    threads through to S1's registries, S3's dimension mapping, and every
+    S4-S8 pack-aware call downstream."""
+    from oah.domains.loader import load_pack
+    return load_pack(getattr(args, "pack", "genai") or "genai")
 
 # Replaces the old literal LENS_TO_POINT_KIND dict (docs/decisions/011):
 # {lens_name: target_kinds}, target_kinds a list of point kinds or None for
@@ -252,6 +279,7 @@ def cmd_map(args):
     from oah.discovery.disambiguate import disambiguate, DisambiguationError, missing_credentials
 
     language = getattr(args, "language", "python")
+    pack = _load_pack_for_args(args)
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
@@ -275,7 +303,7 @@ def cmd_map(args):
             print(f"s1 scan already checkpointed for {run_id} — resuming from stored result.", file=sys.stderr)
             scan_result = db.get_checkpoint_result(run_id, "s1", "scan")
         else:
-            surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, language)
+            surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, language, pack=pack)
             scan_result = {"surface_map": surface_map, "still_ambiguous": still_ambiguous}
             db.checkpoint(run_id, "s1", "scan", scan_result, _now())
 
@@ -300,7 +328,7 @@ def cmd_map(args):
 
         if disambiguated is not None:
             surface_map, still_ambiguous = _build_surface_map(
-                args.target, git_sha, language, disambiguated=disambiguated
+                args.target, git_sha, language, pack=pack, disambiguated=disambiguated
             )
 
         # Found by adversarial review: this used to mark s1 "completed" in
@@ -370,6 +398,7 @@ def cmd_gaps(args):
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
 
+    pack = _load_pack_for_args(args)
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
@@ -383,9 +412,11 @@ def cmd_gaps(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, getattr(args, "language", "python"))
+    surface_map, still_ambiguous = _build_surface_map(
+        args.target, git_sha, getattr(args, "language", "python"), pack=pack
+    )
     inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
-    gaps = build_gap_model(surface_map, inventory, context=context)
+    gaps = build_gap_model(surface_map, inventory, context=context, pack=pack)
 
     if args.output:
         Path(args.output).write_text(json.dumps(gaps, indent=2) + "\n")
@@ -423,9 +454,9 @@ def cmd_design(args):
     from oah.design.lens import LensDesignError
     from oah.design.gates import run_gates, gates_passed
     from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
-    from oah.domains.loader import load_pack
     from oah.schemas import validate
 
+    pack = _load_pack_for_args(args)
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
@@ -439,12 +470,13 @@ def cmd_design(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, getattr(args, "language", "python"))
+    surface_map, still_ambiguous = _build_surface_map(
+        args.target, git_sha, getattr(args, "language", "python"), pack=pack
+    )
     if not surface_map["points"]:
         print("No surface points found (or all still ambiguous) — nothing to design for.", file=sys.stderr)
         return 0
 
-    pack = load_pack("genai")
     lens_fns = _lens_fns_for_pack(pack, lens_module)
     target_kinds_by_lens = _target_kinds_for_pack(pack)
     model = getattr(args, "model", None)
@@ -511,9 +543,9 @@ def cmd_event_schema(args):
     from oah.design import lens as lens_module
     from oah.design.lens import LensDesignError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
-    from oah.domains.loader import load_pack
     from oah.schemas import validate
 
+    pack = _load_pack_for_args(args)
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
@@ -527,12 +559,13 @@ def cmd_event_schema(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, getattr(args, "language", "python"))
+    surface_map, still_ambiguous = _build_surface_map(
+        args.target, git_sha, getattr(args, "language", "python"), pack=pack
+    )
     if not surface_map["points"]:
         print("No surface points found — nothing to build an event schema from.", file=sys.stderr)
         return 0
 
-    pack = load_pack("genai")
     lens_fns = _lens_fns_for_pack(pack, lens_module)
     model = getattr(args, "model", None)
     fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
@@ -574,9 +607,9 @@ def cmd_dtos(args):
     from oah.design.lens import LensDesignError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
     from oah.design.dto_generator import generate_dtos, DtoGenerationError
-    from oah.domains.loader import load_pack
     from oah.schemas import validate
 
+    pack = _load_pack_for_args(args)
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
@@ -590,12 +623,13 @@ def cmd_dtos(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, getattr(args, "language", "python"))
+    surface_map, still_ambiguous = _build_surface_map(
+        args.target, git_sha, getattr(args, "language", "python"), pack=pack
+    )
     if not surface_map["points"]:
         print("No surface points found — nothing to generate DTOs for.", file=sys.stderr)
         return 0
 
-    pack = load_pack("genai")
     lens_fns = _lens_fns_for_pack(pack, lens_module)
     model = getattr(args, "model", None)
     fragments = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
@@ -663,9 +697,9 @@ def cmd_readiness(args):
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
     from oah.design.dto_generator import generate_dtos, DtoGenerationError
     from oah.design.readiness_report import build_readiness_report
-    from oah.domains.loader import load_pack
     from oah.schemas import validate
 
+    pack = _load_pack_for_args(args)
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
@@ -679,8 +713,9 @@ def cmd_readiness(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    pack = load_pack("genai")
-    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, getattr(args, "language", "python"))
+    surface_map, still_ambiguous = _build_surface_map(
+        args.target, git_sha, getattr(args, "language", "python"), pack=pack
+    )
     inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
     gap_model = build_gap_model(surface_map, inventory, context=context, pack=pack)
 
@@ -1193,6 +1228,7 @@ def build_parser():
                         help="Skip the LLM disambiguation pass; leave ambiguous candidates unresolved")
     p_map.add_argument("--model", default=None, help=_MODEL_HELP)
     p_map.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_map.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_map.set_defaults(func=cmd_map)
 
     p_inventory = sub.add_parser("inventory", help="S2 existing telemetry inventory")
@@ -1206,6 +1242,7 @@ def build_parser():
     p_gaps.add_argument("--context", default=None,
                          help="Path to a context.yaml from `oah interview` — weights priority by workflow criticality")
     p_gaps.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_gaps.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_gaps.set_defaults(func=cmd_gaps)
 
     p_interview = sub.add_parser("interview", help="S3 owner interview (interactive) -> context.yaml")
@@ -1220,6 +1257,7 @@ def build_parser():
     p_design.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_design.add_argument("--model", default=None, help=_MODEL_HELP)
     p_design.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_design.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_design.set_defaults(func=cmd_design)
 
     p_event_schema = sub.add_parser("event-schema", help="S7 (partial): deterministic event_schema.json merge")
@@ -1228,6 +1266,7 @@ def build_parser():
     p_event_schema.add_argument("-o", "--output", default=None, help="Write event_schema.json here instead of stdout")
     p_event_schema.add_argument("--model", default=None, help=_MODEL_HELP)
     p_event_schema.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_event_schema.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_event_schema.set_defaults(func=cmd_event_schema)
 
     p_dtos = sub.add_parser("dtos", help="S8 (partial): implementation_dto.json generation")
@@ -1238,6 +1277,7 @@ def build_parser():
     p_dtos.add_argument("-o", "--output", default=None, help="Write implementation_dto.json here instead of stdout")
     p_dtos.add_argument("--model", default=None, help=_MODEL_HELP)
     p_dtos.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_dtos.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_dtos.set_defaults(func=cmd_dtos)
 
     p_readiness = sub.add_parser("readiness", help="S9: production readiness report (deterministic assembly)")
@@ -1246,6 +1286,7 @@ def build_parser():
     p_readiness.add_argument("-o", "--output", default=None, help="Write readiness_report.json here instead of stdout")
     p_readiness.add_argument("--model", default=None, help=_MODEL_HELP)
     p_readiness.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_readiness.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_readiness.set_defaults(func=cmd_readiness)
 
     p_instrument = sub.add_parser(

@@ -88,9 +88,15 @@ non-AI domain pack (`domains/service/pack.json`, ordinary request-driven
 services) is now real and in progress (E12) rather than a stub — its three
 reused-unchanged lenses (`tracing`, `ops`, `pii-governance`) are verified
 against real service-domain points with zero `SKILL.md` edits
-([docs/decisions/016](docs/decisions/016-e12-service-pack-phase1.md)); new
-detector registries, the anti-redundancy gate, and two new lenses remain
-unbuilt. LLM
+([docs/decisions/016](docs/decisions/016-e12-service-pack-phase1.md)), a real
+anti-redundancy gate refuses DTOs that would only re-emit an
+auto-instrumented signal
+([017](docs/decisions/017-e12-anti-redundancy-gate.md)), and an Express
+route registry (`--pack service --language typescript`) is the second
+structurally-different S1 detector shape the epic's own DoD requires
+([018](docs/decisions/018-e12-express-registry.md), docs-grounded, not yet
+corpus-verified). `telemetry-cost`/`slo`/`dependency`, four more registries,
+and a real corpus fixture remain unbuilt. LLM
 observability was still the right place to start: it's where OTel semantic
 conventions and APM tooling are least mature, so it's where a gap-modeling harness
 added the most value first.
@@ -413,7 +419,10 @@ ROADMAP.md     milestones, epics, spikes
   corpus-verified at 100% recall — `docs/decisions/014`) with no
   LLM-disambiguation counterpart yet, so a TS run never has candidates left
   for `map`'s disambiguation pass to resolve. Java is unstarted. See
-  ROADMAP.md's E11 entry for status. `oah inventory` (S2) separately picks up
+  ROADMAP.md's E11 entry for status. `--pack {genai,service}` (same six
+  commands, default `genai`) picks the domain pack — `service` only detects
+  anything new with `--language typescript` today (its one S1 registry,
+  Express, `docs/decisions/018`). `oah inventory` (S2) separately picks up
   a target's `package.json` automatically, regardless of `--language`,
   matching declared dependencies against a verified vendor table
   (OpenTelemetry JS, Dynatrace, New Relic, Splunk, Datadog, Sentry, common

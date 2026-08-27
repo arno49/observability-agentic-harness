@@ -248,3 +248,99 @@ def test_genai_pack_never_refuses_it_declares_no_baseline():
     genai_pack = load_pack("genai")
     assert _baseline_covered_attributes(genai_pack) == set()
     assert _baseline_covered_attributes(None) == set()
+
+
+# --- E12 phase 3: the express registry (docs/decisions/018) --------------
+
+def _write_ts(tmp_path, name, content):
+    path = tmp_path / name
+    path.write_text(content)
+    return path
+
+
+def test_express_route_registration_detected_with_service_pack(tmp_path):
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "app.ts", (
+        'import express from "express";\n'
+        'const app = express();\n'
+        'app.get("/users/:id", (req, res) => { res.send("ok"); });\n'
+        'app.post("/users", (req, res) => { res.send("created"); });\n'
+    ))
+    points = detect_repo(tmp_path, pack=pack)
+    assert len(points) == 2
+    assert all(p["kind"] == "http_server_route" for p in points)
+    assert all(p["framework"] == "express" for p in points)
+    get_point = next(p for p in points if p["line"] == 3)
+    post_point = next(p for p in points if p["line"] == 4)
+    assert get_point["has_path_parameter"] is True
+    assert post_point["has_path_parameter"] is False
+
+
+def test_express_settings_getter_not_treated_as_a_route(tmp_path):
+    """Express's own documented dual-purpose method: app.get(name) (1 arg)
+    reads a setting; only app.get(path, ...handlers) (2+ args) registers a
+    route."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "app.ts", (
+        'import express from "express";\n'
+        'const app = express();\n'
+        'app.get("view engine");\n'
+    ))
+    assert detect_repo(tmp_path, pack=pack) == []
+
+
+def test_express_use_call_not_treated_as_a_route(tmp_path):
+    """app.use(middleware) is overwhelmingly plain middleware in real
+    Express code, not a route -- deliberately excluded from
+    method_suffixes (domains/service/pack.json's own confidence_note)."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "app.ts", (
+        'import express from "express";\n'
+        'const app = express();\n'
+        'app.use(express.json());\n'
+    ))
+    assert detect_repo(tmp_path, pack=pack) == []
+
+
+def test_default_pack_never_detects_express_routes():
+    """Zero behavior change for every existing caller that doesn't pass
+    pack= explicitly -- Express is service-domain vocabulary, not genai's."""
+    from oah.discovery.typescript_adapter import detect_repo
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        from pathlib import Path
+        _write_ts(Path(d), "app.ts", (
+            'import express from "express";\n'
+            'const app = express();\n'
+            'app.get("/users", (req, res) => { res.send("ok"); });\n'
+        ))
+        assert detect_repo(Path(d)) == []
+
+
+def test_express_route_visible_to_gap_model_via_service_pack():
+    """End to end: a real Express route, detected via the real adapter
+    against the real service pack, resolves to the routing dimension
+    through the real S3 gap-model code -- not just asserted at the S1
+    output shape."""
+    from oah.discovery.typescript_adapter import build_surface_map
+    from oah.discovery.gap_model import build_gap_model
+    import tempfile
+    from pathlib import Path
+
+    pack = load_pack("service")
+    with tempfile.TemporaryDirectory() as d:
+        _write_ts(Path(d), "app.ts", (
+            'import express from "express";\n'
+            'const app = express();\n'
+            'app.get("/bookings/:id", (req, res) => { res.send("ok"); });\n'
+        ))
+        surface_map, _ = build_surface_map(Path(d), git_sha="deadbeef", pack=pack)
+        assert surface_map["points"][0]["kind"] == "http_server_route"
+
+        inventory = {"schema_version": "0.1.0", "repo": {"path": "<test>", "git_sha": "deadbeef"},
+                     "loggers": [], "existing_otel_usage": []}
+        gap_model = build_gap_model(surface_map, inventory, pack=pack)
+        assert gap_model["gaps"][0]["dimension"] == "routing"

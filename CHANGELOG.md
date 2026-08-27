@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Added
+- E12 phase 3 (`docs/decisions/018`): the Express registry (`http_server_route`),
+  DoD (c)'s second structurally-different detector shape. Implemented
+  `module_function_call` for real (named in the schema since E13, never
+  built) and made `oah/discovery/typescript_adapter.py`'s registry
+  resolution pack-parameterized (`pack=` on `detect_file`/`detect_repo`/
+  `build_surface_map`, default genai, byte-identical). New `--pack
+  {genai,service}` CLI flag on `map`/`gaps`/`design`/`event-schema`/`dtos`/
+  `readiness` (default `genai`). Docs-grounded, not corpus-verified --
+  named explicitly.
 - E12 phase 2 (`docs/decisions/017`): the anti-redundancy gate (DoD (d)).
   `generate_dtos` now refuses any model-proposed DTO whose every
   `expected_events[].required_attributes` entry is already covered by the

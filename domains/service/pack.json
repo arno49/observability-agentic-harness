@@ -2,11 +2,11 @@
   "schema_version": "0.1.0",
   "name": "service",
   "version": "0.1.0",
-  "description": "The service domain pack (E12, docs/decisions/011): ordinary request-driven services, the concrete test of the pipeline-core/domain-pack split E13 extracted. This first landing (docs/decisions/016) is deliberately the smallest honest slice, not the full epic: only the three lenses the ADR names as reused UNCHANGED from the genai pack (tracing, ops, pii-governance) are declared here, proven to run against real service-domain points with zero SKILL.md edits. telemetry-cost (adapted, not reused), slo and dependency (new) all need genuine new skill content -- burn-rate derivation, error-budget policy, dependency-criticality rules -- and are explicit follow-up work, not attempted here. Same posture for the anti-redundancy gate (auto_instrumentation_baseline is declared below but no gate reads it yet) and for db_query/queue_producer/queue_consumer/scheduled_job/http_server_route S1 detection (all declared_undetected -- no registry or adapter pass produces them yet). declarative_route and http_client_call are the one real exception: E11-TS's TypeScript adapter already emits both via fixed passes (SP12, docs/decisions/013), previously undetected by any loaded pack (docs/decisions/014's own named gap) -- declaring them here is what makes those already-detected points visible to S3's gap model for the first time.",
+  "description": "The service domain pack (E12, docs/decisions/011): ordinary request-driven services, the concrete test of the pipeline-core/domain-pack split E13 extracted. Landed in phases, not one epic-sized change: phase 1 (docs/decisions/016) proved the three lenses reused UNCHANGED from genai (tracing, ops, pii-governance) run against real service-domain points with zero SKILL.md edits; phase 2 (docs/decisions/017) added the anti-redundancy gate; phase 3 (docs/decisions/018) added the first S1 registry (Express, http_server_route), docs-grounded rather than corpus-verified (no real TS/Express corpus repo has been run through this adapter yet -- named explicitly, same honesty precedent as the genai pack's own livekit registry). telemetry-cost (adapted, not reused), slo and dependency (new) all need genuine new skill content -- burn-rate derivation, error-budget policy, dependency-criticality rules -- and remain explicit follow-up work. db_query/queue_producer/queue_consumer/scheduled_job S1 detection also remain declared_undetected -- each needs its own per-library research this phase did not attempt. declarative_route and http_client_call are E11-TS's TypeScript adapter's own fixed passes (SP12, docs/decisions/013), previously undetected by any loaded pack (docs/decisions/014's own named gap) -- declaring them here is what makes those already-detected points visible to S3's gap model for the first time.",
 
   "point_kinds": [
     { "kind": "declarative_route", "dimension": "routing", "rollout_rank": 0, "detected_by": "fixed_pass" },
-    { "kind": "http_server_route", "dimension": "routing", "rollout_rank": 0, "detected_by": "declared_undetected" },
+    { "kind": "http_server_route", "dimension": "routing", "rollout_rank": 0, "detected_by": "registry" },
     { "kind": "http_client_call", "dimension": "dependency", "detected_by": "fixed_pass" },
     { "kind": "db_query", "dimension": "db", "detected_by": "declared_undetected" },
     { "kind": "queue_producer", "dimension": "dependency", "detected_by": "declared_undetected" },
@@ -14,7 +14,18 @@
     { "kind": "scheduled_job", "dimension": "scheduling", "detected_by": "declared_undetected" }
   ],
 
-  "registries": [],
+  "registries": [
+    {
+      "framework": "express",
+      "surface_kind": "http_server_route",
+      "language": "typescript",
+      "sdk_module": "express",
+      "constructor_names": ["express"],
+      "method_suffixes": [["get"], ["post"], ["put"], ["delete"], ["patch"]],
+      "detector_shape": "module_function_call",
+      "confidence_note": "Docs-grounded (Express's own public API, https://expressjs.com/en/4x/api.html), NOT corpus-verified -- no real Express repo has been run through this adapter yet, unlike every genai registry entry, which either has real corpus evidence (anthropic, 100% recall) or says so explicitly when it doesn't (livekit). Deliberately narrow: only `const app = express()` (a bare factory call assigned to a variable, the module_function_call detector shape -- oah/discovery/typescript_adapter.py's ImportResolver.resolve_factory_call, newly implemented alongside this entry, since the shape existed in schemas/domain_pack.schema.json but no adapter actually implemented it before this). Two real, deliberate exclusions from method_suffixes, not oversights: `app.all(...)`/`app.use(...)` are left out -- `use` is overwhelmingly called for plain middleware with no path argument at all (`app.use(cors())`) in real Express code, which this suffix-match alone can't distinguish from a genuine path-mounted sub-router, and including it would trade real false positives for marginal recall; `express.Router()` sub-router creation (a namespaced factory call, not a bare one) is also not covered -- a real, separate, NOT-yet-implemented receiver-creation shape. `get` is Express's own documented dual-purpose method (`app.get(name)` reads a setting; `app.get(path, ...handlers)` registers a route) -- the adapter requires 2+ call arguments before treating any of these five suffixes as a route registration, specifically to rule out the single-argument settings-getter form."
+    }
+  ],
 
   "lenses": [
     { "lens": "tracing", "skill": "s4-tracing", "target_kinds": null, "emits": ["design_fragment"], "reused_from": "genai" },

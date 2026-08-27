@@ -112,3 +112,51 @@ def test_map_language_typescript_dispatches_to_ts_adapter(tmp_path):
     # boundary) -- s1 must still reach "completed" since there's nothing left
     # ambiguous for it to wait on.
     assert manifest["stages_completed"] == ["s1"]
+
+
+def test_map_pack_service_dispatches_to_express_registry(tmp_path):
+    """E12 phase 3 (docs/decisions/018): --pack service must actually reach
+    the service pack's Express registry through the real CLI, not just at
+    the adapter's own module level -- proving oah/cli.py's _load_pack_for_args
+    threading is real, not just accepted-and-dropped."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.ts").write_text(
+        'import express from "express";\n'
+        "const app = express();\n"
+        'app.get("/bookings/:id", (req, res) => { res.send("ok"); });\n'
+    )
+    _init_git_repo(target)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    out = workdir / "sm.json"
+    result = _run(["map", str(target), "--language", "typescript", "--pack", "service",
+                   "--run-id", "service-run", "-o", str(out)], cwd=workdir)
+    assert result.returncode == 0, result.stderr
+
+    surface_map = json.loads(out.read_text())
+    assert surface_map["coverage_stats"]["points_total"] == 1
+    assert surface_map["points"][0]["kind"] == "http_server_route"
+    assert surface_map["points"][0]["has_path_parameter"] is True
+
+
+def test_map_default_pack_genai_never_detects_express_routes(tmp_path):
+    """Zero behavior change for the default: --language typescript with no
+    --pack (defaults to genai) must not pick up Express routes -- that
+    vocabulary belongs to the service pack only."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.ts").write_text(
+        'import express from "express";\n'
+        "const app = express();\n"
+        'app.get("/bookings/:id", (req, res) => { res.send("ok"); });\n'
+    )
+    _init_git_repo(target)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    result = _run(["map", str(target), "--language", "typescript", "--run-id", "genai-default-run"], cwd=workdir)
+    assert result.returncode == 0, result.stderr
+    surface_map = json.loads(result.stdout)
+    assert surface_map["coverage_stats"]["points_total"] == 0

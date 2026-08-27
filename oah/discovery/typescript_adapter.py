@@ -49,8 +49,23 @@ E13 `docs/decisions/011`) -- so today, feeding this module's output into S3
 surfaces the receiver_method_suffix points and quietly drops the other two
 shapes' points, honest but easy to miss. Naming it here rather than
 papering over it with a guessed dimension.
+
+`module_function_call` (docs/decisions/018): schemas/domain_pack.schema.json
+and oah/discovery/registry.py both named this detector shape from E13
+onward -- a receiver created via a bare factory call (`const app =
+express()`) rather than `new X()` -- but no adapter actually implemented
+it until now. `ImportResolver.resolve_factory_call` plus the known-name
+prescan's new `call_expression` branch (mirroring the existing
+`new_expression` branch exactly) is that implementation; once a receiver
+is known, downstream suffix-matching is identical regardless of which
+shape created it. First (and so far only) consumer: the service pack's
+`express` registry entry (`domains/service/pack.json`), docs-grounded
+against Express's own public API, not corpus-verified -- named explicitly
+in that entry's own `confidence_note`, same honesty precedent as genai's
+livekit registry.
 """
 import re
+from collections import namedtuple
 from pathlib import Path
 
 import tree_sitter_typescript as tstypescript
@@ -62,7 +77,29 @@ from oah.domains.loader import load_pack
 
 _LANGUAGE = Language(tstypescript.language_tsx())  # a superset grammar of plain TS -- safe for .ts files too
 
+# The registry data every detection call actually needs, bundled so it
+# threads through _walk's recursion as one parameter instead of four.
+# docs/decisions/018: this is the "re-parameterize per call instead of
+# module-global" fix E13's own decision record named as deferred, real work
+# once a second pack actually needed a different registry set -- the
+# service pack's express entry is that second pack.
+_RegistryContext = namedtuple(
+    "_RegistryContext", ["constructor_names", "module_to_registry", "all_method_suffixes", "suffix_lengths"]
+)
+
+
+def _registry_context_for_pack(pack):
+    _registries, constructor_names, module_to_registry, all_method_suffixes, suffix_lengths = build_registry_index(
+        pack, language="typescript"
+    )
+    return _RegistryContext(constructor_names, module_to_registry, all_method_suffixes, suffix_lengths)
+
+
 _GENAI_PACK = load_pack("genai")
+# Module-level default: byte-identical behavior for every existing caller
+# that doesn't pass pack= explicitly (E13's own guarantee, extended here to
+# this module's newly pack-parameterized detection).
+_DEFAULT_REGISTRY_CONTEXT = _registry_context_for_pack(_GENAI_PACK)
 REGISTRIES, CONSTRUCTOR_NAMES, MODULE_TO_REGISTRY, ALL_METHOD_SUFFIXES, SUFFIX_LENGTHS = build_registry_index(
     _GENAI_PACK, language="typescript"
 )
@@ -92,9 +129,10 @@ class ImportResolver:
     name called `fetch` imported from anywhere", not "was a known SDK
     constructor imported", a genuinely different question `name_alias`
     alone can't answer (it only ever populates entries already in
-    CONSTRUCTOR_NAMES)."""
+    constructor_names)."""
 
-    def __init__(self):
+    def __init__(self, constructor_names=CONSTRUCTOR_NAMES):
+        self.constructor_names = constructor_names
         self.name_alias = {}
         self.imported_names = set()
 
@@ -114,7 +152,7 @@ class ImportResolver:
                 # `import anthropic; anthropic.Anthropic()` does.
                 local = _text(child, src)
                 self.imported_names.add(local)
-                if local in CONSTRUCTOR_NAMES:
+                if local in self.constructor_names:
                     self.name_alias[local] = (module, local)
             elif child.type == "named_imports":
                 for spec in child.named_children:
@@ -127,7 +165,7 @@ class ImportResolver:
                     original = _text(name_node, src)
                     local = _text(alias_node, src) if alias_node is not None else original
                     self.imported_names.add(local)
-                    if original in CONSTRUCTOR_NAMES:
+                    if original in self.constructor_names:
                         self.name_alias[local] = (module, original)
 
     def resolve_constructor_call(self, new_expr_node, src):
@@ -137,6 +175,20 @@ class ImportResolver:
         if ctor is None or ctor.type != "identifier":
             return None
         return self.name_alias.get(_text(ctor, src))
+
+    def resolve_factory_call(self, call_expr_node, src):
+        """Return (module, name) if call_expr_node (a plain call_expression,
+        NOT new_expression) calls a known SDK factory function directly by
+        its bare imported name -- the module_function_call detector shape
+        (schemas/domain_pack.schema.json), e.g. `const app = express()`,
+        unlike a constructor-based SDK called via `new X()`. Reuses the
+        same name_alias table resolve_constructor_call does -- a registry
+        entry's own constructor_names is the vocabulary either shape draws
+        from; only the AST node type checked differs."""
+        func = call_expr_node.child_by_field_name("function")
+        if func is None or func.type != "identifier":
+            return None
+        return self.name_alias.get(_text(func, src))
 
     def annotation_sdk(self, type_annotation_node, src):
         """Resolve a type_annotation (e.g. `: Anthropic | null`) to an SDK
@@ -178,9 +230,9 @@ def _flatten_member_chain(node, src):
     return None, parts
 
 
-def _match_suffix(chain):
-    for length in SUFFIX_LENGTHS:
-        if len(chain) >= length and tuple(chain[-length:]) in ALL_METHOD_SUFFIXES:
+def _match_suffix(chain, registry_ctx):
+    for length in registry_ctx.suffix_lengths:
+        if len(chain) >= length and tuple(chain[-length:]) in registry_ctx.all_method_suffixes:
             return tuple(chain[-length:])
     return None
 
@@ -256,12 +308,14 @@ def _is_shadowed_in_enclosing_scope(call_node, src):
     return False
 
 
-def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points, rel_path, next_id, is_async=False):
+def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points, rel_path, next_id,
+          is_async=False, registry_ctx=_DEFAULT_REGISTRY_CONTEXT):
     for child in node.children:
         if child.type == "class_declaration":
             name_node = child.child_by_field_name("name")
             new_class = _text(name_node, src) if name_node is not None else class_name
-            _walk(child, src, resolver, known_names, symbol, new_class, resolved_points, rel_path, next_id, is_async)
+            _walk(child, src, resolver, known_names, symbol, new_class, resolved_points, rel_path, next_id,
+                  is_async, registry_ctx)
             continue
 
         if child.type in ("function_declaration", "function_expression", "method_definition", "arrow_function"):
@@ -269,7 +323,8 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
             fn_name = _text(name_node, src) if name_node is not None else "<anonymous>"
             new_symbol = f"{class_name}.{fn_name}" if class_name else fn_name
             new_is_async = any(c.type == "async" for c in child.children)
-            _walk(child, src, resolver, known_names, new_symbol, class_name, resolved_points, rel_path, next_id, new_is_async)
+            _walk(child, src, resolver, known_names, new_symbol, class_name, resolved_points, rel_path, next_id,
+                  new_is_async, registry_ctx)
             continue
 
         if child.type == "public_field_definition":
@@ -293,6 +348,11 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                     if hit:
                         known_names[_text(name_node, src)] = hit[0]
                         continue
+                if value_node is not None and value_node.type == "call_expression":
+                    hit = resolver.resolve_factory_call(value_node, src)
+                    if hit:
+                        known_names[_text(name_node, src)] = hit[0]
+                        continue
                 sdk = resolver.annotation_sdk(type_node, src)
                 if sdk:
                     known_names[_text(name_node, src)] = sdk
@@ -300,8 +360,9 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
         if child.type == "assignment_expression":
             left = child.child_by_field_name("left")
             right = child.child_by_field_name("right")
-            if left is not None and right is not None and right.type == "new_expression":
-                hit = resolver.resolve_constructor_call(right, src)
+            if left is not None and right is not None and right.type in ("new_expression", "call_expression"):
+                hit = (resolver.resolve_constructor_call(right, src) if right.type == "new_expression"
+                       else resolver.resolve_factory_call(right, src))
                 if hit:
                     if left.type == "identifier":
                         known_names[_text(left, src)] = hit[0]
@@ -314,7 +375,7 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
             func = child.child_by_field_name("function")
             if func is not None and func.type == "member_expression":
                 root, chain = _flatten_member_chain(func, src)
-                suffix = _match_suffix(chain)
+                suffix = _match_suffix(chain, registry_ctx)
                 if suffix is not None:
                     if root == "this" and chain:
                         # chain[0] is the receiver attribute name (e.g.
@@ -331,9 +392,33 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                         resolved = known_names.get(root) if root else None
                         receiver_desc = root or "<unresolved receiver expression>"
 
-                    registry = MODULE_TO_REGISTRY.get(resolved)
-                    if registry is not None and suffix in registry["method_suffixes"]:
+                    registry = registry_ctx.module_to_registry.get(resolved)
+                    args_node = child.child_by_field_name("arguments")
+                    args_count = len(args_node.named_children) if args_node is not None else 0
+                    # Express's own documented dual-purpose method: app.get(name)
+                    # (1 arg) reads a setting, app.get(path, ...handlers) (2+
+                    # args) registers a route -- require 2+ args before
+                    # treating any http_server_route suffix match as a real
+                    # route registration, ruling out the settings-getter form.
+                    is_settings_getter = registry is not None and registry["surface_kind"] == "http_server_route" and args_count < 2
+                    if registry is not None and suffix in registry["method_suffixes"] and not is_settings_getter:
                         line = _line(child)
+                        notes = f"receiver '{receiver_desc}' resolved via import/assignment/annotation tracking"
+                        # http_server_route only: extract the route path
+                        # literal (first call argument) the same way Pass B
+                        # does for declarative_route -- conditional on kind
+                        # so llm_generation/retrieval/etc points (whose
+                        # first argument is never a route path) keep their
+                        # exact pre-existing shape, not a spurious
+                        # has_path_parameter: false field (E13's
+                        # byte-identical guarantee).
+                        extra = {}
+                        if registry["surface_kind"] == "http_server_route":
+                            first_arg = args_node.named_children[0] if args_node and args_node.named_children else None
+                            literal = (_string_content(first_arg, src)
+                                       if first_arg is not None and first_arg.type == "string" else None)
+                            extra["has_path_parameter"] = _has_path_parameter(literal)
+                            notes += f" -- {_declarative_route_note(literal, 'route registration')}"
                         resolved_points.append(_drop_none({
                             "id": f"sp-{next_id[0]:04d}",
                             "kind": registry["surface_kind"],
@@ -344,7 +429,8 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                             "sync_nature": "async" if is_async else "sync",
                             "detection": "signature",
                             "confidence": 0.95,
-                            "notes": f"receiver '{receiver_desc}' resolved via import/assignment/annotation tracking",
+                            "notes": notes,
+                            **extra,
                         }))
                         next_id[0] += 1
                     # unresolved receivers are not reported here (unlike the
@@ -457,10 +543,11 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
         if child.type == "import_statement":
             resolver.visit_import_statement(child, src)
 
-        _walk(child, src, resolver, known_names, symbol, class_name, resolved_points, rel_path, next_id, is_async)
+        _walk(child, src, resolver, known_names, symbol, class_name, resolved_points, rel_path, next_id,
+              is_async, registry_ctx)
 
 
-def detect_file(path, repo_root, next_id=None):
+def detect_file(path, repo_root, next_id=None, pack=None):
     path = Path(path)
     try:
         src = path.read_bytes()
@@ -472,23 +559,34 @@ def detect_file(path, repo_root, next_id=None):
     except Exception:
         return []
 
-    resolver = ImportResolver()
+    registry_ctx = _DEFAULT_REGISTRY_CONTEXT if pack is None else _registry_context_for_pack(pack)
+    resolver = ImportResolver(registry_ctx.constructor_names)
     known_names = {}
     rel_path = str(path.relative_to(repo_root)) if repo_root else str(path)
     resolved_points = []
     if next_id is None:
         next_id = [1]
-    _walk(tree.root_node, src, resolver, known_names, None, None, resolved_points, rel_path, next_id)
+    _walk(tree.root_node, src, resolver, known_names, None, None, resolved_points, rel_path, next_id,
+          False, registry_ctx)
     return resolved_points
 
 
-def detect_repo(repo_root):
+def detect_repo(repo_root, pack=None):
     """Scan every .ts/.tsx file under repo_root, excluding node_modules,
     .git, dist, and test files -- the same exclusions detect.js already
     used, plus python_adapter.py's own tests/-directory skip. next_id is
     shared across the whole scan (via detect_file's own next_id param) so
     IDs stay unique per run, not per file -- matching python_adapter.py's
-    own detect_repo/detect_file relationship exactly."""
+    own detect_repo/detect_file relationship exactly.
+
+    `pack` (default None -- the genai pack, byte-identical to every caller
+    before docs/decisions/018) selects which pack's registries[] entries
+    this scan matches against -- e.g. load_pack("service") to also resolve
+    Express route registrations. Only one pack's registries are consulted
+    per call, matching the rest of this codebase's current single-pack-
+    per-run architecture (oah/cli.py's commands all load exactly one pack
+    today); merging more than one pack's registries in a single scan is a
+    real, separate question this phase doesn't attempt."""
     repo_root = Path(repo_root)
     resolved_points = []
     next_id = [1]
@@ -499,11 +597,11 @@ def detect_repo(repo_root):
             continue
         if f.name.startswith("test_") or ".test." in f.name or ".spec." in f.name:
             continue
-        resolved_points.extend(detect_file(f, repo_root, next_id))
+        resolved_points.extend(detect_file(f, repo_root, next_id, pack))
     return resolved_points
 
 
-def build_surface_map(repo_root, git_sha, disambiguated=None, harness_version=_OAH_VERSION):
+def build_surface_map(repo_root, git_sha, disambiguated=None, harness_version=_OAH_VERSION, pack=None):
     """Assemble the document conforming to schemas/surface_map.schema.json.
     Same shape as python_adapter.py's own build_surface_map, including the
     (surface_map, still_ambiguous) 2-tuple return -- a CLI dispatch layer
@@ -512,8 +610,9 @@ def build_surface_map(repo_root, git_sha, disambiguated=None, harness_version=_O
     LLM-disambiguation counterpart wired up yet (E11-TS's own stated scope
     boundary); `still_ambiguous` is therefore always `[]` here, never a
     real pending-candidate list, since this module's own detect_repo never
-    produces ambiguous candidates in the first place."""
-    resolved_points = detect_repo(repo_root)
+    produces ambiguous candidates in the first place. `pack` (default None
+    -- genai) is threaded straight through to detect_repo."""
+    resolved_points = detect_repo(repo_root, pack)
     surface_map = {
         "schema_version": "0.1.0",
         "repo": {"path": str(repo_root), "git_sha": git_sha, "primary_language": "typescript"},

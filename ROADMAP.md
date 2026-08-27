@@ -971,10 +971,35 @@ survives whole (attribute-level pruning is a named, deliberately
 unattempted refinement). Zero behavior change for genai or any pack that
 declares no baseline, by construction.
 
+**E12 phase 3 landed** (2026-08-27, `docs/decisions/018`): the Express
+registry, DoD (c)'s second structurally-different detector shape. Hit two
+real, pre-existing gaps before it could work at all: `module_function_call`
+(a receiver created via a bare factory call, `const app = express()`, not
+`new X()`) was named in `schemas/domain_pack.schema.json` since E13 but no
+adapter ever implemented it; `oah/discovery/typescript_adapter.py`'s
+registry data was derived once, at import time, from the genai pack only —
+exactly the "process-global constants, no second pack yet to justify
+re-parameterizing" cost `docs/decisions/016` already named as deferred.
+Both fixed for real: `ImportResolver.resolve_factory_call` plus a new
+`_RegistryContext` threaded through `_walk`'s recursion, `detect_file`/
+`detect_repo`/`build_surface_map` all gaining a `pack=None` parameter
+(default → genai, byte-identical). Two precision guards grounded in
+Express's own documented API, not a real corpus (named explicitly as
+docs-grounded, not corpus-verified, same honesty precedent as genai's own
+livekit registry): `app.get(name)` (1 arg, a settings read) vs.
+`app.get(path, ...handlers)` (2+ args, a route) is disambiguated by
+argument count; `app.use(...)`/`app.all(...)` are excluded from
+`method_suffixes` entirely (`use` is overwhelmingly plain middleware with
+no path argument in real code). New `--pack {genai,service}` flag on
+`map`/`gaps`/`design`/`event-schema`/`dtos`/`readiness` (default `genai`)
+replaces every command's own hardcoded `load_pack("genai")` — verified
+end to end through a real `oah map --language typescript --pack service`
+subprocess run.
+
 **Still fully unbuilt, named not implied**: `telemetry-cost`/`slo`/`dependency`
-(need genuine new skill content), five new S1 registries
-(`http_server_route`/`db_query`/`queue_*`/`scheduled_job`), `docs/decisions/011`'s
-own new S5 gates, S11 signal provenance, and a real corpus fixture (DoD (a)).
+(need genuine new skill content), four more S1 registries
+(`db_query`/`queue_*`/`scheduled_job`), `docs/decisions/011`'s own new S5
+gates, S11 signal provenance, and a real corpus fixture (DoD (a)).
 
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
