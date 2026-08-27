@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s4-dependency/input.schema.json",
+  "title": "S4 dependency lens — input",
+  "description": "Like slo, NOT cross-cutting -- a dependency edge is defined per outbound call site, not per point kind uniformly. points is filtered to http_client_call/queue_producer kinds by the caller.",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "points"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "points": {
+      "type": "array",
+      "minItems": 1,
+      "description": "surface_map.json points of kind http_client_call or queue_producer only -- each represents an outbound dependency edge.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "file", "line"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "enum": ["http_client_call", "queue_producer"] },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "symbol": { "type": "string" },
+          "framework": { "type": "string" },
+          "gap_status": { "enum": ["dark", "partial", "covered"] },
+          "gap_priority": { "enum": ["p0", "p1", "p2", "p3"] }
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "context.yaml, if an interview has run -- the source of own_target: this lens does not invent an SLO target independently, it reads the calling journey's own workflow criticality (and, when available, an already-designed slo_spec's own objective.target for the same journey) rather than guessing.",
+      "properties": {
+        "workflows": { "type": "array" }
+      }
+    }
+  }
+}

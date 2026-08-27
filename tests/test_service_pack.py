@@ -74,15 +74,33 @@ def _minimal_slo_spec(point_ids):
     }
 
 
+def _minimal_dependency_model(point_ids):
+    return {
+        "schema_version": "0.1.0", "repo_git_sha": "deadbeef",
+        "surface_point_ids": point_ids,
+        "edges": [{
+            "name": "test-dependency", "dependency_kind": "queue_producer", "criticality": "hard",
+            "own_target": 0.999, "required_dependency_target": 0.9999,
+            "budget_split": {"own_failures_fraction": 0.5, "dependency_failures_fraction": 0.5},
+            "fallback_behavior": "test",
+        }],
+    }
+
+
 def test_service_pack_loads_and_declares_its_lenses():
     pack = load_pack("service")
-    assert {l["lens"] for l in pack["lenses"]} == {"tracing", "ops", "pii-governance", "telemetry-cost", "slo"}
+    assert {l["lens"] for l in pack["lenses"]} == {
+        "tracing", "ops", "pii-governance", "telemetry-cost", "slo", "dependency",
+    }
     reused = {l["lens"] for l in pack["lenses"] if l.get("reused_from") == "genai"}
     assert reused == {"tracing", "ops", "pii-governance"}
     assert "reused_from" not in next(l for l in pack["lenses"] if l["lens"] == "telemetry-cost")
     assert "reused_from" not in next(l for l in pack["lenses"] if l["lens"] == "slo")
+    assert "reused_from" not in next(l for l in pack["lenses"] if l["lens"] == "dependency")
     slo_entry = next(l for l in pack["lenses"] if l["lens"] == "slo")
     assert slo_entry["emits"] == ["design_fragment", "slo_spec"]
+    dependency_entry = next(l for l in pack["lenses"] if l["lens"] == "dependency")
+    assert dependency_entry["emits"] == ["design_fragment", "dependency_model"]
     assert {pk["kind"] for pk in pack["point_kinds"]} == {
         "declarative_route", "http_server_route", "http_client_call",
         "db_query", "queue_producer", "queue_consumer", "scheduled_job",
@@ -105,6 +123,7 @@ def test_design_all_lenses_filters_each_lens_by_the_packs_own_target_kinds():
     assert target_kinds_by_lens["telemetry-cost"] is None
     assert target_kinds_by_lens["pii-governance"] == ["http_server_route", "declarative_route", "db_query"]
     assert target_kinds_by_lens["slo"] == ["http_server_route", "declarative_route"]
+    assert target_kinds_by_lens["dependency"] == ["http_client_call", "queue_producer"]
 
     received = {}
     emits_by_lens = {entry["lens"]: entry["emits"] for entry in pack["lenses"]}
@@ -114,15 +133,19 @@ def test_design_all_lenses_filters_each_lens_by_the_packs_own_target_kinds():
             received[lens_name] = {p["id"] for p in points}
             point_ids = [p["id"] for p in points]
             fragment = _fragment_for(lens_name, point_ids)
-            if len(emits_by_lens[lens_name]) == 1:
+            emits = emits_by_lens[lens_name]
+            if len(emits) == 1:
                 return fragment
-            return {"design_fragment": fragment, "slo_spec": _minimal_slo_spec(point_ids)}
+            if "slo_spec" in emits:
+                return {"design_fragment": fragment, "slo_spec": _minimal_slo_spec(point_ids)}
+            return {"design_fragment": fragment, "dependency_model": _minimal_dependency_model(point_ids)}
         return fake
 
     lens_fns = {entry["lens"]: make_fake(entry["lens"]) for entry in pack["lenses"]}
     fragments, extra_artifacts = _design_all_lenses(SERVICE_POINTS, "deadbeef", lens_fns, LensDesignError, pack)
-    assert set(extra_artifacts) == {"slo"}  # the only current multi-emit lens
+    assert set(extra_artifacts) == {"slo", "dependency"}  # the two current multi-emit lenses
     assert set(extra_artifacts["slo"]) == {"slo_spec"}
+    assert set(extra_artifacts["dependency"]) == {"dependency_model"}
 
     all_ids = {p["id"] for p in SERVICE_POINTS}
     assert received["tracing"] == all_ids
@@ -130,7 +153,8 @@ def test_design_all_lenses_filters_each_lens_by_the_packs_own_target_kinds():
     assert received["telemetry-cost"] == all_ids
     assert received["pii-governance"] == {"sp-0001", "sp-0002", "sp-0003"}  # excludes queue_producer
     assert received["slo"] == {"sp-0001", "sp-0002"}  # http_server_route + declarative_route only
-    assert len(fragments) == 5
+    assert received["dependency"] == {"sp-0004"}  # queue_producer only (no http_client_call point here)
+    assert len(fragments) == 6
 
 
 def test_reused_lens_functions_run_for_real_against_service_points_no_skill_md_edit():

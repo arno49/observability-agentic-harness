@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- E12 phase 6 (`docs/decisions/021`): the `dependency` lens -- all six of
+  E12's lenses are now real (three reused, one adapted, two new). New
+  `schemas/dependency_model.schema.json` and `oah/design/dependency_gates.py`
+  (3 gates, including the extra-nine rule's real failure-rate arithmetic,
+  verified against a digit-count trap). `skills/s4-dependency/` reuses
+  phase 5's multi-artifact plumbing (`{design_fragment, dependency_model}`).
 - E12 phase 5 (`docs/decisions/020`): the `slo` lens and multi-artifact
   lens support. `oah/cli.py`'s `_design_all_lenses` now unpacks a lens
   whose `emits` has more than one entry into `(fragments, extra_artifacts)`

@@ -485,6 +485,7 @@ def cmd_design(args):
     from oah.design.lens import LensDesignError
     from oah.design.gates import run_gates, gates_passed
     from oah.design.slo_gates import run_slo_gates
+    from oah.design.dependency_gates import run_dependency_gates
     from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
     from oah.schemas import validate
 
@@ -522,13 +523,17 @@ def cmd_design(args):
     findings = []
     for fragment in fragments:
         findings.extend(run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map, target_kinds_by_lens), pack=pack))
-    # slo_spec (and any future non-design_fragment artifact) needs its own
-    # gate set -- run_gates() only ever understands a design_fragment's own
-    # flat signal-list shape (docs/decisions/020).
+    # slo_spec/dependency_model (and any future non-design_fragment
+    # artifact) each need their own gate set -- run_gates() only ever
+    # understands a design_fragment's own flat signal-list shape
+    # (docs/decisions/020, docs/decisions/021).
     for lens_name, artifacts in extra_artifacts.items():
         slo_spec = artifacts.get("slo_spec")
         if slo_spec is not None:
             findings.extend(run_slo_gates(slo_spec))
+        dependency_model = artifacts.get("dependency_model")
+        if dependency_model is not None:
+            findings.extend(run_dependency_gates(dependency_model))
     s5_passed = gates_passed(findings)
 
     persona_fns = {"cost_skeptic": run_cost_skeptic, "sre": run_sre, "security": run_security}

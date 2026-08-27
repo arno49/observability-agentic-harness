@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/dependency_model.schema.json",
+  "title": "Dependency model (S4 dependency lens's second artifact)",
+  "description": "docs/decisions/011: edge criticality, the extra-nine rule, and the error-budget split between a service's own failures and its dependencies' failures -- not expressible as design_fragment's flat signal list, the same reasoning that gave the slo lens its own slo_spec artifact (docs/decisions/020). Emitted alongside design_fragment (lenses[].emits).",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "surface_point_ids", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "surface_point_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Which surface_map.json points this model covers -- the http_client_call/queue_producer points a dependency edge is detected at."
+    },
+    "edges": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "dependency_kind", "criticality", "own_target",
+                     "required_dependency_target", "budget_split", "fallback_behavior"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "description": "e.g. 'payment-service', 'booking-events queue'" },
+          "dependency_kind": { "enum": ["http_client_call", "queue_producer"] },
+          "criticality": {
+            "enum": ["hard", "soft"],
+            "description": "hard: the calling request fails if this dependency fails (the extra-nine rule applies). soft: the calling request can still succeed in a degraded form (the rule does not apply -- a soft dependency's own reliability is a separate, independent concern)."
+          },
+          "own_target": {
+            "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1,
+            "description": "This service's own SLO target for the journey that calls this dependency -- cross-references an slo_spec's objective.target when one covers the same journey, restated here so this artifact is self-contained and gate-checkable without a cross-artifact lookup."
+          },
+          "required_dependency_target": {
+            "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1,
+            "description": "The minimum reliability this dependency itself must hit for a hard edge -- gate-verified (oah/design/dependency_gates.py) to be at least one nine better than own_target, i.e. its own failure rate (1 - target) at most one-tenth of own_target's failure rate. A dependency less reliable than its dependent leaves no real error-budget room for the dependent's own bugs."
+          },
+          "budget_split": {
+            "type": "object",
+            "required": ["own_failures_fraction", "dependency_failures_fraction"],
+            "additionalProperties": false,
+            "properties": {
+              "own_failures_fraction": { "type": "number", "minimum": 0, "maximum": 1 },
+              "dependency_failures_fraction": { "type": "number", "minimum": 0, "maximum": 1 }
+            },
+            "description": "How this journey's own error budget is partitioned between its own bugs and this dependency's failures -- the two fractions must sum to 1.0 (gate-verified), so the split is a real accounting, not two independent guesses."
+          },
+          "fallback_behavior": {
+            "type": "string",
+            "description": "What actually happens when this dependency fails -- retry, circuit-break, degrade, or (for a hard edge with no fallback) an explicit statement that failure propagates. Required for every edge, hard or soft."
+          }
+        }
+      }
+    }
+  }
+}

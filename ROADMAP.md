@@ -1035,13 +1035,31 @@ formula supplied for the short-window ratio itself — the ADR's own
 finding that no reviewed source derives it; the skill requires stated
 rationale instead of a copied constant.
 
-**Still fully unbuilt, named not implied**: the `dependency` lens (the
-last one — edge criticality, the extra-nine rule, budget split between
-own and dependency failures), four more S1 registries
-(`db_query`/`queue_*`/`scheduled_job`), `route_is_templated`/
-`cardinality_guard`/`critical_dependency_extra_nine` (deliberately left
-for `telemetry-cost`/`dependency` rather than batched into this phase),
-S11 signal provenance, and a real corpus fixture (DoD (a)).
+**E12 phase 6 landed** (2026-08-27, `docs/decisions/021`): the
+`dependency` lens — **all six of E12's lenses are now real**
+(three reused, one adapted, two new). `schemas/dependency_model.schema.json`
++ `oah/design/dependency_gates.py` (3 gates: `critical_dependency_extra_nine`
+— a **hard** edge's dependency failure rate must be at most one-tenth of
+its dependent's own failure rate, verified against a real digit-count trap
+in the tests where `0.999`→`0.9995` looks like "more nines" but is only a
+2x tighter bound, not the required 10x; budget-split-sums-to-one;
+every-edge-names-fallback). `skills/s4-dependency/` is the second skill
+(after `s4-slo`) whose output isn't a bare `design_fragment`
+(`{design_fragment, dependency_model}`) — reuses phase 5's own
+multi-artifact plumbing unchanged. `route_is_templated`/`cardinality_guard`
+deliberately NOT folded in despite sharing an ADR sentence with the
+extra-nine rule — named as a real, separate, still-unbuilt gap rather than
+scope-stretched onto this phase.
+
+DoD (b) ("the three reused lenses run with no edit to their SKILL.md
+files") is proven across the now-complete lens roster.
+
+**Still fully unbuilt, named not implied**: four more S1 registries
+(`db_query`/`queue_*`/`scheduled_job` — meaning `slo`/`dependency` today
+only reach `http_server_route`/`declarative_route`/`http_client_call`/
+`queue_producer` points, not `db_query`), `route_is_templated`/
+`cardinality_guard`, S11 signal provenance, and a real corpus fixture
+(DoD (a) — the actual S1→S9 proof against a real, not hand-built, repo).
 
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe

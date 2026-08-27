@@ -32,7 +32,8 @@
     { "lens": "ops", "skill": "s4-ops", "target_kinds": null, "emits": ["design_fragment"], "reused_from": "genai" },
     { "lens": "pii-governance", "skill": "s4-pii-governance", "target_kinds": ["http_server_route", "declarative_route", "db_query"], "emits": ["design_fragment"], "reused_from": "genai" },
     { "lens": "telemetry-cost", "skill": "s4-telemetry-cost", "target_kinds": null, "emits": ["design_fragment"] },
-    { "lens": "slo", "skill": "s4-slo", "target_kinds": ["http_server_route", "declarative_route"], "emits": ["design_fragment", "slo_spec"] }
+    { "lens": "slo", "skill": "s4-slo", "target_kinds": ["http_server_route", "declarative_route"], "emits": ["design_fragment", "slo_spec"] },
+    { "lens": "dependency", "skill": "s4-dependency", "target_kinds": ["http_client_call", "queue_producer"], "emits": ["design_fragment", "dependency_model"] }
   ],
 
   "semconv_namespaces": [

@@ -102,8 +102,12 @@ accounting, cross-cutting;
 — a real SLO indicator/objective/burn-rate-tier/error-budget-policy
 structure, the first lens whose output isn't a bare `design_fragment`
 (`{design_fragment, slo_spec}`, docs/decisions/020's own multi-artifact
-plumbing). `dependency` (the last, genuinely new lens), four more
-registries, and a real corpus fixture remain unbuilt. LLM
+plumbing), and a sixth, `dependency` — edge criticality and the real
+failure-rate arithmetic behind "a critical dependency needs one nine
+better reliability than its dependent"
+([021](docs/decisions/021-e12-dependency-lens.md)). **All six of E12's
+lenses are now real** — three reused, one adapted, two new. Four more S1
+registries and a real corpus fixture remain unbuilt. LLM
 observability was still the right place to start: it's where OTel semantic
 conventions and APM tooling are least mature, so it's where a gap-modeling harness
 added the most value first.

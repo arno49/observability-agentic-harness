@@ -155,6 +155,15 @@ def design_slo(points, repo_git_sha, context=None, model=None, _completion_fn=No
     return design_lens("s4-slo", points, repo_git_sha, context, model, _completion_fn)
 
 
+def design_dependency(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+    """The service pack's own last new lens (docs/decisions/011,
+    docs/decisions/021) -- no genai-pack equivalent. Like design_slo, its
+    return value is a wrapper {design_fragment, dependency_model}, not a
+    bare design_fragment -- edge criticality, the extra-nine rule, and a
+    budget split aren't expressible as a flat signal list."""
+    return design_lens("s4-dependency", points, repo_git_sha, context, model, _completion_fn)
+
+
 # Every design_* wrapper above design_slo is a pure pass-through -- NONE of them
 # filter by point kind internally. That used to be a per-function hardcoded
 # literal (design_ops filtered to kind == "llm_generation", etc.), found by
