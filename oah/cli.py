@@ -743,6 +743,8 @@ def cmd_readiness(args):
     from oah.design import lens as lens_module
     from oah.design.lens import LensDesignError
     from oah.design.gates import run_gates
+    from oah.design.slo_gates import run_slo_gates
+    from oah.design.dependency_gates import run_dependency_gates
     from oah.design.panel import run_cost_skeptic, run_sre, run_security, PanelReviewError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
     from oah.design.dto_generator import generate_dtos, DtoGenerationError
@@ -780,14 +782,26 @@ def cmd_readiness(args):
     if surface_map["points"]:
         lens_fns = _lens_fns_for_pack(pack, lens_module)
         target_kinds_by_lens = _target_kinds_for_pack(pack)
-        fragments, _extra_artifacts = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
-                                                           context=context, model=model)
+        fragments, extra_artifacts = _design_all_lenses(surface_map["points"], git_sha, lens_fns, LensDesignError, pack,
+                                                          context=context, model=model)
 
         if fragments:
             gate_findings = [
                 f.__dict__ for fragment in fragments
                 for f in run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map, target_kinds_by_lens), pack=pack)
             ]
+            # slo_spec/dependency_model each need their own gate set --
+            # run_gates() only understands a design_fragment's flat signal
+            # list (docs/decisions/020, docs/decisions/021). Without this,
+            # a readiness decision for the service pack would silently
+            # ignore every slo/dependency gate finding.
+            for lens_name, artifacts in extra_artifacts.items():
+                slo_spec = artifacts.get("slo_spec")
+                if slo_spec is not None:
+                    gate_findings.extend(f.__dict__ for f in run_slo_gates(slo_spec))
+                dependency_model = artifacts.get("dependency_model")
+                if dependency_model is not None:
+                    gate_findings.extend(f.__dict__ for f in run_dependency_gates(dependency_model))
 
             persona_fns = {"cost_skeptic": run_cost_skeptic, "sre": run_sre, "security": run_security}
             panel_verdicts = _run_all_personas(fragments, git_sha, persona_fns, PanelReviewError,

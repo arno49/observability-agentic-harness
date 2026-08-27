@@ -1054,12 +1054,30 @@ scope-stretched onto this phase.
 DoD (b) ("the three reused lenses run with no edit to their SKILL.md
 files") is proven across the now-complete lens roster.
 
+**E12 DoD (a) mechanism proof landed** (2026-08-27, `docs/decisions/022`):
+`tests/test_e12_service_pack_integration.py` drives the real S1→S9 chain
+(`cmd_readiness`, `--pack service --language typescript`) against a small,
+hand-authored Express+`fetch` fixture — real S1 detection (all three
+points, via the real Express registry), all six lenses (including both
+wrapper-shaped ones), S5's ordinary gates AND the new slo/dependency gate
+sets, S7's merge, S8's DTO generation, and S9's readiness assembly all
+composing correctly end to end, verified directly (printed and inspected,
+not just asserted green). Found and fixed a real, separate bug first:
+`cmd_readiness` discarded `_design_all_lenses`'s `extra_artifacts` return
+value entirely, so `slo_spec`/`dependency_model` gate findings never
+reached a readiness decision for the service pack — the exact "an
+artifact exists but nothing downstream checks it" gap this project's own
+discipline exists to catch, fixed the same way `cmd_design` already
+handled it. **Named honestly**: the fixture is hand-authored, not a
+vendored real-world repository — E7's own real-corpus territory remains
+the stronger, still-unattempted version of DoD (a).
+
 **Still fully unbuilt, named not implied**: four more S1 registries
 (`db_query`/`queue_*`/`scheduled_job` — meaning `slo`/`dependency` today
 only reach `http_server_route`/`declarative_route`/`http_client_call`/
 `queue_producer` points, not `db_query`), `route_is_templated`/
-`cardinality_guard`, S11 signal provenance, and a real corpus fixture
-(DoD (a) — the actual S1→S9 proof against a real, not hand-built, repo).
+`cardinality_guard`, S11 signal provenance, and a real vendored-corpus
+fixture (E7's own territory).
 
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe

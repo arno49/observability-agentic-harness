@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Added
+- E12 DoD (a) mechanism proof (`docs/decisions/022`):
+  `tests/test_e12_service_pack_integration.py` drives the real S1->S9
+  chain against a hand-authored Express+fetch TypeScript fixture through
+  the real service pack -- all six lenses, both gate sets, S7/S8/S9 all
+  composing end to end. Found and fixed a real bug first: `cmd_readiness`
+  discarded `_design_all_lenses`'s `extra_artifacts`, so slo/dependency
+  gate findings never reached the readiness decision for the service
+  pack. Named honestly as a mechanism proof, not the vendored-corpus
+  version of DoD (a), which remains E7's own territory.
 - E12 phase 6 (`docs/decisions/021`): the `dependency` lens -- all six of
   E12's lenses are now real (three reused, one adapted, two new). New
   `schemas/dependency_model.schema.json` and `oah/design/dependency_gates.py`
