@@ -956,11 +956,25 @@ declared. Filtering now happens once, pack-driven, in `oah/cli.py`'s
 enum gains `fixed_pass` for E11-TS's own hardcoded (not registry-driven)
 detector passes — declaring `declarative_route`/`http_client_call` under it
 closes `docs/decisions/014`'s own named gap (both already detected, owned
-by no pack until now). **Still fully unbuilt, named not implied**:
-`telemetry-cost`/`slo`/`dependency` (need genuine new skill content), five
-new S1 registries (`http_server_route`/`db_query`/`queue_*`/`scheduled_job`),
-the anti-redundancy gate, `docs/decisions/011`'s own new S5 gates, S11
-signal provenance, and a real corpus fixture (DoD (a)).
+by no pack until now).
+
+**E12 phase 2 landed** (2026-08-27, `docs/decisions/017`): the
+anti-redundancy gate, DoD (d). `oah/design/dto_generator.py`'s `generate_dtos`
+now refuses any model-proposed DTO whose every `expected_events[].required_attributes`
+entry is already in the loaded pack's own `auto_instrumentation_baseline` —
+its only effect would have been to re-emit, worse and later, what
+`opentelemetry-instrument` already provides for free. Refused DTOs are
+reported under a new, additive `refused_dtos` field
+(`schemas/implementation_dto.schema.json`), never a rollout step; a DTO
+that adds even one genuinely new attribute alongside a covered one
+survives whole (attribute-level pruning is a named, deliberately
+unattempted refinement). Zero behavior change for genai or any pack that
+declares no baseline, by construction.
+
+**Still fully unbuilt, named not implied**: `telemetry-cost`/`slo`/`dependency`
+(need genuine new skill content), five new S1 registries
+(`http_server_route`/`db_query`/`queue_*`/`scheduled_job`), `docs/decisions/011`'s
+own new S5 gates, S11 signal provenance, and a real corpus fixture (DoD (a)).
 
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe

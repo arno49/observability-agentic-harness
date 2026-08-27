@@ -24,6 +24,7 @@ from oah.cli import _design_all_lenses, _lens_fns_for_pack, _target_kinds_for_pa
 from oah.design import lens as lens_module
 from oah.design.lens import design_tracing, design_ops, design_pii_governance, LensDesignError
 from oah.design.gates import run_gates, gates_passed
+from oah.design.dto_generator import generate_dtos
 from oah.domains.loader import load_pack
 from oah.schemas import validate
 
@@ -157,3 +158,93 @@ def test_declarative_route_and_http_client_call_are_now_gap_model_visible():
     gap_model = build_gap_model(surface_map, inventory, pack=pack)
     dimensions = {g["dimension"] for g in gap_model["gaps"]}
     assert dimensions == {"routing", "dependency"}
+
+
+# --- E12 DoD (d): the anti-redundancy gate -------------------------------
+
+def _fake_completion(payload):
+    message = SimpleNamespace(content=json.dumps(payload))
+    return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+
+_SERVICE_EVENT_SCHEMA = {
+    "schema_version": "0.1.0", "repo_git_sha": "deadbeef",
+    "attributes": [
+        {"name": "http.route", "kind": "otel_semconv", "stability": "stable",
+         "deprecated_by": None, "sensitivity_tier": "internal",
+         "source_lenses": ["ops"], "surface_point_ids": ["sp-0001"]},
+        {"name": "oah.service.slo_indicator", "kind": "oah_extension", "stability": "development",
+         "deprecated_by": None, "sensitivity_tier": "internal",
+         "source_lenses": ["ops"], "surface_point_ids": ["sp-0001"]},
+    ],
+    "summary": {"attribute_count": 2, "otel_semconv_count": 1, "oah_extension_count": 1,
+                "lenses_included": ["ops"]},
+}
+_SERVICE_POINTS_FOR_DTO = [{"id": "sp-0001", "kind": "http_server_route", "file": "app.py", "line": 5}]
+_SERVICE_GAPS_FOR_DTO = [{"id": "gap-0001", "surface_point_ids": ["sp-0001"], "dimension": "routing",
+                          "status": "dark", "priority": "p1", "rationale": "x"}]
+
+
+def test_dto_that_only_reemits_a_baseline_covered_attribute_is_refused():
+    """E12 DoD (d): a DTO whose every expected_events[].required_attributes
+    entry is already in auto_instrumentation_baseline.covered_signals would
+    only re-emit, worse and later, what opentelemetry-instrument already
+    provides for free (docs/decisions/011 Finding 2) -- refused, not
+    generated."""
+    pack = load_pack("service")
+    payload = {
+        "schema_version": "0.1.0",
+        "dtos": [{
+            "id": "dto-0001", "gap_id": "gap-0001", "surface_point_ids": ["sp-0001"],
+            "change": {"type": "insert_span", "file": "app.py", "anchor": "handler"},
+            "expected_events": [{"event_type": "http_span", "required_attributes": ["http.route"]}],
+            "risk": "low",
+        }],
+    }
+    result = generate_dtos(
+        _SERVICE_EVENT_SCHEMA, _SERVICE_POINTS_FOR_DTO, _SERVICE_GAPS_FOR_DTO, "deadbeef",
+        _completion_fn=lambda **kw: _fake_completion(payload), pack=pack,
+    )
+    validate("implementation_dto", result)
+    assert result["dtos"] == []
+    assert result["refused_dtos"] == [
+        {"id": "dto-0001", "gap_id": "gap-0001", "reason": "redundant_with_auto_instrumentation"}
+    ]
+
+
+def test_dto_with_a_genuinely_new_attribute_is_kept_even_if_partly_baseline_covered():
+    """A DTO that emits http.route AND a real new oah.* attribute is not
+    redundant -- it does more than the baseline already provides, so it
+    must survive the gate."""
+    pack = load_pack("service")
+    payload = {
+        "schema_version": "0.1.0",
+        "dtos": [{
+            "id": "dto-0002", "gap_id": "gap-0001", "surface_point_ids": ["sp-0001"],
+            "change": {"type": "insert_span", "file": "app.py", "anchor": "handler"},
+            "expected_events": [{
+                "event_type": "http_span",
+                "required_attributes": ["http.route", "oah.service.slo_indicator"],
+            }],
+            "risk": "low",
+        }],
+    }
+    result = generate_dtos(
+        _SERVICE_EVENT_SCHEMA, _SERVICE_POINTS_FOR_DTO, _SERVICE_GAPS_FOR_DTO, "deadbeef",
+        _completion_fn=lambda **kw: _fake_completion(payload), pack=pack,
+    )
+    validate("implementation_dto", result)
+    assert len(result["dtos"]) == 1
+    assert result["dtos"][0]["id"] == "dto-0002"
+    assert "refused_dtos" not in result
+
+
+def test_genai_pack_never_refuses_it_declares_no_baseline():
+    """Zero behavior change for the pack that existed before this gate:
+    genai declares no auto_instrumentation_baseline at all, so
+    _baseline_covered_attributes returns an empty set and the redundancy
+    check never fires, by construction."""
+    from oah.design.dto_generator import _baseline_covered_attributes
+    genai_pack = load_pack("genai")
+    assert _baseline_covered_attributes(genai_pack) == set()
+    assert _baseline_covered_attributes(None) == set()

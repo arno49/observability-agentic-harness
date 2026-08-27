@@ -82,6 +82,34 @@ def _workflow_criticality_rank(workflow_name, context):
     return _UNKNOWN_WORKFLOW_RANK
 
 
+def _baseline_covered_attributes(pack):
+    """Flat set of attribute names schemas/domain_pack.schema.json's
+    auto_instrumentation_baseline.covered_signals declares -- what
+    zero-code auto-instrumentation already emits for this pack's domain.
+    A pack that declares no baseline (every pack before the service pack)
+    returns an empty set, so the redundancy check below never fires --
+    zero behavior change for genai."""
+    if pack is None:
+        return set()
+    baseline = pack.get("auto_instrumentation_baseline")
+    if not baseline:
+        return set()
+    return {s["attribute"] for s in baseline.get("covered_signals", [])}
+
+
+def _is_redundant_with_baseline(dto, baseline_attributes):
+    """True if this DTO's only effect would be to re-emit attribute(s)
+    zero-code auto-instrumentation already provides (docs/decisions/011
+    Finding 2; E12 DoD (d)) -- every required_attributes entry across
+    every one of this DTO's expected_events is already in the baseline.
+    A DTO with no required_attributes anywhere makes no attribute claim
+    to check, so it is never refused on that basis alone."""
+    all_attrs = [a for event in dto["expected_events"] for a in event.get("required_attributes", [])]
+    if not all_attrs:
+        return False
+    return all(a in baseline_attributes for a in all_attrs)
+
+
 def _assign_rollout_steps(dtos, gaps_by_id, context=None, pack=None):
     """Deterministic, real workflow-criticality-and-dimension ordering
     (architecture.md S7), not a gap-priority-only stand-in: groups by
@@ -176,6 +204,18 @@ def generate_dtos(event_schema, points, gaps, repo_git_sha, context=None, model=
                 raise DtoGenerationError(
                     f"DTO {dto['id']!r} references attribute(s) not in event_schema: {unknown}"
                 )
+
+    baseline_attributes = _baseline_covered_attributes(pack)
+    if baseline_attributes:
+        kept, refused = [], []
+        for dto in parsed["dtos"]:
+            (refused if _is_redundant_with_baseline(dto, baseline_attributes) else kept).append(dto)
+        parsed["dtos"] = kept
+        if refused:
+            parsed["refused_dtos"] = [
+                {"id": d["id"], "gap_id": d["gap_id"], "reason": "redundant_with_auto_instrumentation"}
+                for d in refused
+            ]
 
     gaps_by_id = {g["id"]: g for g in gaps}
     parsed["dtos"] = _assign_rollout_steps(parsed["dtos"], gaps_by_id, context=context, pack=pack)

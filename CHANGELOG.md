@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- E12 phase 2 (`docs/decisions/017`): the anti-redundancy gate (DoD (d)).
+  `generate_dtos` now refuses any model-proposed DTO whose every
+  `expected_events[].required_attributes` entry is already covered by the
+  loaded pack's `auto_instrumentation_baseline` -- reported under a new,
+  additive `refused_dtos` field, never given a rollout step. Zero behavior
+  change for genai (declares no baseline).
 - E12 phase 1 (`docs/decisions/016`): `domains/service/pack.json`, the
   service domain pack's skeleton -- seven point kinds and the three lenses
   (`tracing`, `ops`, `pii-governance`) reused unchanged from genai, verified

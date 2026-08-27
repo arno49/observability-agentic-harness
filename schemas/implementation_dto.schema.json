@@ -65,6 +65,19 @@
           }
         }
       }
+    },
+    "refused_dtos": {
+      "type": "array",
+      "description": "E12's anti-redundancy gate (docs/decisions/011 DoD (d)): a DTO the model proposed but S8 refused because every one of its expected_events[].required_attributes was already covered by the loaded pack's auto_instrumentation_baseline -- its only effect would have been to re-emit a signal zero-code auto-instrumentation already provides. Absent (not an empty array) for a pack that declares no baseline, e.g. genai.",
+      "items": {
+        "type": "object",
+        "required": ["id", "gap_id", "reason"],
+        "properties": {
+          "id": { "type": "string" },
+          "gap_id": { "type": "string" },
+          "reason": { "enum": ["redundant_with_auto_instrumentation"] }
+        }
+      }
     }
   }
 }
