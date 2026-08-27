@@ -738,6 +738,30 @@ user-visible change from this phase), a vendored TS corpus fixture + multi-langu
 `oah/eval_corpus.py` scoring (E7's territory), S2's TS vendor/manifest detection,
 and Java (untouched, per this epic's own priority order).
 
+**CLI language dispatch landed** (2026-08-26). `oah/cli.py`'s `_build_surface_map`
+is now the single dispatch point all six S1 call sites (`map`, `gaps`, `design`,
+`event-schema`, `dtos`, `readiness`) route through; a new `--language
+{python,typescript}` flag on each (default `python`, byte-identical default
+behavior — confirmed by the existing test suite passing unchanged, 477/477
+before this phase, 482/482 after with the 5 new dispatch tests added). Found and
+fixed a real gap surfaced by writing this, not by the adapters' own already-green
+test suites: `typescript_adapter.build_surface_map` returned a bare `surface_map`
+dict, while `python_adapter.build_surface_map` returns a `(surface_map,
+still_ambiguous)` 2-tuple — the E11-TS decision record's own claim ("same public
+API shape... so a future CLI dispatch layer can swap adapters without touching
+anything downstream") didn't actually hold at this one boundary. Fixed by making
+the TS adapter return the same 2-tuple shape (`still_ambiguous` always `[]`, since
+this module has no disambiguation counterpart), which is what let `_build_surface_map`
+be a single unbranching helper instead of dispatch code special-casing return
+shapes per language. `run_manifest.json`'s pre-existing `primary_language` field
+(already in the schema, previously hardcoded to the literal `"python"` at both
+`cmd_map` and `cmd_instrument`) now records whichever language actually ran.
+Verified end to end with a real subprocess `oah map --language typescript` run
+against a small `.ts` fixture (`tests/test_cli.py`), not just the dispatch
+helper's own unit tests. **Still not done**: a vendored TS corpus fixture +
+multi-language `oah/eval_corpus.py` scoring (E7's territory), S2's TS
+vendor/manifest detection, and Java.
+
 ### E13 — Domain pack extraction *(pipeline core; prerequisite for E12)*
 There is no object called a domain pack today: domain-ness is sixteen literals
 scattered across `oah/cli.py`, `oah/design/gates.py`, `oah/discovery/gap_model.py`,
@@ -882,12 +906,12 @@ prerequisite for *evidence* (the GenAI pack proven end to end) but no longer for
 first candidate consumer's stack contains no Python at all: a React/TypeScript
 SPA in front of a Java CMS. `oah/discovery/typescript_adapter.py` (E11-TS phase
 1, `docs/decisions/014`) is now real and corpus-verified at 100% recall — S1
-itself can map this stack's SDK calls, routes, and fetch calls. What's still
-missing before a service pack can actually be piloted against that stack: CLI
-language dispatch (`oah/cli.py` still hardcodes the Python adapter for every
-command), S2's TS vendor/manifest detection (next paragraph), and E12 itself
-(still blocked on Java/AEM being explicitly out of v1 regardless, per
-`docs/decisions/011`).
+itself can map this stack's SDK calls, routes, and fetch calls — and is now
+reachable through the real CLI via `--language typescript` (CLI language
+dispatch, landed above), not just as a module-level import. What's still
+missing before a service pack can actually be piloted against that stack: S2's
+TS vendor/manifest detection (next paragraph), and E12 itself (still blocked on
+Java/AEM being explicitly out of v1 regardless, per `docs/decisions/011`).
 
 **S2 needs its own small epic alongside.** The telemetry inventory scanner is
 Python-specific and recognises only stdlib logging, OpenTelemetry and

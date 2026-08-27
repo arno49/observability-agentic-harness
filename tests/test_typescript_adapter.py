@@ -278,16 +278,18 @@ async function run() {
   return client.messages.create({model: "x"});
 }
 """)
-    surface_map = build_surface_map(tmp_path, git_sha="deadbeef")
+    surface_map, still_ambiguous = build_surface_map(tmp_path, git_sha="deadbeef")
     validate("surface_map", surface_map)  # raises on failure
     assert surface_map["repo"]["primary_language"] == "typescript"
     assert surface_map["coverage_stats"]["points_total"] == 1
     assert surface_map["points"][0]["kind"] == "llm_generation"
+    assert still_ambiguous == []
 
 
 def test_build_surface_map_no_points_found(tmp_path):
     _write(tmp_path, "app.ts", "export const x = 1;\n")
-    surface_map = build_surface_map(tmp_path, git_sha="deadbeef")
+    surface_map, still_ambiguous = build_surface_map(tmp_path, git_sha="deadbeef")
     validate("surface_map", surface_map)
     assert surface_map["points"] == []
     assert surface_map["coverage_stats"]["points_total"] == 0
+    assert still_ambiguous == []

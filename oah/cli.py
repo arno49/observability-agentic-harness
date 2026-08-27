@@ -82,6 +82,25 @@ _AGENT_MODEL_HELP = (
     "LiteLLM-routed stage's --model."
 )
 
+_LANGUAGE_HELP = (
+    "Which S1 adapter to run against the target repo: python (default -- "
+    "oah.discovery.python_adapter) or typescript (oah.discovery.typescript_adapter, "
+    "E11-TS -- real, corpus-verified, but with no LLM-disambiguation counterpart yet, "
+    "so it never returns still-ambiguous candidates). Explicit, not auto-sniffed from "
+    "file extensions -- a mixed-language repo has no single right guess."
+)
+
+
+def _build_surface_map(target, git_sha, language, disambiguated=None):
+    """The one place that decides which S1 adapter runs. Both adapters
+    return the same (surface_map, still_ambiguous) 2-tuple shape, so every
+    call site downstream of this needs no per-language branching."""
+    if language == "typescript":
+        from oah.discovery.typescript_adapter import build_surface_map
+    else:
+        from oah.discovery.python_adapter import build_surface_map
+    return build_surface_map(target, git_sha=git_sha, disambiguated=disambiguated)
+
 # Replaces the old literal LENS_TO_POINT_KIND dict (docs/decisions/011):
 # {lens_name: target_kinds}, target_kinds a list of point kinds or None for
 # a cross-cutting lens (pack data's own null -- e.g. tracing,
@@ -219,9 +238,9 @@ def cmd_map(args):
     writes run_manifest.json, and checkpoints both s1_scan and
     s1_disambiguate independently in the state DB — a crash between the two
     resumes from whichever finished, not from zero."""
-    from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.disambiguate import disambiguate, DisambiguationError, missing_credentials
 
+    language = getattr(args, "language", "python")
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
@@ -235,7 +254,7 @@ def cmd_map(args):
     if rm.manifest_path(run_id).is_file():
         manifest = rm.load(run_id)
     else:
-        manifest = rm.new_manifest(run_id, args.target, git_sha, _now(), primary_language="python")
+        manifest = rm.new_manifest(run_id, args.target, git_sha, _now(), primary_language=language)
         rm.save(manifest)  # persisted immediately, before any work — a crash after this still resumes correctly
 
     with open_state_db(args.target) as db:
@@ -245,7 +264,7 @@ def cmd_map(args):
             print(f"s1 scan already checkpointed for {run_id} — resuming from stored result.", file=sys.stderr)
             scan_result = db.get_checkpoint_result(run_id, "s1", "scan")
         else:
-            surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
+            surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, language)
             scan_result = {"surface_map": surface_map, "still_ambiguous": still_ambiguous}
             db.checkpoint(run_id, "s1", "scan", scan_result, _now())
 
@@ -269,8 +288,8 @@ def cmd_map(args):
                         disambiguation_error = str(e)
 
         if disambiguated is not None:
-            surface_map, still_ambiguous = build_surface_map(
-                args.target, git_sha=git_sha, disambiguated=disambiguated
+            surface_map, still_ambiguous = _build_surface_map(
+                args.target, git_sha, language, disambiguated=disambiguated
             )
 
         # Found by adversarial review: this used to mark s1 "completed" in
@@ -337,7 +356,6 @@ def cmd_gaps(args):
     """S3: join S1 x S2, classify coverage, and — if --context points at a
     context.yaml from `oah interview` — weight priority by the interviewed
     workflow criticality for any point whose workflow_hint matches."""
-    from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
 
@@ -354,7 +372,7 @@ def cmd_gaps(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
+    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, getattr(args, "language", "python"))
     inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
     gaps = build_gap_model(surface_map, inventory, context=context)
 
@@ -390,7 +408,6 @@ def cmd_design(args):
     regardless of S5's own verdict, since both are real signal for that
     iteration, not a strict pipeline where S6 only runs after S5 is
     clean."""
-    from oah.discovery.python_adapter import build_surface_map
     from oah.design import lens as lens_module
     from oah.design.lens import LensDesignError
     from oah.design.gates import run_gates, gates_passed
@@ -411,7 +428,7 @@ def cmd_design(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
+    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, getattr(args, "language", "python"))
     if not surface_map["points"]:
         print("No surface points found (or all still ambiguous) — nothing to design for.", file=sys.stderr)
         return 0
@@ -480,7 +497,6 @@ def cmd_event_schema(args):
     to produce a fragment (e.g. missing credentials) is a warning, not
     fatal -- the schema is built from
     whichever lenses did produce one."""
-    from oah.discovery.python_adapter import build_surface_map
     from oah.design import lens as lens_module
     from oah.design.lens import LensDesignError
     from oah.design.event_schema import build_event_schema, EventSchemaConflictError
@@ -500,7 +516,7 @@ def cmd_event_schema(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
+    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, getattr(args, "language", "python"))
     if not surface_map["points"]:
         print("No surface points found — nothing to build an event schema from.", file=sys.stderr)
         return 0
@@ -541,7 +557,6 @@ def cmd_dtos(args):
     (workflow criticality from --context, then dimension tiering, then gap
     priority) when --context is given, falling back to gap-priority-only
     ordering otherwise -- never by the model."""
-    from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
     from oah.design import lens as lens_module
@@ -564,7 +579,7 @@ def cmd_dtos(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
+    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, getattr(args, "language", "python"))
     if not surface_map["points"]:
         print("No surface points found — nothing to generate DTOs for.", file=sys.stderr)
         return 0
@@ -628,7 +643,6 @@ def cmd_readiness(args):
     unlike every other stage in this chain). Runs the full S1-S8 chain
     built so far and assembles what's mechanically derivable; everything
     else is stated as genuinely unknown, not fabricated."""
-    from oah.discovery.python_adapter import build_surface_map
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
     from oah.design import lens as lens_module
@@ -655,7 +669,7 @@ def cmd_readiness(args):
             return 1
 
     pack = load_pack("genai")
-    surface_map, still_ambiguous = build_surface_map(args.target, git_sha=git_sha)
+    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, getattr(args, "language", "python"))
     inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
     gap_model = build_gap_model(surface_map, inventory, context=context, pack=pack)
 
@@ -818,7 +832,8 @@ def cmd_instrument(args):
     if rm.manifest_path(run_id).is_file():
         manifest = rm.load(run_id)
     else:
-        manifest = rm.new_manifest(run_id, args.target, git_sha, _now(), primary_language="python")
+        manifest = rm.new_manifest(run_id, args.target, git_sha, _now(),
+                                    primary_language=getattr(args, "language", "python"))
         rm.save(manifest)
 
     with open_state_db(args.target) as db:
@@ -1166,6 +1181,7 @@ def build_parser():
     p_map.add_argument("--no-disambiguate", action="store_true",
                         help="Skip the LLM disambiguation pass; leave ambiguous candidates unresolved")
     p_map.add_argument("--model", default=None, help=_MODEL_HELP)
+    p_map.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
     p_map.set_defaults(func=cmd_map)
 
     p_inventory = sub.add_parser("inventory", help="S2 existing telemetry inventory")
@@ -1178,6 +1194,7 @@ def build_parser():
     p_gaps.add_argument("-o", "--output", default=None, help="Write gap_model.json here instead of stdout")
     p_gaps.add_argument("--context", default=None,
                          help="Path to a context.yaml from `oah interview` — weights priority by workflow criticality")
+    p_gaps.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
     p_gaps.set_defaults(func=cmd_gaps)
 
     p_interview = sub.add_parser("interview", help="S3 owner interview (interactive) -> context.yaml")
@@ -1191,6 +1208,7 @@ def build_parser():
     p_design.add_argument("-o", "--output", default=None, help="Write the design fragment + gate findings here instead of stdout")
     p_design.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_design.add_argument("--model", default=None, help=_MODEL_HELP)
+    p_design.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
     p_design.set_defaults(func=cmd_design)
 
     p_event_schema = sub.add_parser("event-schema", help="S7 (partial): deterministic event_schema.json merge")
@@ -1198,6 +1216,7 @@ def build_parser():
     p_event_schema.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_event_schema.add_argument("-o", "--output", default=None, help="Write event_schema.json here instead of stdout")
     p_event_schema.add_argument("--model", default=None, help=_MODEL_HELP)
+    p_event_schema.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
     p_event_schema.set_defaults(func=cmd_event_schema)
 
     p_dtos = sub.add_parser("dtos", help="S8 (partial): implementation_dto.json generation")
@@ -1207,6 +1226,7 @@ def build_parser():
                               "workflow-criticality rollout_step ordering (architecture.md S7)")
     p_dtos.add_argument("-o", "--output", default=None, help="Write implementation_dto.json here instead of stdout")
     p_dtos.add_argument("--model", default=None, help=_MODEL_HELP)
+    p_dtos.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
     p_dtos.set_defaults(func=cmd_dtos)
 
     p_readiness = sub.add_parser("readiness", help="S9: production readiness report (deterministic assembly)")
@@ -1214,6 +1234,7 @@ def build_parser():
     p_readiness.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_readiness.add_argument("-o", "--output", default=None, help="Write readiness_report.json here instead of stdout")
     p_readiness.add_argument("--model", default=None, help=_MODEL_HELP)
+    p_readiness.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
     p_readiness.set_defaults(func=cmd_readiness)
 
     p_instrument = sub.add_parser(
@@ -1233,6 +1254,10 @@ def build_parser():
                                     "--mode fix, whose recommendation.decision must be 'ready' or "
                                     "'ready_with_conditions' (architecture.md)")
     p_instrument.add_argument("--model", default=None, help=_AGENT_MODEL_HELP)
+    p_instrument.add_argument("--language", choices=["python", "typescript"], default="python",
+                               help="Recorded on a freshly-created run manifest only (S10 itself runs no S1 "
+                                    "adapter -- it applies an already-generated --dtos file). Matters only when "
+                                    "--run-id doesn't resume an existing `oah map` manifest.")
     p_instrument.set_defaults(func=cmd_instrument)
 
     p_validate = sub.add_parser(

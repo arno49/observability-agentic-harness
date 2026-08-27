@@ -505,14 +505,16 @@ def detect_repo(repo_root):
 
 def build_surface_map(repo_root, git_sha, disambiguated=None, harness_version=_OAH_VERSION):
     """Assemble the document conforming to schemas/surface_map.schema.json.
-    Same shape as python_adapter.py's own build_surface_map. `disambiguated`
-    is accepted for interface parity but unused today -- this module has no
+    Same shape as python_adapter.py's own build_surface_map, including the
+    (surface_map, still_ambiguous) 2-tuple return -- a CLI dispatch layer
+    can unpack either adapter's result identically. `disambiguated` is
+    accepted for interface parity but unused today -- this module has no
     LLM-disambiguation counterpart wired up yet (E11-TS's own stated scope
-    boundary); every candidate here is either resolved or silently absent,
-    never emitted as an ambiguous candidate for a disambiguation pass that
-    doesn't exist for this language yet."""
+    boundary); `still_ambiguous` is therefore always `[]` here, never a
+    real pending-candidate list, since this module's own detect_repo never
+    produces ambiguous candidates in the first place."""
     resolved_points = detect_repo(repo_root)
-    return {
+    surface_map = {
         "schema_version": "0.1.0",
         "repo": {"path": str(repo_root), "git_sha": git_sha, "primary_language": "typescript"},
         "generated_by": {"harness_version": harness_version, "skill_versions": {}},
@@ -523,3 +525,4 @@ def build_surface_map(repo_root, git_sha, disambiguated=None, harness_version=_O
             "points_llm_disambiguated": 0,
         },
     }
+    return surface_map, []

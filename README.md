@@ -400,12 +400,14 @@ ROADMAP.md     milestones, epics, spikes
 ## Requirements (planned)
 
 - Python ≥ 3.10 (S1–S9, implemented today)
-- **Target-repo language**: Python is the only language wired into the CLI
-  today (every `oah` command's S1 detection runs the Python adapter). A real,
-  tree-sitter-based TypeScript/TSX adapter exists at module level
-  (`oah/discovery/typescript_adapter.py`, corpus-verified at 100% recall —
-  `docs/decisions/014`) but is not yet reachable from the CLI; Java is
-  unstarted. See ROADMAP.md's E11 entry for status.
+- **Target-repo language**: `--language {python,typescript}` on `map`, `gaps`,
+  `design`, `event-schema`, `dtos`, `readiness` picks the S1 adapter; default
+  is `python` (unchanged CLI behavior). TypeScript/TSX runs a real,
+  tree-sitter-based adapter (`oah/discovery/typescript_adapter.py`,
+  corpus-verified at 100% recall — `docs/decisions/014`) with no
+  LLM-disambiguation counterpart yet, so a TS run never has candidates left
+  for `map`'s disambiguation pass to resolve. Java is unstarted. See
+  ROADMAP.md's E11 entry for status.
 - `pip install oah` alone is enough for `doctor`, `estimate`, `map --no-disambiguate`,
   `inventory`, `gaps`, and `interview` — fully deterministic, no LLM credential.
 - `pip install "oah[llm]"` plus an `ANTHROPIC_API_KEY` (or another provider

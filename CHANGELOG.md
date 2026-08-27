@@ -47,6 +47,14 @@
   into `oah/cli.py`'s command dispatch or vendored into `corpus/` -- named
   explicitly as follow-up work, zero user-visible CLI change from this
   phase.
+- CLI language dispatch: `--language {python,typescript}` on `map`, `gaps`,
+  `design`, `event-schema`, `dtos`, `readiness` (default `python`, unchanged
+  behavior). Fixed a real interface gap the dispatch wiring surfaced:
+  `typescript_adapter.build_surface_map` returned a bare dict instead of
+  `python_adapter`'s own `(surface_map, still_ambiguous)` 2-tuple, so the
+  E11-TS decision record's "swap adapters without touching downstream" claim
+  didn't actually hold until this fix. `run_manifest.json`'s pre-existing
+  `primary_language` field is no longer hardcoded to `"python"`.
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a

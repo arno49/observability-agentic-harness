@@ -63,3 +63,52 @@ def test_map_rejects_non_git_target(tmp_path):
     result = _run(["map", str(target)], cwd=tmp_path)
     assert result.returncode == 1
     assert "not a git repository" in result.stderr
+
+
+def test_map_default_language_is_python(tmp_path):
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text("import anthropic\nc = anthropic.Anthropic()\n")
+    _init_git_repo(target)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    result = _run(["map", str(target), "--run-id", "py-default-run"], cwd=workdir)
+    assert result.returncode == 0, result.stderr
+
+    manifest = json.loads((workdir / ".oah" / "runs" / "py-default-run.json").read_text())
+    assert manifest["target"]["primary_language"] == "python"
+
+
+def test_map_language_typescript_dispatches_to_ts_adapter(tmp_path):
+    """E11-TS's own CLI dispatch: --language typescript must route `oah map`
+    through oah/discovery/typescript_adapter.py, not silently no-op or fall
+    back to the Python adapter (which would find zero points in a .ts-only
+    target and mask a wiring bug as an empty-but-successful result)."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.ts").write_text(
+        'import Anthropic from "@anthropic-ai/sdk";\n'
+        "const client = new Anthropic();\n"
+        'client.messages.create({model: "x"});\n'
+    )
+    _init_git_repo(target)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    out = workdir / "sm.json"
+    result = _run(["map", str(target), "--language", "typescript",
+                   "--run-id", "ts-run", "-o", str(out)], cwd=workdir)
+    assert result.returncode == 0, result.stderr
+
+    surface_map = json.loads(out.read_text())
+    assert surface_map["repo"]["primary_language"] == "typescript"
+    assert surface_map["coverage_stats"]["points_total"] == 1
+    assert surface_map["points"][0]["kind"] == "llm_generation"
+
+    manifest = json.loads((workdir / ".oah" / "runs" / "ts-run.json").read_text())
+    assert manifest["target"]["primary_language"] == "typescript"
+    # TS has no LLM-disambiguation counterpart yet (E11-TS's own stated scope
+    # boundary) -- s1 must still reach "completed" since there's nothing left
+    # ambiguous for it to wait on.
+    assert manifest["stages_completed"] == ["s1"]
