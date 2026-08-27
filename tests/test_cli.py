@@ -194,3 +194,42 @@ def test_map_default_pack_genai_never_detects_express_routes(tmp_path):
     assert result.returncode == 0, result.stderr
     surface_map = json.loads(result.stdout)
     assert surface_map["coverage_stats"]["points_total"] == 0
+
+
+def test_inventory_language_typescript_dispatches_to_ts_scanner(tmp_path):
+    """docs/decisions/033's own CLI dispatch: --language typescript must
+    route `oah inventory` through oah/discovery/ts_telemetry_scanner.py,
+    not silently no-op or fall back to the Python scanner (which would
+    find zero files in a .ts-only target and mask a wiring bug as an
+    empty-but-successful result -- exactly telemetry_scanner.py's own
+    pre-existing behavior before this dispatch existed)."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.ts").write_text('console.error("boom");\n')
+    _init_git_repo(target)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    result = _run(["inventory", str(target), "--language", "typescript"], cwd=workdir)
+    assert result.returncode == 0, result.stderr
+
+    inventory = json.loads(result.stdout)
+    assert inventory["summary"]["files_scanned"] == 1
+    assert inventory["summary"]["logger_call_sites"] == 1
+    assert inventory["loggers"][0]["logger_kind"] == "print"
+
+
+def test_inventory_default_language_is_python_unchanged(tmp_path):
+    """Zero behavior change for the default -- a .ts-only target scanned
+    with no --language finds nothing, same as before docs/decisions/033."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.ts").write_text('console.error("boom");\n')
+    _init_git_repo(target)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    result = _run(["inventory", str(target)], cwd=workdir)
+    assert result.returncode == 0, result.stderr
+    inventory = json.loads(result.stdout)
+    assert inventory["summary"]["files_scanned"] == 0

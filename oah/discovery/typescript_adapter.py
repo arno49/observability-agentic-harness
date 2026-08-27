@@ -134,7 +134,6 @@ resolved file's own re-exports (`export { x } from './y'`) are not
 followed to a FURTHER file. A repo with no cross-file-resolvable case
 produces byte-identical output to the single-pass version this replaced.
 """
-import json
 import re
 from collections import namedtuple
 from pathlib import Path
@@ -144,6 +143,12 @@ from tree_sitter import Language, Parser
 
 from oah import __version__ as _OAH_VERSION
 from oah.discovery.registry import build_registry_index, chain_hop_index, structural_pattern_registries
+from oah.discovery.ts_module_resolution import (
+    collect_export_map as _collect_export_map,
+    load_path_aliases as _load_path_aliases,
+    resolve_module_specifier as _resolve_module_specifier,
+    substitute_alias as _substitute_alias,
+)
 from oah.domains.loader import load_pack
 
 _LANGUAGE = Language(tstypescript.language_tsx())  # a superset grammar of plain TS -- safe for .ts files too
@@ -405,116 +410,10 @@ def _string_content(string_node, src):
 # of re-exports (`export { x } from './y'`) through a further file -- a
 # real, separate gap, not silently folded in.
 
-def _collect_export_map(root, src, known_names):
-    """Scans root's OWN top-level children (ES module exports are never
-    valid anywhere else) for the three real export shapes that reference an
-    already-resolved local name: `export default <identifier>`,
-    `export const <name> = ...` (the declaration itself already put <name>
-    in known_names via _walk's ordinary per-child recursion -- export_statement
-    is not special-cased there, so nothing extra is needed to populate it),
-    and `export { <name> [as <alias>] }`. Returns {exported_name: resolved_module}
-    for only the names that actually resolved -- an export of an unresolved
-    name is simply absent, not an error. `export default function/class ...`,
-    `export function/class X`, and re-export-from (`export { x } from './y'`,
-    `export * from './y'`) are real, named gaps: none reference a plain
-    identifier already in known_names the way the three handled shapes do."""
-    export_map = {}
-    for child in root.children:
-        if child.type != "export_statement":
-            continue
-        value = child.child_by_field_name("value")
-        if (value is not None and value.type == "identifier"
-                and any(c.type == "default" for c in child.children)):
-            name = _text(value, src)
-            if name in known_names:
-                export_map["default"] = known_names[name]
-            continue
-        decl = next((c for c in child.children if c.type in ("lexical_declaration", "variable_declaration")), None)
-        if decl is not None:
-            for d in decl.named_children:
-                if d.type != "variable_declarator":
-                    continue
-                name_node = d.child_by_field_name("name")
-                if name_node is not None and name_node.type == "identifier":
-                    name = _text(name_node, src)
-                    if name in known_names:
-                        export_map[name] = known_names[name]
-            continue
-        clause = next((c for c in child.children if c.type == "export_clause"), None)
-        if clause is None:
-            continue
-        for spec in clause.named_children:
-            if spec.type != "export_specifier":
-                continue
-            name_node = spec.child_by_field_name("name")
-            alias_node = spec.child_by_field_name("alias")
-            if name_node is None:
-                continue
-            local = _text(name_node, src)
-            exported_as = _text(alias_node, src) if alias_node is not None else local
-            if local in known_names:
-                export_map[exported_as] = known_names[local]
-    return export_map
-
-
-def _load_path_aliases(repo_root):
-    """Reads tsconfig.json's compilerOptions.baseUrl/paths for cross-file
-    import-specifier resolution. Best-effort: a missing file, JSON this
-    stdlib parser can't handle (tsconfig.json commonly permits // comments
-    and trailing commas real TS tooling accepts but `json.loads` does not),
-    or an absent compilerOptions all resolve to "no aliases" -- alias-based
-    imports (e.g. "@/x") then simply never cross-file-resolve; relative
-    imports are unaffected either way. Does not follow a tsconfig "extends"
-    chain -- a real, separate gap, named here rather than guessed at."""
-    tsconfig_path = Path(repo_root) / "tsconfig.json"
-    if not tsconfig_path.is_file():
-        return ".", {}
-    try:
-        data = json.loads(tsconfig_path.read_text())
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return ".", {}
-    opts = data.get("compilerOptions") or {}
-    return opts.get("baseUrl") or ".", opts.get("paths") or {}
-
-
-def _substitute_alias(spec, pattern, target):
-    """tsconfig `paths` entries are wildcard patterns (`"@/*": ["src/*"]`),
-    not exact strings, per TS's own documented path-mapping syntax."""
-    if pattern.endswith("*"):
-        prefix = pattern[:-1]
-        if not spec.startswith(prefix) or not target.endswith("*"):
-            return None
-        return target[:-1] + spec[len(prefix):]
-    return target if spec == pattern else None
-
-
-def _resolve_module_specifier(spec, importing_file, repo_root, base_url, paths):
-    """Resolves an import's module specifier to an actual .ts/.tsx file on
-    disk. Relative specifiers (`./x`, `../a/b`) resolve against the
-    importing file's own directory; anything else is checked against
-    tsconfig's path aliases. A bare package specifier (no leading "." and
-    no matching alias, e.g. "axios", "react") returns None -- external
-    packages are already handled by the SDK registries directly, never by
-    this mechanism."""
-    if spec.startswith("."):
-        candidate = importing_file.parent / spec
-    else:
-        resolved_rel = None
-        for pattern, targets in (paths or {}).items():
-            for target in targets or []:
-                resolved_rel = _substitute_alias(spec, pattern, target)
-                if resolved_rel is not None:
-                    break
-            if resolved_rel is not None:
-                break
-        if resolved_rel is None:
-            return None
-        candidate = Path(repo_root) / base_url / resolved_rel
-    for suffix in (".ts", ".tsx", "/index.ts", "/index.tsx"):
-        p = Path(str(candidate) + suffix)
-        if p.is_file():
-            return p.resolve()
-    return None
+# collect_export_map/load_path_aliases/substitute_alias/resolve_module_specifier
+# moved to ts_module_resolution.py (docs/decisions/033) once S2's own
+# ts_telemetry_scanner.py needed the identical mechanism -- imported here
+# under their original names so every call site below is unchanged.
 
 
 # React Router (and most JS routers) encode a path PARAMETER inside the

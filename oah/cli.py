@@ -83,13 +83,16 @@ _AGENT_MODEL_HELP = (
 )
 
 _LANGUAGE_HELP = (
-    "Which S1 adapter to run against the target repo: python (default -- "
-    "oah.discovery.python_adapter), typescript (oah.discovery.typescript_adapter, "
-    "E11-TS), or java (oah.discovery.java_adapter, E11-Java, docs/decisions/029). "
-    "typescript and java are both real but neither has an LLM-disambiguation "
-    "counterpart yet, so neither ever returns still-ambiguous candidates. Explicit, "
-    "not auto-sniffed from file extensions -- a mixed-language repo has no single "
-    "right guess."
+    "Which S1 adapter (and, on any command that also builds S2's telemetry "
+    "inventory, which S2 scanner, docs/decisions/033) to run against the target "
+    "repo: python (default -- oah.discovery.python_adapter + telemetry_scanner), "
+    "typescript (oah.discovery.typescript_adapter, E11-TS, + ts_telemetry_scanner, "
+    "docs/decisions/033), or java (oah.discovery.java_adapter, E11-Java, "
+    "docs/decisions/029 -- S2 has no Java scanner yet, a named gap, falls back to "
+    "the Python one, which finds nothing on a Java repo). typescript and java S1 "
+    "are both real but neither has an LLM-disambiguation counterpart yet, so "
+    "neither ever returns still-ambiguous candidates. Explicit, not auto-sniffed "
+    "from file extensions -- a mixed-language repo has no single right guess."
 )
 
 _PACK_HELP = (
@@ -123,6 +126,23 @@ def _build_surface_map(target, git_sha, language, pack=None, disambiguated=None)
     else:
         from oah.discovery.python_adapter import build_surface_map
         return build_surface_map(target, git_sha=git_sha, disambiguated=disambiguated)
+
+
+def _build_telemetry_inventory(target, git_sha, language):
+    """The one place that decides which S2 scanner runs -- mirrors
+    _build_surface_map's own dispatch shape exactly (docs/decisions/033).
+    `oah/discovery/telemetry_scanner.py`'s Python scanner stays the
+    default for every existing caller (E13's byte-identical guarantee);
+    `typescript` dispatches to the new `oah/discovery/ts_telemetry_scanner.py`
+    (docs/decisions/033). `java` has no S2 scanner yet -- a real, named gap,
+    not silently guessed at -- and falls back to the Python scanner, which
+    finds nothing on a Java repo (no `*.py` files), the same honest-empty
+    result every caller already got before this dispatch existed."""
+    if language == "typescript":
+        from oah.discovery.ts_telemetry_scanner import build_telemetry_inventory
+        return build_telemetry_inventory(target, git_sha=git_sha)
+    from oah.discovery.telemetry_scanner import build_telemetry_inventory
+    return build_telemetry_inventory(target, git_sha=git_sha)
 
 
 def _load_pack_for_args(args):
@@ -411,14 +431,12 @@ def cmd_map(args):
 
 def cmd_inventory(args):
     """S2 deterministic pass: existing telemetry inventory."""
-    from oah.discovery.telemetry_scanner import build_telemetry_inventory
-
     git_sha = _git_sha(args.target)
     if git_sha is None:
         print(f"error: {args.target} is not a git repository (or git is unavailable)", file=sys.stderr)
         return 1
 
-    inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
+    inventory = _build_telemetry_inventory(args.target, git_sha, getattr(args, "language", "python"))
 
     if args.output:
         Path(args.output).write_text(json.dumps(inventory, indent=2) + "\n")
@@ -432,7 +450,6 @@ def cmd_gaps(args):
     """S3: join S1 x S2, classify coverage, and — if --context points at a
     context.yaml from `oah interview` — weight priority by the interviewed
     workflow criticality for any point whose workflow_hint matches."""
-    from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
 
     pack = _load_pack_for_args(args)
@@ -449,10 +466,9 @@ def cmd_gaps(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    surface_map, still_ambiguous = _build_surface_map(
-        args.target, git_sha, getattr(args, "language", "python"), pack=pack
-    )
-    inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
+    language = getattr(args, "language", "python")
+    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, language, pack=pack)
+    inventory = _build_telemetry_inventory(args.target, git_sha, language)
     gaps = build_gap_model(surface_map, inventory, context=context, pack=pack)
 
     if args.output:
@@ -657,7 +673,6 @@ def cmd_dtos(args):
     (workflow criticality from --context, then dimension tiering, then gap
     priority) when --context is given, falling back to gap-priority-only
     ordering otherwise -- never by the model."""
-    from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
     from oah.design import lens as lens_module
     from oah.design.lens import LensDesignError
@@ -679,9 +694,8 @@ def cmd_dtos(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    surface_map, still_ambiguous = _build_surface_map(
-        args.target, git_sha, getattr(args, "language", "python"), pack=pack
-    )
+    language = getattr(args, "language", "python")
+    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, language, pack=pack)
     if not surface_map["points"]:
         print("No surface points found — nothing to generate DTOs for.", file=sys.stderr)
         return 0
@@ -701,7 +715,7 @@ def cmd_dtos(args):
         print(f"error: {e}", file=sys.stderr)
         return 1
 
-    inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
+    inventory = _build_telemetry_inventory(args.target, git_sha, language)
     gap_model = build_gap_model(surface_map, inventory, context=context, pack=pack)
 
     covered_point_ids = {pid for a in event_schema["attributes"] for pid in a["surface_point_ids"]}
@@ -744,7 +758,6 @@ def cmd_readiness(args):
     unlike every other stage in this chain). Runs the full S1-S8 chain
     built so far and assembles what's mechanically derivable; everything
     else is stated as genuinely unknown, not fabricated."""
-    from oah.discovery.telemetry_scanner import build_telemetry_inventory
     from oah.discovery.gap_model import build_gap_model
     from oah.design import lens as lens_module
     from oah.design.lens import LensDesignError
@@ -771,10 +784,9 @@ def cmd_readiness(args):
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    surface_map, still_ambiguous = _build_surface_map(
-        args.target, git_sha, getattr(args, "language", "python"), pack=pack
-    )
-    inventory = build_telemetry_inventory(args.target, git_sha=git_sha)
+    language = getattr(args, "language", "python")
+    surface_map, still_ambiguous = _build_surface_map(args.target, git_sha, language, pack=pack)
+    inventory = _build_telemetry_inventory(args.target, git_sha, language)
     gap_model = build_gap_model(surface_map, inventory, context=context, pack=pack)
 
     gate_findings = []
@@ -1316,6 +1328,7 @@ def build_parser():
     p_inventory = sub.add_parser("inventory", help="S2 existing telemetry inventory")
     p_inventory.add_argument("target", help="Path to the target repository")
     p_inventory.add_argument("-o", "--output", default=None, help="Write telemetry_inventory.json here instead of stdout")
+    p_inventory.add_argument("--language", choices=["python", "typescript", "java"], default="python", help=_LANGUAGE_HELP)
     p_inventory.set_defaults(func=cmd_inventory)
 
     p_gaps = sub.add_parser("gaps", help="S3: join S1 x S2, classify coverage, weight priority by --context")

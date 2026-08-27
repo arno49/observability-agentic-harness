@@ -1312,6 +1312,39 @@ further new code. Single-hop only (a re-export chain through a further
 file is a named, tested gap), and verified end to end on the real repo:
 **0 → 294 real call sites detected.**
 
+**S2 gains a real TypeScript telemetry inventory** (2026-08-27,
+`docs/decisions/033`): assessing E12 phase 10 end to end (`oah map` → `oah
+inventory` → `oah gaps` against the same real `mf-analyzer-web` repo)
+found `oah inventory` reporting **zero findings** on a real ~450-file
+app — `telemetry_scanner.py`'s `build_telemetry_inventory` only ever
+scanned `*.py` files, with no `--language` flag at all, so every
+TypeScript `oah gaps` run was joining real S1 points against an S2
+inventory that had structurally never looked at the target's own source.
+The repo's own real shape: a hand-rolled `class Logger {
+error()/warn()/info()/debug() {...} }` singleton, exported once,
+imported into ~140 consumer files with ~790 real call sites — the
+identical shared-singleton-module pattern phase 10's axios fix needed,
+now needed a second time for logging. Rather than re-solve it: the
+cross-file module-graph mechanism (`_collect_export_map`/
+`_load_path_aliases`/`_resolve_module_specifier`) was extracted out of
+`typescript_adapter.py` into a new shared `oah/discovery/
+ts_module_resolution.py` (detector-agnostic by construction, zero S1
+behavior change) and reused by a new `oah/discovery/
+ts_telemetry_scanner.py` — `console.*` calls, a `winston`/`pino`/
+locally-defined-logger-class heuristic (two-or-more logger-shaped method
+names required, matching `manifest_scanner.py`'s existing vendor
+vocabulary rather than inventing new identifiers), `@opentelemetry/*`
+imports, and `try`/`catch` classification (swallowed/logged/reraised, no
+`exception_type` — TS catch bindings carry no real static type info,
+unlike Python's `except SomeError as e`). `oah/cli.py` gained a
+`_build_telemetry_inventory` dispatcher mirroring `_build_surface_map`'s
+own shape, wired into all four S2-consuming commands; `oah inventory`
+itself gained the `--language` flag it never had. Verified end to end on
+the same real repo: 0 → 440 files scanned, 0 → 759 logger call sites (709
+cross-file-resolved), 0 → 688 error_handling entries, and `oah gaps` moved
+from 100% `dark` to 265 dark / 110 partial. Java still has no S2 scanner —
+a real, named gap, not silently claimed.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

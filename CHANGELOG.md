@@ -3,6 +3,22 @@
 ## [Unreleased]
 
 ### Added
+- S2 (existing telemetry inventory) now supports TypeScript
+  (`docs/decisions/033`). Found by running the full pipeline against a real
+  target repo: `oah inventory` reported 0 findings on a real ~450-file app
+  since `telemetry_scanner.py` only ever scanned `*.py` files. New
+  `oah/discovery/ts_telemetry_scanner.py` detects `console.*` calls, a
+  `winston`/`pino`/locally-defined-logger-class heuristic, `@opentelemetry/*`
+  imports, and `try`/`catch` classification (swallowed/logged/reraised).
+  Reuses a new shared `oah/discovery/ts_module_resolution.py` (extracted
+  from `typescript_adapter.py`'s own cross-file mechanism, docs/decisions/032)
+  to resolve a logger singleton exported from one file and imported into
+  ~140 consumer files -- the same pattern that forced the axios cross-file
+  fix, needed a second time. `oah inventory` gained a `--language` flag;
+  `oah/cli.py` gained a `_build_telemetry_inventory` dispatcher wired into
+  `inventory`/`gaps`/`dtos`/`readiness`. Verified end to end: 0 -> 759
+  logger call sites, 0 -> 688 error_handling entries, and `oah gaps` moved
+  from 100% dark to 265 dark / 110 partial on the motivating repo.
 - E12 phase 10: `axios` registry (`http_client_call`) and the TypeScript
   adapter's first cross-file known-name propagation mechanism
   (`docs/decisions/032`). Found by running `oah map` against a real EPAM

@@ -480,7 +480,17 @@ ROADMAP.md     milestones, epics, spikes
   matching declared dependencies against a verified vendor table
   (OpenTelemetry JS, Dynatrace, New Relic, Splunk, Datadog, Sentry, common
   logging/metrics libraries) — `docs/decisions/015`. TypeScript source-level
-  scanning (logger call sites, error handling) is not built yet.
+  scanning is now real too (`--language typescript`, `docs/decisions/033`):
+  `console.*` calls, a `winston`/`pino`/locally-defined logger-class
+  heuristic (with the SAME cross-file resolution mechanism `docs/decisions/032`
+  built for axios, extracted into `oah/discovery/ts_module_resolution.py` and
+  reused, not duplicated — found necessary on the same real target repo, for
+  a shared logger singleton exported once and imported into ~140 consumer
+  files), `@opentelemetry/*` imports, and `try`/`catch` classification
+  (swallowed/logged/reraised). Verified end to end on that repo: `oah gaps`
+  went from 100% `dark` (S2 structurally blind to the target's own source)
+  to 265 dark / 110 partial once S2 could see it. Java has no S2 scanner
+  yet — a named gap, not silently claimed.
 - `pip install oah` alone is enough for `doctor`, `estimate`, `map --no-disambiguate`,
   `inventory`, `gaps`, and `interview` — fully deterministic, no LLM credential.
 - `pip install "oah[llm]"` plus an `ANTHROPIC_API_KEY` (or another provider
