@@ -549,3 +549,165 @@ def test_node_cron_visible_to_gap_model_as_scheduling_dimension():
                      "loggers": [], "existing_otel_usage": []}
         gap_model = build_gap_model(surface_map, inventory, pack=pack)
         assert gap_model["gaps"][0]["dimension"] == "scheduling"
+
+
+# --- E12 phase 9: the amqplib registry, chain_hop (docs/decisions/028) ----
+# amqplib's real API needs a two-hop async chained receiver resolution
+# (amqp.connect() -> await -> conn.createChannel() -> await -> the actual
+# queue operation) that none of the three prior detector shapes (pg's
+# receiver_method_suffix, express's module_function_call, node-cron's
+# imported_namespace_method_call) could express -- each of those resolves
+# exactly one hop from import/construction to the eventual method call.
+
+_AMQPLIB_WORKER = (
+    'import amqp from "amqplib";\n'
+    "\n"
+    "async function run() {\n"
+    '  const conn = await amqp.connect("amqp://localhost");\n'
+    "  const channel = await conn.createChannel();\n"
+    '  await channel.assertQueue("jobs");\n'
+    '  channel.sendToQueue("jobs", Buffer.from("hi"));\n'
+    '  channel.consume("jobs", (msg) => {\n'
+    "    console.log(msg);\n"
+    "  });\n"
+    "}\n"
+)
+
+
+def test_amqplib_producer_and_consumer_detected_through_two_chain_hops(tmp_path):
+    """The real point of this phase: `channel` is never directly
+    constructed or imported -- it's known only because `conn` was already
+    known (via the first chain_hop, off the imported `amqp` namespace) and
+    `channel = await conn.createChannel()` is itself a second hop. Neither
+    sendToQueue/consume's receiver is a `new X()`, a bare factory call, or
+    a direct import binding -- the three shapes every registry before this
+    one relied on."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "worker.ts", _AMQPLIB_WORKER)
+    points = detect_repo(tmp_path, pack=pack)
+    kinds = sorted(p["kind"] for p in points)
+    assert kinds == ["queue_consumer", "queue_producer"]
+    assert all(p["framework"] == "amqplib" for p in points)
+    assert all(p["sync_nature"] == "async" for p in points)
+
+
+def test_amqplib_intermediate_hops_produce_no_spurious_points(tmp_path):
+    """connect()/createChannel()/assertQueue() are real calls in the same
+    file, on the same tracked receivers, but none of the three is a
+    declared surface_kind in this pack -- only sendToQueue/publish/consume
+    are. A chain_hop entry must never leak into all_method_suffixes."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "worker.ts", _AMQPLIB_WORKER)
+    points = detect_repo(tmp_path, pack=pack)
+    assert len(points) == 2  # exactly sendToQueue + consume, nothing else
+
+
+def test_amqplib_publish_also_detected_as_queue_producer(tmp_path):
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "worker.ts", (
+        'import amqp from "amqplib";\n'
+        "async function run() {\n"
+        '  const conn = await amqp.connect("amqp://localhost");\n'
+        "  const channel = await conn.createChannel();\n"
+        '  channel.publish("jobs-exchange", "route.key", Buffer.from("hi"));\n'
+        "}\n"
+    ))
+    points = detect_repo(tmp_path, pack=pack)
+    assert len(points) == 1
+    assert points[0]["kind"] == "queue_producer"
+    assert points[0]["framework"] == "amqplib"
+
+
+def test_amqplib_single_hop_alone_resolves_nothing(tmp_path):
+    """`conn` is only known as a Connection after the first hop -- calling
+    a queue operation directly on it (skipping createChannel entirely, not
+    real amqplib usage) must not resolve, proving the second hop is load-
+    bearing and not incidentally unioned into the first."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "worker.ts", (
+        'import amqp from "amqplib";\n'
+        "async function run() {\n"
+        '  const conn = await amqp.connect("amqp://localhost");\n'
+        '  conn.sendToQueue("jobs", Buffer.from("hi"));\n'
+        "}\n"
+    ))
+    assert detect_repo(tmp_path, pack=pack) == []
+
+
+def test_amqplib_default_pack_never_detects_queue_operations(tmp_path):
+    """Zero behavior change for every existing caller -- amqplib is
+    service-domain vocabulary, not genai's."""
+    from oah.discovery.typescript_adapter import detect_repo
+    _write_ts(tmp_path, "worker.ts", _AMQPLIB_WORKER)
+    assert detect_repo(tmp_path) == []
+
+
+def test_amqplib_unrelated_local_import_not_matched(tmp_path):
+    """Real precision guard: name_alias stores the ACTUAL module string
+    from the import, so a local module confusingly also named `amqp`
+    doesn't false-positive, same guard node-cron's own registry has."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "worker.ts", (
+        'import amqp from "./myLocalAmqpThing";\n'
+        "async function run() {\n"
+        '  const conn = await amqp.connect("x");\n'
+        "  const channel = await conn.createChannel();\n"
+        '  channel.sendToQueue("jobs", Buffer.from("hi"));\n'
+        "}\n"
+    ))
+    assert detect_repo(tmp_path, pack=pack) == []
+
+
+def test_amqplib_producer_visible_to_gap_model_as_dependency_dimension():
+    from oah.discovery.typescript_adapter import build_surface_map
+    from oah.discovery.gap_model import build_gap_model
+    import tempfile
+    from pathlib import Path
+
+    pack = load_pack("service")
+    with tempfile.TemporaryDirectory() as d:
+        _write_ts(Path(d), "worker.ts", (
+            'import amqp from "amqplib";\n'
+            "async function run() {\n"
+            '  const conn = await amqp.connect("x");\n'
+            "  const channel = await conn.createChannel();\n"
+            '  channel.sendToQueue("jobs", Buffer.from("hi"));\n'
+            "}\n"
+        ))
+        surface_map, _ = build_surface_map(Path(d), git_sha="deadbeef", pack=pack)
+        assert surface_map["points"][0]["kind"] == "queue_producer"
+
+        inventory = {"schema_version": "0.1.0", "repo": {"path": "<test>", "git_sha": "deadbeef"},
+                     "loggers": [], "existing_otel_usage": []}
+        gap_model = build_gap_model(surface_map, inventory, pack=pack)
+        assert gap_model["gaps"][0]["dimension"] == "dependency"
+
+
+def test_amqplib_consumer_visible_to_gap_model_as_routing_dimension():
+    from oah.discovery.typescript_adapter import build_surface_map
+    from oah.discovery.gap_model import build_gap_model
+    import tempfile
+    from pathlib import Path
+
+    pack = load_pack("service")
+    with tempfile.TemporaryDirectory() as d:
+        _write_ts(Path(d), "worker.ts", (
+            'import amqp from "amqplib";\n'
+            "async function run() {\n"
+            '  const conn = await amqp.connect("x");\n'
+            "  const channel = await conn.createChannel();\n"
+            '  channel.consume("jobs", (msg) => { console.log(msg); });\n'
+            "}\n"
+        ))
+        surface_map, _ = build_surface_map(Path(d), git_sha="deadbeef", pack=pack)
+        assert surface_map["points"][0]["kind"] == "queue_consumer"
+
+        inventory = {"schema_version": "0.1.0", "repo": {"path": "<test>", "git_sha": "deadbeef"},
+                     "loggers": [], "existing_otel_usage": []}
+        gap_model = build_gap_model(surface_map, inventory, pack=pack)
+        assert gap_model["gaps"][0]["dimension"] == "routing"

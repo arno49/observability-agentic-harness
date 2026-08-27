@@ -116,10 +116,14 @@ registry, `pg` (`db_query`), landed with zero adapter code changes —
 supports ([023](docs/decisions/023-e12-pg-registry.md)). A third, `node-cron`
 (`scheduled_job`), needed a genuinely new receiver-resolution shape —
 a method called directly on an imported module, no constructor step
-([024](docs/decisions/024-e12-node-cron-registry.md)). Two queue
-registries remain unbuilt (`amqplib` needs a harder, multi-hop resolution
-chain, verified and deliberately not shipped as a low-confidence
-heuristic). Separately, S11 gained real signal provenance — whether a
+([024](docs/decisions/024-e12-node-cron-registry.md)). A fourth, `amqplib`
+(`queue_producer`/`queue_consumer`), needed a genuinely new detector
+shape too — `chain_hop`, pure known-name-propagation data for a receiver
+resolved through more than one hop of awaited assignment (amqplib's real
+`connect()` → `createChannel()` → the actual queue operation), after
+which the existing suffix-matching machinery handles the rest unchanged
+([028](docs/decisions/028-e12-amqplib-chained-receiver-resolution.md)).
+Separately, S11 gained real signal provenance — whether a
 validated event came from auto-instrumentation or from code S10 actually
 edited, verified against a live OTel SDK capture
 ([025](docs/decisions/025-s11-signal-provenance.md)). E12's own

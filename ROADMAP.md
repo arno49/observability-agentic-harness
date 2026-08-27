@@ -1178,6 +1178,30 @@ combined `oah validate --dynamic --live --baseline` Docker run: one
 `harness_instrumented` (from `--live`'s real OTLP-JSON capture of the
 same span) in one real report.
 
+**E12 phase 9 landed** (2026-08-27, `docs/decisions/028`): the `amqplib`
+registry (`queue_producer`/`queue_consumer`) — the fourth S1 registry, and
+the one the "still fully unbuilt" note above flagged as needing a genuinely
+new mechanism. Built exactly that: `chain_hop`, a new `detector_shape` that
+is pure known-name-propagation data (no surface point of its own), letting
+a chain of N pack-declared hops (each one's `sdk_module` matching the
+previous one's synthetic `produces_module`) teach the prescan that a
+variable assigned from `await <known-receiver>.<method>()` is itself a new
+kind of known receiver. amqplib's real two-hop chain (`amqp.connect()` →
+`.createChannel()`) now resolves through two chain_hop entries, after which
+the **existing** `receiver_method_suffix` matching handles
+`sendToQueue`/`publish`/`consume` with zero new detection code. One real
+wrinkle found only while building, not anticipated when this was scoped:
+`queue_producer` and `queue_consumer` are different `surface_kind`s that
+legitimately share one `produces_module` (`"amqplib#channel"` — a single
+real `Channel` variable calls both) — the pre-existing one-entry-per-module
+`module_to_registry` couldn't express that, so call-site resolution now
+disambiguates by which registry's own `method_suffixes` actually matches
+(byte-identical for every pre-existing, non-colliding module). General by
+construction, not amqplib-specific: a future N-hop SDK (e.g. `kafkajs`'s
+`kafka.producer()` → `producer.send()`) is now pure pack-data, no adapter
+code change. `assertQueue`/`createConfirmChannel()` named as real,
+deliberate exclusions, not folded in.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

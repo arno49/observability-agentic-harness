@@ -78,6 +78,32 @@ constructor-based registry: calling a method directly on an unconstructed
 SDK class (e.g. `Anthropic.messages.create(...)` instead of an instance)
 is not valid real-world TypeScript, so the fallback only ever fires for
 genuinely namespace-shaped SDKs.
+
+`chain_hop` (docs/decisions/028): a fourth, genuinely different shape --
+none of the three above resolve more than ONE hop from an import/
+construction to the eventual method call, but amqplib's real API is a
+three-hop async chain (`amqp.connect(url)` -> `await` ->
+`.createChannel()` on the resulting Connection -> `await` -> the real
+queue operation on the resulting Channel), needing the known-name prescan
+to propagate a receiver's resolved module through TWO intermediate
+(optionally awaited) variable assignments, not just one. `_resolve_chain_hop`
+is the new mechanism: given a pack's `chain_hop`-shaped registry entries
+(sdk_module + via_method + produces_module, oah/discovery/registry.py's
+`chain_hop_index`), a `const X = await Y.method()` assignment where `Y`
+already resolves to a known chain_hop `sdk_module` makes `X` known under
+that hop's `produces_module` -- a synthetic module string (e.g.
+"amqplib#channel") that then flows through the EXISTING receiver_method_suffix
+machinery with no further change: once a variable is known under a
+synthetic module, matching its later `.sendToQueue(...)`/`.consume(...)`
+calls against that module's registry entries is identical to matching any
+other resolved receiver. The one real wrinkle: two DIFFERENT surface_kind
+entries (queue_producer, queue_consumer) legitimately share the same
+`produces_module` ("amqplib#channel" -- a single real Channel variable
+calls both `sendToQueue` and `consume` in real code), which the pre-existing
+single-entry-per-module `module_to_registry` can't express -- `_RegistryContext`
+gained a parallel `module_to_registries` (module -> list) for this, resolved
+at each call site by which entry's own `method_suffixes` contains the
+matched suffix, not by module alone.
 """
 import re
 from collections import namedtuple
@@ -87,7 +113,7 @@ import tree_sitter_typescript as tstypescript
 from tree_sitter import Language, Parser
 
 from oah import __version__ as _OAH_VERSION
-from oah.discovery.registry import build_registry_index, structural_pattern_registries
+from oah.discovery.registry import build_registry_index, chain_hop_index, structural_pattern_registries
 from oah.domains.loader import load_pack
 
 _LANGUAGE = Language(tstypescript.language_tsx())  # a superset grammar of plain TS -- safe for .ts files too
@@ -99,15 +125,27 @@ _LANGUAGE = Language(tstypescript.language_tsx())  # a superset grammar of plain
 # once a second pack actually needed a different registry set -- the
 # service pack's express entry is that second pack.
 _RegistryContext = namedtuple(
-    "_RegistryContext", ["constructor_names", "module_to_registry", "all_method_suffixes", "suffix_lengths"]
+    "_RegistryContext",
+    ["constructor_names", "module_to_registry", "all_method_suffixes", "suffix_lengths",
+     "module_to_registries", "chain_hops"],
 )
 
 
 def _registry_context_for_pack(pack):
-    _registries, constructor_names, module_to_registry, all_method_suffixes, suffix_lengths = build_registry_index(
+    registries, constructor_names, module_to_registry, all_method_suffixes, suffix_lengths = build_registry_index(
         pack, language="typescript"
     )
-    return _RegistryContext(constructor_names, module_to_registry, all_method_suffixes, suffix_lengths)
+    # module_to_registries (plural): a module -> [registries] map, needed
+    # only because chain_hop's produces_module lets more than one
+    # surface_kind share an sdk_module (docs/decisions/028) -- for every
+    # module with exactly one registry (every module before this) this is
+    # equivalent to module_to_registry, just list-shaped.
+    module_to_registries = {}
+    for r in registries:
+        module_to_registries.setdefault(r["sdk_module"], []).append(r)
+    chain_hops = chain_hop_index(pack, language="typescript")
+    return _RegistryContext(constructor_names, module_to_registry, all_method_suffixes, suffix_lengths,
+                             module_to_registries, chain_hops)
 
 
 _GENAI_PACK = load_pack("genai")
@@ -252,6 +290,57 @@ def _match_suffix(chain, registry_ctx):
     return None
 
 
+def _unwrap_await(node):
+    """`const conn = await amqp.connect(url)` -- peel the await_expression
+    so the known-name checks below (new_expression/factory call/chain hop)
+    see the same inner expression they'd see without the await. Every hop
+    of amqplib's real connect -> createChannel -> operation chain
+    (docs/decisions/028) is awaited; no existing SDK registry needed this
+    unwrap before since none of their construction calls are themselves
+    awaited."""
+    if node is not None and node.type == "await_expression" and node.named_child_count == 1:
+        return node.named_children[0]
+    return node
+
+
+def _resolve_receiver_module(root, known_names, resolver):
+    """Two-step receiver resolution shared by call-site suffix matching and
+    chain-hop known-name propagation: a real constructed/assigned receiver
+    (known_names) wins when one exists; otherwise fall back to the receiver
+    being the imported module/namespace binding itself
+    (imported_namespace_method_call, docs/decisions/024)."""
+    if not root:
+        return None
+    resolved = known_names.get(root)
+    if resolved is None:
+        hit = resolver.name_alias.get(root)
+        resolved = hit[0] if hit else None
+    return resolved
+
+
+def _resolve_chain_hop(value_node, resolver, known_names, registry_ctx, src):
+    """If value_node is `<receiver>.<method>(...)` where <receiver> already
+    resolves to a module this pack's chain_hops table tracks, return the
+    synthetic module string that hop produces -- e.g. `conn.createChannel()`
+    where `conn` is already known as "amqplib#connection" returns
+    "amqplib#channel" (docs/decisions/028). Deliberately narrow to a
+    single-segment chain (`<receiver>.<method>()`, not
+    `<receiver>.<a>.<b>()`) -- amqplib's own real API never needs more, and
+    a longer chain here would be a different call shape, not a hop."""
+    if value_node is None or value_node.type != "call_expression":
+        return None
+    func = value_node.child_by_field_name("function")
+    if func is None or func.type != "member_expression":
+        return None
+    root, chain = _flatten_member_chain(func, src)
+    if len(chain) != 1:
+        return None
+    resolved = _resolve_receiver_module(root, known_names, resolver)
+    if resolved is None:
+        return None
+    return registry_ctx.chain_hops.get((resolved, chain[0]))
+
+
 def _string_content(string_node, src):
     for c in string_node.children:
         if c.type == "string_fragment":
@@ -355,6 +444,7 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                     continue
                 name_node = decl.child_by_field_name("name")
                 value_node = decl.child_by_field_name("value")
+                value_node = _unwrap_await(value_node) if value_node is not None else None
                 type_node = decl.child_by_field_name("type")
                 if name_node is None or name_node.type != "identifier":
                     continue
@@ -368,6 +458,10 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                     if hit:
                         known_names[_text(name_node, src)] = hit[0]
                         continue
+                    hop_module = _resolve_chain_hop(value_node, resolver, known_names, registry_ctx, src)
+                    if hop_module:
+                        known_names[_text(name_node, src)] = hop_module
+                        continue
                 sdk = resolver.annotation_sdk(type_node, src)
                 if sdk:
                     known_names[_text(name_node, src)] = sdk
@@ -375,16 +469,20 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
         if child.type == "assignment_expression":
             left = child.child_by_field_name("left")
             right = child.child_by_field_name("right")
+            right = _unwrap_await(right) if right is not None else None
             if left is not None and right is not None and right.type in ("new_expression", "call_expression"):
                 hit = (resolver.resolve_constructor_call(right, src) if right.type == "new_expression"
                        else resolver.resolve_factory_call(right, src))
-                if hit:
+                resolved_module = hit[0] if hit else None
+                if resolved_module is None and right.type == "call_expression":
+                    resolved_module = _resolve_chain_hop(right, resolver, known_names, registry_ctx, src)
+                if resolved_module:
                     if left.type == "identifier":
-                        known_names[_text(left, src)] = hit[0]
+                        known_names[_text(left, src)] = resolved_module
                     elif left.type == "member_expression":
                         root, chain = _flatten_member_chain(left, src)
                         if root == "this" and len(chain) == 1:
-                            known_names[f"this.{chain[0]}"] = hit[0]
+                            known_names[f"this.{chain[0]}"] = resolved_module
 
         if child.type == "call_expression":
             func = child.child_by_field_name("function")
@@ -404,25 +502,28 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                         resolved = known_names.get(receiver_key)
                         receiver_desc = receiver_key
                     else:
-                        resolved = known_names.get(root) if root else None
-                        if resolved is None and root:
-                            # imported_namespace_method_call (docs/decisions/024):
-                            # the receiver is the imported module binding
-                            # itself, with no constructor/factory call in
-                            # between (e.g. `cron.schedule(...)` where
-                            # `cron` is the default-imported module) --
-                            # resolver.name_alias already carries this
-                            # (module, local) mapping straight from the
-                            # import statement, real for every existing
-                            # constructor-based registry too, but only
-                            # reachable here as a fallback since a real
-                            # constructed instance (known_names) always
-                            # wins when one exists.
-                            hit = resolver.name_alias.get(root)
-                            resolved = hit[0] if hit else None
+                        # _resolve_receiver_module covers both a real
+                        # constructed/assigned receiver (known_names) and,
+                        # as a fallback, imported_namespace_method_call
+                        # (docs/decisions/024) -- the receiver being the
+                        # imported module binding itself, e.g.
+                        # `cron.schedule(...)`.
+                        resolved = _resolve_receiver_module(root, known_names, resolver)
                         receiver_desc = root or "<unresolved receiver expression>"
 
-                    registry = registry_ctx.module_to_registry.get(resolved)
+                    # module_to_registries (plural): more than one
+                    # surface_kind entry can share a resolved module when
+                    # that module is a chain_hop's produces_module
+                    # (docs/decisions/028, e.g. amqplib's queue_producer
+                    # and queue_consumer both keying off "amqplib#channel")
+                    # -- disambiguated by which entry's own method_suffixes
+                    # actually contains the matched suffix. For every
+                    # pre-existing module (exactly one registry) this picks
+                    # the same single entry module_to_registry always did.
+                    registry = next(
+                        (r for r in registry_ctx.module_to_registries.get(resolved, []) if suffix in r["method_suffixes"]),
+                        None,
+                    )
                     args_node = child.child_by_field_name("arguments")
                     args_count = len(args_node.named_children) if args_node is not None else 0
                     # Express's own documented dual-purpose method: app.get(name)

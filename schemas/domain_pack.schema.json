@@ -49,14 +49,14 @@
 
     "registries": {
       "type": "array",
-      "description": "S1 signature registries contributed by this pack. Two detector shapes exist today, and this array carries both: a receiver/method-suffix chain (sdk_module + constructor_names + method_suffixes, the shape oah/discovery/registry.py already used before extraction), and a structural content-signal match (content_signal + detector_name, the shape the tool_use-dispatch detector in oah/discovery/python_adapter.py used before extraction -- a comparison of some expression's attribute against a literal value, not a resolved receiver+method call). sdk_module must be unique across ALL loaded packs -- MODULE_TO_REGISTRY assumes it.",
+      "description": "S1 signature registries contributed by this pack. Three detector-shape families exist today, and this array carries all of them: a receiver/method-suffix chain (sdk_module + constructor_names + method_suffixes, the shape oah/discovery/registry.py already used before extraction), a structural content-signal match (content_signal + detector_name, the shape the tool_use-dispatch detector in oah/discovery/python_adapter.py used before extraction -- a comparison of some expression's attribute against a literal value, not a resolved receiver+method call), and chain_hop (docs/decisions/028, TypeScript-adapter-only today) -- known-name propagation data for a multi-hop async receiver resolution (sdk_module + via_method + produces_module), not itself a detectable surface point. sdk_module must be unique across ALL loaded packs' receiver_method_suffix/module_function_call/imported_namespace_method_call entries for a given language -- MODULE_TO_REGISTRY assumes it; a chain_hop's own sdk_module/produces_module strings are exempt from that uniqueness constraint by construction (produces_module is a synthetic string, e.g. \"amqplib#channel\", never a real importable module name any other entry's sdk_module would collide with), and two receiver_method_suffix entries MAY legitimately share a chain_hop-produced sdk_module (e.g. amqplib's own queue_producer and queue_consumer entries both key off \"amqplib#channel\" -- resolved at each call site by which one's method_suffixes actually matches, not by sdk_module alone).",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["framework", "surface_kind", "detector_shape"],
+        "required": ["framework", "detector_shape"],
         "properties": {
           "framework": { "type": "string" },
-          "surface_kind": { "type": "string" },
+          "surface_kind": { "type": "string", "description": "Required for every detector_shape except chain_hop, whose entries produce no surface point of their own (see detector_shape's own description) -- not enforced here, same convention content_signal/detector_name already use for their own shape-conditional requirement." },
           "language": {
             "type": "string",
             "enum": ["python", "typescript"],
@@ -70,8 +70,8 @@
           },
           "detector_shape": {
             "type": "string",
-            "enum": ["receiver_method_suffix", "module_function_call", "imported_namespace_method_call", "decorator_registration", "declarative_registration", "global_unimported_callee", "base_class_method", "structural_pattern"],
-            "description": "Which detection mechanism the language adapter must run. receiver_method_suffix and module_function_call are both driven by constructor_names/method_suffixes/sdk_module (oah/discovery/python_adapter.py's MODULE_TO_REGISTRY dispatch). imported_namespace_method_call (docs/decisions/024) is a third variant of that same suffix-matching mechanism: the receiver is the imported module/namespace identifier itself, resolved directly from the import statement -- no intervening `new X()`/`X()` construction step at all, e.g. `import cron from \"node-cron\"; cron.schedule(...)`. structural_pattern is driven by content_signal + detector_name instead -- a real per-domain matcher, not pure data, so the pack must also ship the code under oah/domains/<name>/detectors.py. declarative_registration (a JSX element or route-object array, e.g. React Router's <Route path=...>/createBrowserRouter) and global_unimported_callee (a bare call with no import to anchor on, e.g. fetch(...)) are both real, corpus-verified TypeScript detector shapes (SP12, docs/decisions/013) with no Python-adapter or oah/ implementation yet -- that promotion is E11-TS's job. decorator_registration remains NOT implemented by any adapter and not corpus-verified by any spike -- SP12 corrected the earlier assumption that it was the web-framework gap that mattered most; it may still be a real gap for other frameworks, just not evidenced yet."
+            "enum": ["receiver_method_suffix", "module_function_call", "imported_namespace_method_call", "chain_hop", "decorator_registration", "declarative_registration", "global_unimported_callee", "base_class_method", "structural_pattern"],
+            "description": "Which detection mechanism the language adapter must run. receiver_method_suffix and module_function_call are both driven by constructor_names/method_suffixes/sdk_module (oah/discovery/python_adapter.py's MODULE_TO_REGISTRY dispatch). imported_namespace_method_call (docs/decisions/024) is a third variant of that same suffix-matching mechanism: the receiver is the imported module/namespace identifier itself, resolved directly from the import statement -- no intervening `new X()`/`X()` construction step at all, e.g. `import cron from \"node-cron\"; cron.schedule(...)`. chain_hop (docs/decisions/028) is not a surface-point detector at all -- it propagates a resolved receiver's module through ONE MORE hop of (optionally awaited) assignment, e.g. amqplib's `const channel = await conn.createChannel()`: sdk_module names the ALREADY-resolved module the receiver (`conn`) must be known as, via_method the method called on it, produces_module the synthetic module string the assignment's target variable becomes known as. A chain of N hops needs N chain_hop entries, each one's sdk_module matching the previous one's produces_module (the first entry's sdk_module is a real sdk_module, e.g. \"amqplib\", resolved the same way imported_namespace_method_call resolves one). The LAST produces_module in a chain is then used as the sdk_module of one or more ordinary receiver_method_suffix entries -- the actual surface-point detection is unmodified once the multi-hop receiver is known; chain_hop only teaches the known-name prescan to see it. structural_pattern is driven by content_signal + detector_name instead -- a real per-domain matcher, not pure data, so the pack must also ship the code under oah/domains/<name>/detectors.py. declarative_registration (a JSX element or route-object array, e.g. React Router's <Route path=...>/createBrowserRouter) and global_unimported_callee (a bare call with no import to anchor on, e.g. fetch(...)) are both real, corpus-verified TypeScript detector shapes (SP12, docs/decisions/013) with no Python-adapter or oah/ implementation yet -- that promotion is E11-TS's job. decorator_registration remains NOT implemented by any adapter and not corpus-verified by any spike -- SP12 corrected the earlier assumption that it was the web-framework gap that mattered most; it may still be a real gap for other frameworks, just not evidenced yet."
           },
           "content_signal": {
             "type": "object",
@@ -89,6 +89,14 @@
           "emits_kind": {
             "type": "string",
             "description": "surface_kind this detector produces, when a structural_pattern detector's result differs from this entry's own surface_kind (kept separate because a structural match emits independently of any resolved SDK module). Omitted means use surface_kind."
+          },
+          "via_method": {
+            "type": "string",
+            "description": "Required for detector_shape: chain_hop. The method name called on the sdk_module-resolved receiver that produces this hop's result, e.g. \"connect\" or \"createChannel\"."
+          },
+          "produces_module": {
+            "type": "string",
+            "description": "Required for detector_shape: chain_hop. Synthetic module string (never a real importable module name -- a convention like \"amqplib#channel\" keeps it visibly distinct from sdk_module strings) that the assignment target becomes known as, feeding either the next chain_hop's own sdk_module or a receiver_method_suffix entry's sdk_module."
           },
           "confidence_note": {
             "type": "string",

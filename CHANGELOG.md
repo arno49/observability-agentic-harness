@@ -3,6 +3,22 @@
 ## [Unreleased]
 
 ### Added
+- E12 phase 9 (`docs/decisions/028`): the `amqplib` registry
+  (`queue_producer`/`queue_consumer`) and a fourth, genuinely new
+  `detector_shape`, `chain_hop` -- pure known-name-propagation data (no
+  surface point of its own) that lets a receiver resolve through more than
+  one hop of awaited assignment, needed because amqplib's real API is a
+  three-hop chain (`amqp.connect()` -> `await` -> `.createChannel()` ->
+  `await` -> the real queue operation) none of the three prior
+  receiver-resolution shapes could express. Once resolved, the existing
+  `receiver_method_suffix` matching handles the rest unchanged. Found and
+  fixed along the way: two different `surface_kind`s (`queue_producer`,
+  `queue_consumer`) can share one chain-produced synthetic module, which
+  the prior one-entry-per-module lookup couldn't express --
+  `typescript_adapter.py`'s `_RegistryContext` gained a `module_to_registries`
+  (module -> list) resolved by matched suffix, byte-identical for every
+  pre-existing non-colliding module. General by construction: a future
+  N-hop SDK is now pure pack data, no adapter code change.
 - Signal provenance summary (`docs/decisions/027`): a new top-level
   `signal_provenance` field on `validation_report` combines `--dynamic`'s
   and `--live`'s per-DTO provenance into one real, report-level answer

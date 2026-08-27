@@ -52,6 +52,26 @@ def _receiver_entries(pack, language):
     ]
 
 
+def _chain_hop_entries(pack, language):
+    """chain_hop entries (docs/decisions/028): not a receiver+method-suffix
+    surface point themselves, but a rule for propagating a KNOWN receiver's
+    resolved module through one more hop of (optionally awaited)
+    assignment -- e.g. amqplib's `const channel = await
+    conn.createChannel()`, where `conn` is already known as the module's
+    own "connection" stage and this hop says calling `.createChannel()` on
+    it produces a "channel"-stage receiver. Deliberately excluded from
+    _receiver_entries/build_registry_index's own registries[]/
+    module_to_registry/all_method_suffixes -- a chain_hop entry must never
+    be treated as a directly-detectable surface point (there is no
+    dimension/surface_kind a raw `.connect()`/`.createChannel()` call would
+    even map to), only as known-name propagation data consumed by
+    chain_hop_index."""
+    return [
+        r for r in pack.get("registries", [])
+        if r["detector_shape"] == "chain_hop" and r.get("language", _DEFAULT_LANGUAGE) == language
+    ]
+
+
 def build_registry_index(pack, language=_DEFAULT_LANGUAGE):
     """Returns (registries, constructor_names, module_to_registry,
     all_method_suffixes, suffix_lengths) for the receiver/method-suffix
@@ -61,7 +81,22 @@ def build_registry_index(pack, language=_DEFAULT_LANGUAGE):
     invariant this module always had (a Python and a TypeScript registry
     MAY share an sdk_module string in principle, but never collide in
     practice since each language's MODULE_TO_REGISTRY is built and consumed
-    separately)."""
+    separately). Exception, real and intentional (docs/decisions/028): two
+    receiver_method_suffix entries MAY share a sdk_module that is itself a
+    chain_hop's produces_module (e.g. amqplib's queue_producer/
+    queue_consumer entries both keying off "amqplib#channel") -- callers
+    that need to disambiguate those must not rely on this function's own
+    module_to_registry (last-entry-wins on a shared key) and instead group
+    `registries` by sdk_module themselves, same as
+    oah/discovery/typescript_adapter.py's own `_RegistryContext.
+    module_to_registries` does.
+
+    constructor_names also folds in every chain_hop entry's own
+    constructor_names for this language -- the first hop of a chain (e.g.
+    amqplib's own `connect`, called on the raw imported module) is resolved
+    exactly like imported_namespace_method_call's receiver, via
+    ImportResolver.name_alias, which is only ever populated for a name
+    already in constructor_names."""
     registries = [
         {
             "constructor_names": frozenset(r.get("constructor_names") or []),
@@ -72,11 +107,33 @@ def build_registry_index(pack, language=_DEFAULT_LANGUAGE):
         }
         for r in _receiver_entries(pack, language)
     ]
-    constructor_names = frozenset().union(*(r["constructor_names"] for r in registries)) if registries else frozenset()
+    hop_entries = _chain_hop_entries(pack, language)
+    constructor_names = frozenset().union(
+        *(r["constructor_names"] for r in registries),
+        *(frozenset(r.get("constructor_names") or []) for r in hop_entries),
+    )
     module_to_registry = {r["sdk_module"]: r for r in registries}
     all_method_suffixes = frozenset().union(*(r["method_suffixes"] for r in registries)) if registries else frozenset()
     suffix_lengths = sorted({len(s) for r in registries for s in r["method_suffixes"]}, reverse=True)
     return registries, constructor_names, module_to_registry, all_method_suffixes, suffix_lengths
+
+
+def chain_hop_index(pack, language=_DEFAULT_LANGUAGE):
+    """{(resolved_module, method_name): produces_module} from this pack's
+    chain_hop entries for `language` -- e.g. {("amqplib", "connect"):
+    "amqplib#connection", ("amqplib#connection", "createChannel"):
+    "amqplib#channel"}. produces_module is a synthetic module string
+    (never a real sdk_module any import statement could resolve to), so
+    that once a variable is known under it, the EXISTING
+    receiver_method_suffix machinery (module_to_registry/
+    all_method_suffixes) handles the eventual method-suffix match with no
+    new code path -- the only genuinely new mechanism is this table plus
+    the language adapter's own known-name-propagation-through-one-more-hop
+    step."""
+    return {
+        (r["sdk_module"], r["via_method"]): r["produces_module"]
+        for r in _chain_hop_entries(pack, language)
+    }
 
 
 def structural_pattern_registries(pack, language=_DEFAULT_LANGUAGE):

@@ -293,3 +293,97 @@ def test_build_surface_map_no_points_found(tmp_path):
     assert surface_map["points"] == []
     assert surface_map["coverage_stats"]["points_total"] == 0
     assert still_ambiguous == []
+
+
+# --- chain_hop: generic two-hop chained receiver resolution ---------------
+# docs/decisions/028. A minimal synthetic pack, deliberately NOT amqplib
+# (that real registry and its own regression tests live in
+# tests/test_service_pack.py) -- this protects the GENERIC mechanism
+# (known-name propagation through two chain_hop entries) independent of
+# any one real SDK's shape.
+
+_CHAIN_PACK = {
+    "schema_version": "0.1.0", "name": "chain-test", "version": "0.1.0",
+    "point_kinds": [{"kind": "widget_send", "dimension": "test", "detected_by": "registry"}],
+    "registries": [
+        {
+            "framework": "widgetlib", "detector_shape": "chain_hop", "language": "typescript",
+            "sdk_module": "widgetlib", "constructor_names": ["widgets"],
+            "via_method": "open", "produces_module": "widgetlib#session",
+        },
+        {
+            "framework": "widgetlib", "detector_shape": "chain_hop", "language": "typescript",
+            "sdk_module": "widgetlib#session",
+            "via_method": "handle", "produces_module": "widgetlib#handle",
+        },
+        {
+            "framework": "widgetlib", "surface_kind": "widget_send", "language": "typescript",
+            "sdk_module": "widgetlib#handle", "method_suffixes": [["send"]],
+            "detector_shape": "receiver_method_suffix",
+        },
+    ],
+    "lenses": [{"lens": "tracing", "skill": "s4-tracing", "target_kinds": None, "emits": ["design_fragment"]}],
+    "semconv_namespaces": [{"namespace": "test", "stability": "unknown", "pin": "0"}],
+}
+
+
+def test_chain_pack_schema_is_itself_valid():
+    validate("domain_pack", _CHAIN_PACK)  # raises on failure
+
+
+def test_two_hop_chain_resolves_through_both_intermediate_variables(tmp_path):
+    from oah.discovery.typescript_adapter import detect_file
+    path = _write(tmp_path, "app2.ts", (
+        'import widgets from "widgetlib";\n'
+        "async function run() {\n"
+        '  const session = await widgets.open("x");\n'
+        "  const handle = await session.handle();\n"
+        '  handle.send("payload");\n'
+        "}\n"
+    ))
+    resolved = detect_file(path, tmp_path, pack=_CHAIN_PACK)
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "widget_send"
+    assert resolved[0]["framework"] == "widgetlib"
+
+
+def test_chain_hop_intermediate_calls_produce_no_points(tmp_path):
+    from oah.discovery.typescript_adapter import detect_file
+    path = _write(tmp_path, "app3.ts", (
+        'import widgets from "widgetlib";\n'
+        "async function run() {\n"
+        '  const session = await widgets.open("x");\n'
+        "  const handle = await session.handle();\n"
+        '  handle.send("payload");\n'
+        "}\n"
+    ))
+    resolved = detect_file(path, tmp_path, pack=_CHAIN_PACK)
+    assert len(resolved) == 1  # only "send" -- not "open" or "handle"
+
+
+def test_skipping_the_first_hop_does_not_resolve(tmp_path):
+    """Calling the final method directly on the module's own namespace
+    (skipping both hops) must not resolve -- proves the chain is load-
+    bearing, not just falling back to imported_namespace_method_call."""
+    from oah.discovery.typescript_adapter import detect_file
+    path = _write(tmp_path, "app4.ts", 'import widgets from "widgetlib";\nwidgets.send("payload");\n')
+    resolved = detect_file(path, tmp_path, pack=_CHAIN_PACK)
+    assert resolved == []
+
+
+def test_chain_hop_without_await_also_resolves(tmp_path):
+    """Not every real call in a chain need be awaited -- the mechanism
+    itself (member-expression call on an already-known receiver) doesn't
+    depend on await; only the peel-off needs to tolerate its absence."""
+    from oah.discovery.typescript_adapter import detect_file
+    path = _write(tmp_path, "app5.ts", (
+        'import widgets from "widgetlib";\n'
+        "function run() {\n"
+        '  const session = widgets.open("x");\n'
+        "  const handle = session.handle();\n"
+        '  handle.send("payload");\n'
+        "}\n"
+    ))
+    resolved = detect_file(path, tmp_path, pack=_CHAIN_PACK)
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "widget_send"
