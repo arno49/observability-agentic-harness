@@ -11,7 +11,7 @@
     { "kind": "db_query", "dimension": "db", "detected_by": "registry" },
     { "kind": "queue_producer", "dimension": "dependency", "detected_by": "declared_undetected" },
     { "kind": "queue_consumer", "dimension": "routing", "detected_by": "declared_undetected" },
-    { "kind": "scheduled_job", "dimension": "scheduling", "detected_by": "declared_undetected" }
+    { "kind": "scheduled_job", "dimension": "scheduling", "detected_by": "registry" }
   ],
 
   "registries": [
@@ -34,6 +34,16 @@
       "method_suffixes": [["query"]],
       "detector_shape": "receiver_method_suffix",
       "confidence_note": "Docs-grounded (node-postgres's own docs, https://node-postgres.com/apis/client and /apis/pool), NOT corpus-verified. `Client` and `Pool` are both real, current, non-deprecated exports; both expose the same `.query(text, values?)` method (Pool.query auto-acquires/releases a pooled Client). No dual-purpose-method ambiguity the way Express's `.get()` had -- `.query()` has one meaning. Deliberately narrow to the ES-module named-import form (`import { Client, Pool } from \"pg\"`, real since pg v8.15 per node-postgres's own ESM docs) -- ImportResolver's existing named-import handling covers this with zero adapter code change, the same shape Anthropic/Pinecone already use. Three real, separate gaps, not silently assumed covered: CommonJS `const { Client, Pool } = require(\"pg\")` (no registry in this pack has ever supported `require()`, a pre-existing gap, not new); the default-import-then-destructure form (`import pg from \"pg\"; const { Client, Pool } = pg;`, still common for pg < 8.15 and some bundler setups); and `new pg.Client()` namespace-member construction (a member-expression constructor, which `ImportResolver.resolve_constructor_call` doesn't resolve today -- the same class of gap `express.Router()` left named for Express). `postgres` (postgres.js) is a real, increasingly common alternative client with a different tagged-template API shape -- not covered, no registry entry, named here rather than guessed at."
+    },
+    {
+      "framework": "node-cron",
+      "surface_kind": "scheduled_job",
+      "language": "typescript",
+      "sdk_module": "node-cron",
+      "constructor_names": ["cron"],
+      "method_suffixes": [["schedule"]],
+      "detector_shape": "imported_namespace_method_call",
+      "confidence_note": "Docs-grounded (node-cron's own README, https://github.com/node-cron/node-cron), NOT corpus-verified. `cron.schedule(cronExpression, callback)` is called directly on the default-imported module -- no constructor/factory step, the new imported_namespace_method_call shape this entry is the first consumer of (docs/decisions/024). Chosen as this pack's #1 scheduling-library registry over two real alternatives (verified via live npm download-count queries, not estimated): the `cron` package's `new CronJob(cronTime, onTick, ...)` (real, current, ~6.8M weekly downloads, but a materially different shape -- the constructor call itself IS the registration event, with no subsequent method call to suffix-match against at all; a fourth detector shape, not yet implemented, named here rather than folded in) and `node-schedule`'s `schedule.scheduleJob(...)` (same imported_namespace_method_call shape as node-cron, ~4.4M weekly downloads, not covered -- a real, additional registry entry this phase didn't also add, not because the shape is hard, just to keep this phase to one library at a time)."
     }
   ],
 

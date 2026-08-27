@@ -113,8 +113,16 @@ proof, honestly distinguished from the real vendored-corpus version of
 E12's DoD (a), which is E7's own separate territory). A second S1
 registry, `pg` (`db_query`), landed with zero adapter code changes —
 `Client`/`Pool` + `.query()` was already the exact shape the adapter
-supports ([023](docs/decisions/023-e12-pg-registry.md)). Three more S1
-registries remain unbuilt. LLM
+supports ([023](docs/decisions/023-e12-pg-registry.md)). A third, `node-cron`
+(`scheduled_job`), needed a genuinely new receiver-resolution shape —
+a method called directly on an imported module, no constructor step
+([024](docs/decisions/024-e12-node-cron-registry.md)). Two queue
+registries remain unbuilt (`amqplib` needs a harder, multi-hop resolution
+chain, verified and deliberately not shipped as a low-confidence
+heuristic). Separately, S11 gained real signal provenance — whether a
+validated event came from auto-instrumentation or from code S10 actually
+edited, verified against a live OTel SDK capture
+([025](docs/decisions/025-s11-signal-provenance.md)). LLM
 observability was still the right place to start: it's where OTel semantic
 conventions and APM tooling are least mature, so it's where a gap-modeling harness
 added the most value first.

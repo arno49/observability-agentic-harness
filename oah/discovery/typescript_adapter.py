@@ -63,6 +63,21 @@ shape created it. First (and so far only) consumer: the service pack's
 against Express's own public API, not corpus-verified -- named explicitly
 in that entry's own `confidence_note`, same honesty precedent as genai's
 livekit registry.
+
+`imported_namespace_method_call` (docs/decisions/024): a third receiver-
+resolution shape, for a method called directly on the imported module
+binding itself with no constructor/factory call at all (e.g.
+`import cron from "node-cron"; cron.schedule(...)`). No new code path was
+needed -- `ImportResolver.name_alias` already carries this (module, local)
+mapping straight from the import statement (populated for every
+constructor-based registry too); the only change is a fallback in the
+call_expression receiver resolution that consults `name_alias` when
+`known_names` (populated only by a real `new X()`/`X()` construction) has
+no entry for the receiver. Safe by construction for every existing
+constructor-based registry: calling a method directly on an unconstructed
+SDK class (e.g. `Anthropic.messages.create(...)` instead of an instance)
+is not valid real-world TypeScript, so the fallback only ever fires for
+genuinely namespace-shaped SDKs.
 """
 import re
 from collections import namedtuple
@@ -390,6 +405,21 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                         receiver_desc = receiver_key
                     else:
                         resolved = known_names.get(root) if root else None
+                        if resolved is None and root:
+                            # imported_namespace_method_call (docs/decisions/024):
+                            # the receiver is the imported module binding
+                            # itself, with no constructor/factory call in
+                            # between (e.g. `cron.schedule(...)` where
+                            # `cron` is the default-imported module) --
+                            # resolver.name_alias already carries this
+                            # (module, local) mapping straight from the
+                            # import statement, real for every existing
+                            # constructor-based registry too, but only
+                            # reachable here as a fallback since a real
+                            # constructed instance (known_names) always
+                            # wins when one exists.
+                            hit = resolver.name_alias.get(root)
+                            resolved = hit[0] if hit else None
                         receiver_desc = root or "<unresolved receiver expression>"
 
                     registry = registry_ctx.module_to_registry.get(resolved)

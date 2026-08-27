@@ -2,10 +2,14 @@
 pack's `registries[]`, instead of holding them as literal dicts (E13,
 docs/decisions/011). Two detector shapes exist:
 
-- **receiver_method_suffix** (and `module_function_call`) — a resolved
-  receiver (tracked via import/assignment/annotation) whose call's last N
-  attribute-chain segments match a declared suffix, e.g.
-  `client.messages.create(...)`. `build_registry_index(pack)` derives
+- **receiver_method_suffix** (and `module_function_call`,
+  `imported_namespace_method_call`) — a resolved receiver (tracked via
+  import/assignment/annotation) whose call's last N attribute-chain
+  segments match a declared suffix, e.g. `client.messages.create(...)`.
+  `imported_namespace_method_call` (docs/decisions/024) resolves the
+  receiver directly from the import binding itself, with no
+  constructor/factory call in between (e.g. `cron.schedule(...)` where
+  `cron` is the default-imported module). `build_registry_index(pack)` derives
   `REGISTRIES`/`CONSTRUCTOR_NAMES`/`MODULE_TO_REGISTRY`/`ALL_METHOD_SUFFIXES`/
   `SUFFIX_LENGTHS` from this shape's entries — the exact five names
   `oah/discovery/python_adapter.py` already consumed before extraction, now
@@ -32,7 +36,7 @@ happens to share a final segment.
 """
 from oah.domains.loader import load_pack
 
-_RECEIVER_SHAPES = ("receiver_method_suffix", "module_function_call")
+_RECEIVER_SHAPES = ("receiver_method_suffix", "module_function_call", "imported_namespace_method_call")
 
 # A registry entry with no "language" field predates E11-TS's TypeScript
 # adapter (docs/decisions/014) and was always implicitly Python-only --

@@ -49,6 +49,11 @@
           "reason": {
             "type": ["string", "null"],
             "description": "Explains 'skipped'/'not_observed'; null for 'not_attempted'/'observed'."
+          },
+          "provenance": {
+            "type": "array",
+            "items": { "enum": ["auto_instrumentation", "harness_instrumented", "unknown"] },
+            "description": "docs/decisions/025 (S11 signal provenance): present only when status is 'observed' -- whose instrumentation actually produced the matching span(s), classified from each span's own instrumentation_scope name. 'unknown' when the capture mechanism didn't carry that field at all -- --dynamic's own ConsoleSpanExporter-based capture (oah/validate/pytest_runner.py) never does, a real, structural limit of that mechanism, not a guess. Absent (not an empty array) for every status other than 'observed'."
           }
         }
       }
@@ -113,7 +118,12 @@
             "properties": {
               "dto_id": { "type": "string" },
               "status": { "enum": ["observed", "not_observed"] },
-              "reason": { "type": ["string", "null"] }
+              "reason": { "type": ["string", "null"] },
+              "provenance": {
+                "type": "array",
+                "items": { "enum": ["auto_instrumentation", "harness_instrumented", "unknown"] },
+                "description": "docs/decisions/025: present only when status is 'observed'. Unlike --dynamic's own event_assertions, --live's OTLP-JSON capture (oah/validate/live_sandbox.py) DOES carry each span's real instrumentation_scope name, so this is meaningfully populated here, not just 'unknown' by construction."
+              }
             }
           }
         },

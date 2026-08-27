@@ -3,6 +3,22 @@
 ## [Unreleased]
 
 ### Added
+- S11 signal provenance (`docs/decisions/025`): `docs/decisions/011`'s own
+  named S11 addition -- whether a validated event came from zero-code
+  auto-instrumentation or from code S10 actually edited.
+  `oah/validate/live_sandbox.py` now extracts each span's
+  `instrumentation_scope`; `oah/validate/event_assertion.py` classifies it
+  into a new `provenance` field on `observed` event assertions. Verified
+  against a real live OTel SDK capture. `--dynamic`'s own capture
+  mechanism structurally can't carry this field (confirmed empirically,
+  not assumed) and always reports `["unknown"]`; `--live` gives a real
+  answer.
+- E12 phase 8 (`docs/decisions/024`): the `node-cron` registry
+  (`scheduled_job`) and a third receiver-resolution shape,
+  `imported_namespace_method_call` -- for a method called directly on an
+  imported module with no constructor/factory step at all. Verified via a
+  live npm download-count query before choosing `node-cron` over `cron`
+  (inflated by transitive NestJS installs) and `node-schedule`.
 - E12 phase 7 (`docs/decisions/023`): the `pg` registry (`db_query`) --
   zero adapter code changes, since `pg`'s `Client`/`Pool` + `.query()`
   is the same `receiver_method_suffix` shape already implemented.

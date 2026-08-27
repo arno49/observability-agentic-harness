@@ -1108,6 +1108,43 @@ method name alone, with no receiver resolution at all) -- that would be a
 real precision regression from every registry built so far, none of which
 guess at an unresolved receiver.
 
+**E12 phase 8 landed** (2026-08-27, `docs/decisions/024`): the `node-cron`
+registry (`scheduled_job`). Verified via a live npm download-count query
+before choosing a library (`cron` ~6.8M/week but inflated by transitive
+NestJS installs that never call `new CronJob()` directly; `node-cron`
+~5.5M/week, the real #1 direct-call-site choice; `node-schedule`
+~4.4M/week). `node-cron`'s own `cron.schedule(...)` is called directly on
+the imported module -- neither existing receiver shape fit, so a third
+one, `imported_namespace_method_call`, was added: a single fallback in
+the call-site resolver, consulting the SAME `(module, local)` binding
+`ImportResolver.name_alias` already stores for every constructor-based
+registry, when no real `new X()`/`X()` construction resolved the
+receiver. Safe by construction for every existing registry (calling a
+method directly on an unconstructed SDK class isn't valid real-world
+TypeScript). `cron`'s own `new CronJob(...)` needs a genuinely fourth
+shape (the constructor call itself IS the registration, no method-suffix
+match needed at all) -- named, not attempted.
+
+**S11 signal provenance landed** (2026-08-27, `docs/decisions/025`) --
+`docs/decisions/011`'s own named S11 addition, core validation
+infrastructure rather than E12-specific. Verified via a real live local
+OTel SDK capture (not assumed, and not the first attempt: the
+`ConsoleSpanExporter` pretty-print format `--dynamic` scrapes turned out
+not to expose `instrumentation_scope` at all, a real, structural
+finding): an auto-instrumented span's `instrumentation_scope.name` is the
+instrumenting *library's* own name; a manual `tracer =
+trace.get_tracer(__name__)` span (S10's own taught pattern) carries the
+*target's own* module name instead. `oah/validate/live_sandbox.py`'s
+`_parse_span_file` now extracts this from OTLP-JSON's own
+`scopeSpans[].scope.name`; `oah/validate/event_assertion.py`'s
+`check_dto_dynamic` classifies it (`auto_instrumentation`/
+`harness_instrumented`/`unknown`) into a new `provenance` field, present
+only when an event is actually `observed`. A real, honest asymmetry
+confirmed by running (not just editing) three real-Docker tests: `--live`
+gives a genuinely meaningful answer; `--dynamic` always reports
+`["unknown"]`, a structural limit of its own capture mechanism, not a bug
+routed around.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

@@ -107,7 +107,15 @@ def test_live_end_to_end_reports_real_requests_and_event_assertions(tmp_path):
     assert len(live["requests"]) == 2
     assert all(r["status_code"] == 200 for r in live["requests"])
     assert live["latency_p50_ms"] is not None
-    assert live["event_assertions"] == [{"dto_id": "dto-0001", "status": "observed", "reason": None}]
+    # docs/decisions/025: the target's own tracer = trace.get_tracer(__name__)
+    # span (run as `python /repo/app.py`, so __name__ == "__main__") is real,
+    # harness-instrumented evidence, not auto-instrumentation -- http.server
+    # has no OTel auto-instrumentation library, so opentelemetry-instrument's
+    # own bootstrap has nothing to auto-instrument here; --live's OTLP-JSON
+    # capture is what actually carries instrumentation_scope, unlike --dynamic.
+    assert live["event_assertions"] == [
+        {"dto_id": "dto-0001", "status": "observed", "reason": None, "provenance": ["harness_instrumented"]}
+    ]
     assert live["unknown_attributes"]["status"] == "not_attempted"
     # two requests, each a single root-only span -> two complete traces
     assert live["tcr"] == {"traces_total": 2, "traces_complete": 2, "tcr": 1.0, "incomplete_trace_ids": []}

@@ -12,7 +12,7 @@ DTO = {
 def test_observed_when_a_single_span_has_all_required_attributes():
     spans = [{"name": "llm.generate", "attributes": {"gen_ai.usage.input_tokens": 42}}]
     result = check_dto_dynamic(DTO, spans)
-    assert result == {"dto_id": "dto-0001", "status": "observed", "reason": None}
+    assert result == {"dto_id": "dto-0001", "status": "observed", "reason": None, "provenance": ["unknown"]}
 
 
 def test_not_observed_when_no_span_was_captured_at_all():
@@ -76,3 +76,58 @@ def test_dto_with_no_required_attributes_at_all_is_not_observed_not_a_crash():
     dto = {"id": "dto-0004", "expected_events": [{"event_type": "trace"}]}
     result = check_dto_dynamic(dto, [{"name": "s1", "attributes": {}}])
     assert result["status"] == "not_observed"
+
+
+# --- Signal provenance (docs/decisions/025) -------------------------------
+
+def test_provenance_classified_from_python_auto_instrumentation_scope():
+    """Verified against a real live Python SDK capture (not assumed):
+    opentelemetry-instrumentation-flask's own spans carry
+    instrumentation_scope.name == "opentelemetry.instrumentation.flask"."""
+    spans = [{"name": "llm.generate", "attributes": {"gen_ai.usage.input_tokens": 42},
+              "instrumentation_scope": "opentelemetry.instrumentation.flask"}]
+    result = check_dto_dynamic(DTO, spans)
+    assert result["provenance"] == ["auto_instrumentation"]
+
+
+def test_provenance_classified_from_js_auto_instrumentation_scope():
+    spans = [{"name": "llm.generate", "attributes": {"gen_ai.usage.input_tokens": 42},
+              "instrumentation_scope": "@opentelemetry/instrumentation-http"}]
+    result = check_dto_dynamic(DTO, spans)
+    assert result["provenance"] == ["auto_instrumentation"]
+
+
+def test_provenance_classified_as_harness_instrumented_for_target_module_scope():
+    """Verified against a real live Python SDK capture: a manual
+    `tracer = trace.get_tracer(__name__)` span (skills/s10-instrumenter/SKILL.md's
+    own taught pattern) carries the CALLING module's own name as its
+    instrumentation_scope, never an opentelemetry.instrumentation.* prefix."""
+    spans = [{"name": "llm.generate", "attributes": {"gen_ai.usage.input_tokens": 42},
+              "instrumentation_scope": "app.chat"}]
+    result = check_dto_dynamic(DTO, spans)
+    assert result["provenance"] == ["harness_instrumented"]
+
+
+def test_provenance_unknown_when_instrumentation_scope_is_absent():
+    """--dynamic's own ConsoleSpanExporter-based capture never carries this
+    field at all -- a real, structural limit of that mechanism, not a bug."""
+    spans = [{"name": "llm.generate", "attributes": {"gen_ai.usage.input_tokens": 42}}]
+    result = check_dto_dynamic(DTO, spans)
+    assert result["provenance"] == ["unknown"]
+
+
+def test_provenance_deduplicated_and_sorted_across_multiple_matching_spans():
+    spans = [
+        {"name": "s1", "attributes": {"gen_ai.usage.input_tokens": 42},
+         "instrumentation_scope": "opentelemetry.instrumentation.flask"},
+        {"name": "s2", "attributes": {"gen_ai.usage.input_tokens": 43},
+         "instrumentation_scope": "opentelemetry.instrumentation.requests"},
+    ]
+    result = check_dto_dynamic(DTO, spans)
+    # Both spans classify as auto_instrumentation -- deduplicated to one entry.
+    assert result["provenance"] == ["auto_instrumentation"]
+
+
+def test_provenance_absent_entirely_when_not_observed():
+    result = check_dto_dynamic(DTO, [])
+    assert "provenance" not in result

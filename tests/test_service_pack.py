@@ -485,3 +485,67 @@ def test_pg_query_visible_to_gap_model_as_db_dimension():
                      "loggers": [], "existing_otel_usage": []}
         gap_model = build_gap_model(surface_map, inventory, pack=pack)
         assert gap_model["gaps"][0]["dimension"] == "db"
+
+
+# --- E12 phase 8: the node-cron registry (docs/decisions/024) -------------
+
+def test_node_cron_schedule_detected_with_service_pack(tmp_path):
+    """imported_namespace_method_call: cron is the receiver directly from
+    the import binding, no constructor/factory step at all."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "jobs.ts", (
+        'import cron from "node-cron";\n'
+        'cron.schedule("*/5 * * * *", () => {\n'
+        '  console.log("job running");\n'
+        "});\n"
+    ))
+    points = detect_repo(tmp_path, pack=pack)
+    assert len(points) == 1
+    assert points[0]["kind"] == "scheduled_job"
+    assert points[0]["framework"] == "node-cron"
+
+
+def test_default_pack_never_detects_node_cron(tmp_path):
+    """Zero behavior change for every existing caller -- node-cron is
+    service-domain vocabulary, not genai's."""
+    from oah.discovery.typescript_adapter import detect_repo
+    _write_ts(tmp_path, "jobs.ts", (
+        'import cron from "node-cron";\n'
+        'cron.schedule("*/5 * * * *", () => {});\n'
+    ))
+    assert detect_repo(tmp_path) == []
+
+
+def test_node_cron_unrelated_local_import_not_matched(tmp_path):
+    """Real precision guard, not just a name match: name_alias stores the
+    ACTUAL module string from the import, so a local module confusingly
+    also named `cron` doesn't false-positive."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "jobs.ts", (
+        'import cron from "./myLocalCronThing";\n'
+        'cron.schedule("* * * * *", () => {});\n'
+    ))
+    assert detect_repo(tmp_path, pack=pack) == []
+
+
+def test_node_cron_visible_to_gap_model_as_scheduling_dimension():
+    from oah.discovery.typescript_adapter import build_surface_map
+    from oah.discovery.gap_model import build_gap_model
+    import tempfile
+    from pathlib import Path
+
+    pack = load_pack("service")
+    with tempfile.TemporaryDirectory() as d:
+        _write_ts(Path(d), "jobs.ts", (
+            'import cron from "node-cron";\n'
+            'cron.schedule("0 0 * * *", () => {});\n'
+        ))
+        surface_map, _ = build_surface_map(Path(d), git_sha="deadbeef", pack=pack)
+        assert surface_map["points"][0]["kind"] == "scheduled_job"
+
+        inventory = {"schema_version": "0.1.0", "repo": {"path": "<test>", "git_sha": "deadbeef"},
+                     "loggers": [], "existing_otel_usage": []}
+        gap_model = build_gap_model(surface_map, inventory, pack=pack)
+        assert gap_model["gaps"][0]["dimension"] == "scheduling"

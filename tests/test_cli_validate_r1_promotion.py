@@ -149,7 +149,11 @@ def test_dynamic_and_live_and_baseline_together_reach_ladder_rung_r1(tmp_path):
     # every piece of real evidence this whole R1/R2 effort built, all
     # present and positive in one real report:
     assert result["regression_gate"]["status"] == "passed", result["regression_gate"]
-    assert result["event_assertions"] == [{"dto_id": "dto-0001", "status": "observed", "reason": None}]
+    # provenance is ["unknown"] -- --dynamic's own console-exporter capture
+    # never carries instrumentation_scope (docs/decisions/025).
+    assert result["event_assertions"] == [
+        {"dto_id": "dto-0001", "status": "observed", "reason": None, "provenance": ["unknown"]}
+    ]
     live = result["live_execution"]
     assert live["status"] == "ok", live
     assert live["tcr"]["tcr"] == 1.0, live["tcr"]

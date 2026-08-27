@@ -198,6 +198,22 @@ def _parse_span_file(path, start_offset=0):
                         "name": span.get("name"), "attributes": attributes,
                         "trace_id": span.get("traceId"), "span_id": span.get("spanId"),
                         "parent_span_id": span.get("parentSpanId"),
+                        # docs/decisions/025 (S11 signal provenance): OTLP's
+                        # own ScopeSpans.scope.name -- e.g.
+                        # "opentelemetry.instrumentation.flask" for a real
+                        # auto-instrumented span vs. "__main__"/a target
+                        # module name for a tracer obtained via
+                        # trace.get_tracer(__name__), the exact pattern
+                        # skills/s10-instrumenter/SKILL.md teaches. Verified
+                        # for real (not assumed) against a live Python SDK
+                        # capture with both shapes present in the same run
+                        # -- not independently re-verified against this
+                        # specific file-exporter JSON encoding in this
+                        # phase, only against the SDK's own in-process
+                        # Span.instrumentation_scope.name, which OTLP-JSON's
+                        # scopeSpans[].scope.name is a direct, stable
+                        # serialization of per the OTLP spec.
+                        "instrumentation_scope": scope_span.get("scope", {}).get("name"),
                     })
     return spans
 

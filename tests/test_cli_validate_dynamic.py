@@ -135,7 +135,13 @@ def test_dynamic_reports_observed_for_a_dto_the_s10_skill_pattern_actually_emits
 
     result = json.loads((tmp_path / "validation.json").read_text())
     assert result["regression_gate"]["status"] == "passed"
-    assert result["event_assertions"] == [{"dto_id": "dto-0001", "status": "observed", "reason": None}]
+    # provenance is ["unknown"] here, not a real classification -- --dynamic's
+    # own ConsoleSpanExporter-based capture never carries instrumentation_scope
+    # at all (docs/decisions/025), a real, structural limit of that capture
+    # mechanism, unlike --live's OTLP-JSON capture (see test_cli_validate_live.py).
+    assert result["event_assertions"] == [
+        {"dto_id": "dto-0001", "status": "observed", "reason": None, "provenance": ["unknown"]}
+    ]
     # The real proof this phase's whole point works end to end: a real
     # DTO, actually applied, whose expected event was actually captured
     # -- this is the first real report in the whole codebase that can
