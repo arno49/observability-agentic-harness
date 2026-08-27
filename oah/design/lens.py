@@ -108,6 +108,15 @@ def design_cost(points, repo_git_sha, context=None, model=None, _completion_fn=N
     return design_lens("s4-cost", points, repo_git_sha, context, model, _completion_fn)
 
 
+def design_telemetry_cost(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+    """The service pack's own adaptation of design_cost (docs/decisions/011,
+    docs/decisions/019): token accounting becomes cardinality, sampling and
+    retention accounting. Cross-cutting like design_tracing/design_ops --
+    telemetry cost applies to any point kind that emits a span/metric/log,
+    not one SDK's call sites."""
+    return design_lens("s4-telemetry-cost", points, repo_git_sha, context, model, _completion_fn)
+
+
 def design_ops(points, repo_git_sha, context=None, model=None, _completion_fn=None):
     return design_lens("s4-ops", points, repo_git_sha, context, model, _completion_fn)
 

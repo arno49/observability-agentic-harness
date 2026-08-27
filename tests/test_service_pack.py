@@ -22,7 +22,8 @@ import pytest
 
 from oah.cli import _design_all_lenses, _lens_fns_for_pack, _target_kinds_for_pack
 from oah.design import lens as lens_module
-from oah.design.lens import design_tracing, design_ops, design_pii_governance, LensDesignError
+from oah.design.lens import (design_tracing, design_ops, design_pii_governance,
+                              design_telemetry_cost, LensDesignError)
 from oah.design.gates import run_gates, gates_passed
 from oah.design.dto_generator import generate_dtos
 from oah.domains.loader import load_pack
@@ -57,10 +58,12 @@ def _fragment_for(lens_name, point_ids):
     }
 
 
-def test_service_pack_loads_and_declares_the_three_reused_lenses():
+def test_service_pack_loads_and_declares_its_lenses():
     pack = load_pack("service")
-    assert {l["lens"] for l in pack["lenses"]} == {"tracing", "ops", "pii-governance"}
-    assert all(l["reused_from"] == "genai" for l in pack["lenses"])
+    assert {l["lens"] for l in pack["lenses"]} == {"tracing", "ops", "pii-governance", "telemetry-cost"}
+    reused = {l["lens"] for l in pack["lenses"] if l.get("reused_from") == "genai"}
+    assert reused == {"tracing", "ops", "pii-governance"}
+    assert "reused_from" not in next(l for l in pack["lenses"] if l["lens"] == "telemetry-cost")
     assert {pk["kind"] for pk in pack["point_kinds"]} == {
         "declarative_route", "http_server_route", "http_client_call",
         "db_query", "queue_producer", "queue_consumer", "scheduled_job",
@@ -80,6 +83,7 @@ def test_design_all_lenses_filters_each_lens_by_the_packs_own_target_kinds():
     target_kinds_by_lens = _target_kinds_for_pack(pack)
     assert target_kinds_by_lens["tracing"] is None
     assert target_kinds_by_lens["ops"] is None
+    assert target_kinds_by_lens["telemetry-cost"] is None
     assert target_kinds_by_lens["pii-governance"] == ["http_server_route", "declarative_route", "db_query"]
 
     received = {}
@@ -96,22 +100,26 @@ def test_design_all_lenses_filters_each_lens_by_the_packs_own_target_kinds():
     all_ids = {p["id"] for p in SERVICE_POINTS}
     assert received["tracing"] == all_ids
     assert received["ops"] == all_ids
+    assert received["telemetry-cost"] == all_ids
     assert received["pii-governance"] == {"sp-0001", "sp-0002", "sp-0003"}  # excludes queue_producer
-    assert len(fragments) == 3
+    assert len(fragments) == 4
 
 
 def test_reused_lens_functions_run_for_real_against_service_points_no_skill_md_edit():
     """The deeper proof: not a fake lens_fn, but the REAL design_tracing/
-    design_ops/design_pii_governance -- real SKILL.md files loaded from
-    skills/s4-tracing, skills/s4-ops, skills/s4-pii-governance (genai's own,
-    zero edits), real output-schema validation, only the LLM call itself
-    mocked (no live API key in this environment, same reasoning every
-    other lens test in this suite uses)."""
+    design_ops/design_pii_governance/design_telemetry_cost -- real SKILL.md
+    files loaded from skills/s4-tracing, skills/s4-ops,
+    skills/s4-pii-governance (genai's own, zero edits) and
+    skills/s4-telemetry-cost (the service pack's own adapted skill), real
+    output-schema validation, only the LLM call itself mocked (no live API
+    key in this environment, same reasoning every other lens test in this
+    suite uses)."""
     pack = load_pack("service")
     target_kinds_by_lens = _target_kinds_for_pack(pack)
 
     for lens_name, design_fn in [("tracing", design_tracing), ("ops", design_ops),
-                                  ("pii-governance", design_pii_governance)]:
+                                  ("pii-governance", design_pii_governance),
+                                  ("telemetry-cost", design_telemetry_cost)]:
         target_kinds = target_kinds_by_lens[lens_name]
         points = SERVICE_POINTS if target_kinds is None else [
             p for p in SERVICE_POINTS if p["kind"] in target_kinds

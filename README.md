@@ -95,8 +95,12 @@ auto-instrumented signal
 route registry (`--pack service --language typescript`) is the second
 structurally-different S1 detector shape the epic's own DoD requires
 ([018](docs/decisions/018-e12-express-registry.md), docs-grounded, not yet
-corpus-verified). `telemetry-cost`/`slo`/`dependency`, four more registries,
-and a real corpus fixture remain unbuilt. LLM
+corpus-verified), and a fourth lens, `telemetry-cost` (adapted from genai's
+`cost` — cardinality/sampling/retention accounting instead of token
+accounting, cross-cutting;
+[019](docs/decisions/019-e12-telemetry-cost-lens.md)). `slo`/`dependency`
+(the two genuinely new lenses), four more registries, and a real corpus
+fixture remain unbuilt. LLM
 observability was still the right place to start: it's where OTel semantic
 conventions and APM tooling are least mature, so it's where a gap-modeling harness
 added the most value first.

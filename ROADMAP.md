@@ -996,10 +996,29 @@ replaces every command's own hardcoded `load_pack("genai")` — verified
 end to end through a real `oah map --language typescript --pack service`
 subprocess run.
 
-**Still fully unbuilt, named not implied**: `telemetry-cost`/`slo`/`dependency`
-(need genuine new skill content), four more S1 registries
-(`db_query`/`queue_*`/`scheduled_job`), `docs/decisions/011`'s own new S5
-gates, S11 signal provenance, and a real corpus fixture (DoD (a)).
+**E12 phase 4 landed** (2026-08-27, `docs/decisions/019`): the
+`telemetry-cost` lens, adapted from genai's `cost` (token accounting
+becomes cardinality/sampling/retention accounting). `skills/s4-telemetry-cost/`
+is a new skill, not a find-and-replace of `s4-cost` — cardinality risk is
+directly informed by S1's own `has_path_parameter` field on route points
+(a parameterized route is `high` risk unless the point already shows the
+receiver templates the segment), sampling steers toward tail-based/
+error-biased strategies for high-cardinality error-relevant points rather
+than a flat rate, and retention tiering is a real axis `cost` never
+needed. Cross-cutting (`target_kinds: null`), unlike `cost`
+(`llm_generation`-only) — cardinality/sampling/retention cost applies to
+any point kind. `design_telemetry_cost` is a pure pass-through, matching
+every lens's contract since phase 1's own fix. No new S5 gates this
+phase — `docs/decisions/011`'s new-gate list is entirely `slo`-shaped;
+`telemetry-cost` satisfies the ten existing domain-neutral gates
+unchanged, proven by a real `run_gates` call in this phase's own tests.
+
+**Still fully unbuilt, named not implied**: `slo`/`dependency` (the two
+genuinely new lenses — real domain-content research still needed:
+burn-rate derivation, dependency-criticality/extra-nine rule), four more
+S1 registries (`db_query`/`queue_*`/`scheduled_job`),
+`docs/decisions/011`'s own new S5 gates (`slo`/`dependency`-gated), S11
+signal provenance, and a real corpus fixture (DoD (a)).
 
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe

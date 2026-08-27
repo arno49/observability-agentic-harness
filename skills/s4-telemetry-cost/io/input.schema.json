@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s4-telemetry-cost/input.schema.json",
+  "title": "S4 telemetry-cost lens — input",
+  "description": "Cross-cutting like s4-tracing's own input.schema.json -- telemetry (cardinality, sampling, retention) cost applies to any point kind that emits a span/metric/log, not one SDK's call sites.",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "points"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "points": {
+      "type": "array",
+      "minItems": 1,
+      "description": "surface_map.json points of any kind -- the lens designs cardinality/sampling/retention signals for each.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "file", "line"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "symbol": { "type": "string" },
+          "framework": { "type": "string" },
+          "has_path_parameter": {
+            "type": "boolean",
+            "description": "From S1 (declarative_route/http_server_route points) -- a real, direct cardinality signal: an unparameterized path segment is one label value, a parameterized one is as many values as there are real IDs."
+          },
+          "gap_status": { "enum": ["dark", "partial", "covered"], "description": "from gap_model.json, if available" },
+          "gap_priority": { "enum": ["p0", "p1", "p2", "p3"] }
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "context.yaml, if an interview has run -- optional; the lens must produce valid, complete signals for every point with or without it, but workflow criticality (when present) changes how aggressive sampling can be for that point without losing the traces that matter.",
+      "properties": {
+        "workflows": { "type": "array" }
+      }
+    }
+  }
+}

@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Added
+- E12 phase 4 (`docs/decisions/019`): the `telemetry-cost` lens
+  (`skills/s4-telemetry-cost/`), adapted from genai's `cost` -- token
+  accounting becomes cardinality/sampling/retention accounting.
+  Cross-cutting, unlike `cost`. Cardinality risk is directly informed by
+  S1's own `has_path_parameter` field on route points. No new S5 gates
+  needed.
 - E12 phase 3 (`docs/decisions/018`): the Express registry (`http_server_route`),
   DoD (c)'s second structurally-different detector shape. Implemented
   `module_function_call` for real (named in the schema since E13, never

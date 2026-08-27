@@ -30,7 +30,8 @@
   "lenses": [
     { "lens": "tracing", "skill": "s4-tracing", "target_kinds": null, "emits": ["design_fragment"], "reused_from": "genai" },
     { "lens": "ops", "skill": "s4-ops", "target_kinds": null, "emits": ["design_fragment"], "reused_from": "genai" },
-    { "lens": "pii-governance", "skill": "s4-pii-governance", "target_kinds": ["http_server_route", "declarative_route", "db_query"], "emits": ["design_fragment"], "reused_from": "genai" }
+    { "lens": "pii-governance", "skill": "s4-pii-governance", "target_kinds": ["http_server_route", "declarative_route", "db_query"], "emits": ["design_fragment"], "reused_from": "genai" },
+    { "lens": "telemetry-cost", "skill": "s4-telemetry-cost", "target_kinds": null, "emits": ["design_fragment"] }
   ],
 
   "semconv_namespaces": [
