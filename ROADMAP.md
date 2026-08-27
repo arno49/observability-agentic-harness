@@ -1090,6 +1090,24 @@ class of gap `express.Router()` left named).
 `cardinality_guard`, S11 signal provenance, and a real vendored-corpus
 fixture (E7's own territory).
 
+**A real finding worth recording before attempting the queue registries**:
+`amqplib` (verified against its own README/API docs — connect/channel/
+queue-op method names all confirmed real) needs a materially harder
+detector shape than Express or `pg`. Both of those are one-hop
+(`new X()` or `X()` → a method on the same variable); `amqplib`'s real
+shape is three hops -- `amqp.connect(url)` (a namespaced module-function
+call, itself a factory) → `.createChannel()` on the awaited result → the
+actual queue operation (`assertQueue`/`sendToQueue`/`publish`/`consume`)
+on THAT awaited result. `oah/discovery/typescript_adapter.py`'s
+known-name tracking only resolves a single hop from import to receiver
+today -- extending it to chain through two intermediate awaited
+assignments is a real, separate adapter change, not a data-only registry
+addition the way `pg` was. Deliberately not attempted rather than shipped
+as a low-confidence heuristic (e.g. matching `sendToQueue`/`consume` by
+method name alone, with no receiver resolution at all) -- that would be a
+real precision regression from every registry built so far, none of which
+guess at an unresolved receiver.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and
