@@ -1285,6 +1285,33 @@ construction, not amqplib-specific: a future N-hop SDK (e.g. `kafkajs`'s
 code change. `assertQueue`/`createConfirmChannel()` named as real,
 deliberate exclusions, not folded in.
 
+**E12 phase 10 landed** (2026-08-27, `docs/decisions/032`): the `axios`
+registry (`http_client_call`) — the fifth S1 registry, and the first one in
+this pack found by actually running the adapter against a real target repo
+(`mf-analyzer-web`, an EPAM React/Vite app) rather than reading an SDK's own
+docs first. A first version of the registry alone (chain_hop from
+`axios.create()` to a synthetic instance module, mirroring amqplib's own
+precedent) resolved **0 of the repo's ~291 real axios call sites** — root
+cause, found live: the axios instance is built and `export default`-ed in
+one file, imported and called in ~450 different consumer files, and every
+known-name mechanism this adapter has ever had only ever tracked a receiver
+within the file that constructs it (the same boundary SP1's
+`docs/decisions/003` named for the Python adapter, routed there to an LLM
+pass this adapter has never had). Built the fix, not just documented the
+gap: `typescript_adapter.py` gained a two-pass repo scan — pass 1 builds a
+repo-wide `{file: {export_name: resolved_module}}` index via a new
+`_collect_export_map` (reusing each file's own already-populated
+known_names, needing no special handling for `export const x = ...` since
+`_walk`'s existing recursion already processes it); pass 2 resolves each
+file's own imports (relative paths directly, `tsconfig.json`
+`compilerOptions.paths` aliases like `"@/*": ["src/*"]` via a new
+`_resolve_module_specifier`) against that index and seeds any hit into
+`known_names` before the file's real walk — from there every existing
+resolution/suffix-match path handles it exactly like a local receiver, zero
+further new code. Single-hop only (a re-export chain through a further
+file is a named, tested gap), and verified end to end on the real repo:
+**0 → 294 real call sites detected.**
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

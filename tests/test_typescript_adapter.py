@@ -387,3 +387,125 @@ def test_chain_hop_without_await_also_resolves(tmp_path):
     resolved = detect_file(path, tmp_path, pack=_CHAIN_PACK)
     assert len(resolved) == 1
     assert resolved[0]["kind"] == "widget_send"
+
+
+# --- Cross-file known-name propagation (docs/decisions/032) ---------------
+#
+# Motivated by a real target repo where a single axios instance is built in
+# one file and imported into ~450 consumer files -- 0 of those real call
+# sites detected until this mechanism existed. Own synthetic pack (a plain
+# constructor + receiver_method_suffix registry, independent of axios) so
+# these tests protect the GENERIC cross-file mechanism, same precedent as
+# _CHAIN_PACK above protecting chain_hop independent of amqplib.
+
+_CROSSFILE_PACK = {
+    "schema_version": "0.1.0", "name": "crossfile-test", "version": "0.1.0",
+    "point_kinds": [{"kind": "widget_send", "dimension": "test", "detected_by": "registry"}],
+    "registries": [
+        {
+            "framework": "widgetlib", "surface_kind": "widget_send", "language": "typescript",
+            "sdk_module": "widgetlib", "constructor_names": ["Widget"],
+            "method_suffixes": [["send"]], "detector_shape": "receiver_method_suffix",
+        },
+    ],
+    "lenses": [{"lens": "tracing", "skill": "s4-tracing", "target_kinds": None, "emits": ["design_fragment"]}],
+    "semconv_namespaces": [{"namespace": "test", "stability": "unknown", "pin": "0"}],
+}
+
+
+def test_crossfile_pack_schema_is_itself_valid():
+    validate("domain_pack", _CROSSFILE_PACK)  # raises on failure
+
+
+def test_default_export_resolved_across_a_relative_import(tmp_path):
+    _write(tmp_path, "lib/client.ts", (
+        'import Widget from "widgetlib";\n'
+        "const client = new Widget();\n"
+        "export default client;\n"
+    ))
+    _write(tmp_path, "consumer.ts", (
+        'import client from "./lib/client";\n'
+        'client.send("hi");\n'
+    ))
+    resolved = detect_repo(tmp_path, pack=_CROSSFILE_PACK)
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "widget_send"
+    assert resolved[0]["file"] == "consumer.ts"
+
+
+def test_named_export_with_import_alias_resolved(tmp_path):
+    _write(tmp_path, "lib/client2.ts", (
+        'import Widget from "widgetlib";\n'
+        "export const sharedClient = new Widget();\n"
+    ))
+    _write(tmp_path, "consumer2.ts", (
+        'import { sharedClient as sc } from "./lib/client2";\n'
+        'sc.send("hi");\n'
+    ))
+    resolved = detect_repo(tmp_path, pack=_CROSSFILE_PACK)
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "widget_send"
+
+
+def test_tsconfig_path_alias_resolved_across_files(tmp_path):
+    _write(tmp_path, "tsconfig.json", (
+        '{"compilerOptions": {"baseUrl": ".", "paths": {"@/*": ["src/*"]}}}\n'
+    ))
+    _write(tmp_path, "src/lib/client3.ts", (
+        'import Widget from "widgetlib";\n'
+        "const client = new Widget();\n"
+        "export default client;\n"
+    ))
+    _write(tmp_path, "src/consumer3.ts", (
+        'import client from "@/lib/client3";\n'
+        'client.send("hi");\n'
+    ))
+    resolved = detect_repo(tmp_path, pack=_CROSSFILE_PACK)
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "widget_send"
+
+
+def test_construct_and_use_in_same_file_still_works_via_detect_repo(tmp_path):
+    """Regression guard: the two-pass repo scan must not disturb the
+    ordinary same-file case (already covered via detect_file elsewhere in
+    this module, re-asserted here through detect_repo's own new code path)."""
+    _write(tmp_path, "local.ts", (
+        'import Widget from "widgetlib";\n'
+        "const client = new Widget();\n"
+        'client.send("hi");\n'
+    ))
+    resolved = detect_repo(tmp_path, pack=_CROSSFILE_PACK)
+    assert len(resolved) == 1
+
+
+def test_unresolvable_import_specifier_does_not_crash_or_resolve(tmp_path):
+    """An import from a bare npm package name (no relative path, no
+    tsconfig alias match) must not resolve and must not raise -- the
+    common case for every ordinary third-party import in a real repo."""
+    _write(tmp_path, "consumer4.ts", (
+        'import client from "some-npm-package";\n'
+        'client.send("hi");\n'
+    ))
+    resolved = detect_repo(tmp_path, pack=_CROSSFILE_PACK)
+    assert resolved == []
+
+
+def test_reexport_through_a_further_file_is_a_named_gap(tmp_path):
+    """Single-hop only, by design: a file that re-exports a name FROM
+    another file (`export { default } from './real'`) is not followed to
+    that further file. Documents the gap with a regression test rather
+    than silently resolving or silently staying broken -- if this starts
+    passing unexpectedly, the docstring's own "single-hop only" claim needs
+    updating too."""
+    _write(tmp_path, "lib/real.ts", (
+        'import Widget from "widgetlib";\n'
+        "const client = new Widget();\n"
+        "export default client;\n"
+    ))
+    _write(tmp_path, "lib/reexport.ts", 'export { default } from "./real";\n')
+    _write(tmp_path, "consumer5.ts", (
+        'import client from "./lib/reexport";\n'
+        'client.send("hi");\n'
+    ))
+    resolved = detect_repo(tmp_path, pack=_CROSSFILE_PACK)
+    assert resolved == []

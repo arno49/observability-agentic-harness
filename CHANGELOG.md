@@ -3,6 +3,20 @@
 ## [Unreleased]
 
 ### Added
+- E12 phase 10: `axios` registry (`http_client_call`) and the TypeScript
+  adapter's first cross-file known-name propagation mechanism
+  (`docs/decisions/032`). Found by running `oah map` against a real EPAM
+  target repo (mf-analyzer-web): ~291 real axios call sites, all through
+  one shared `axios.create()` instance built in one file and imported into
+  ~450 others -- a registry entry alone resolved 0 of them, since every
+  known-name mechanism this adapter has ever had was same-file-only.
+  `typescript_adapter.py` gained a two-pass repo scan (`_collect_export_map`,
+  tsconfig-`paths`-aware `_resolve_module_specifier`) that seeds a
+  cross-file-resolved receiver into a consumer file's known_names before its
+  walk runs, so every existing detection path handles it unchanged.
+  Single-hop only (a re-export chain through a further file is a named,
+  tested gap). Verified end to end on the motivating repo: 0 -> 294 real
+  call sites detected.
 - E8 phase 2: private-gateway visibility (`docs/decisions/031`). Verified
   directly against litellm's own installed source that a base-URL
   override (`ANTHROPIC_API_BASE`/`ANTHROPIC_BASE_URL`) and mTLS

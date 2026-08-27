@@ -711,3 +711,133 @@ def test_amqplib_consumer_visible_to_gap_model_as_routing_dimension():
                      "loggers": [], "existing_otel_usage": []}
         gap_model = build_gap_model(surface_map, inventory, pack=pack)
         assert gap_model["gaps"][0]["dimension"] == "routing"
+
+
+# --- E12 phase 10: the axios registry + cross-file resolution -------------
+# (docs/decisions/032). Motivated by a real EPAM target repo (mf-analyzer-web):
+# a single `axios.create()` instance built in one file, `export default`-ed,
+# and imported into ~450 consumer files -- the shape that forced this
+# adapter's first cross-file known-name propagation mechanism, not just a
+# new registry entry (chain_hop alone, same-file-only, resolves nothing on
+# that repo's real usage pattern).
+
+def test_axios_instance_call_resolved_across_files(tmp_path):
+    """The real-world shape: construction and use in two different files."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "apiClient.ts", (
+        'import axios from "axios";\n'
+        "const apiClient = axios.create({ baseURL: \"/api\" });\n"
+        "export default apiClient;\n"
+    ))
+    _write_ts(tmp_path, "Widget.tsx", (
+        'import apiClient from "./apiClient";\n'
+        "async function load() {\n"
+        '  return apiClient.get("/things");\n'
+        "}\n"
+    ))
+    points = detect_repo(tmp_path, pack=pack)
+    assert len(points) == 1
+    assert points[0]["kind"] == "http_client_call"
+    assert points[0]["framework"] == "axios"
+    assert points[0]["file"] == "Widget.tsx"
+
+
+def test_axios_instance_multiple_verbs_all_detected_across_files(tmp_path):
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "apiClient.ts", (
+        'import axios from "axios";\n'
+        "const apiClient = axios.create({});\n"
+        "export default apiClient;\n"
+    ))
+    _write_ts(tmp_path, "consumer.ts", (
+        'import apiClient from "./apiClient";\n'
+        "async function run() {\n"
+        '  await apiClient.get("/a");\n'
+        '  await apiClient.post("/b", {});\n'
+        '  await apiClient.delete("/c");\n'
+        "}\n"
+    ))
+    points = detect_repo(tmp_path, pack=pack)
+    assert len(points) == 3
+    assert all(p["kind"] == "http_client_call" and p["framework"] == "axios" for p in points)
+
+
+def test_axios_same_file_construct_and_use_also_resolves(tmp_path):
+    """The chain_hop entry's own same-file case, independent of cross-file
+    propagation -- both mechanisms are real, this covers the simpler one."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "local.ts", (
+        'import axios from "axios";\n'
+        "const client = axios.create({});\n"
+        'client.get("/x");\n'
+    ))
+    points = detect_repo(tmp_path, pack=pack)
+    assert len(points) == 1
+    assert points[0]["kind"] == "http_client_call"
+
+
+def test_axios_direct_namespace_call_detected(tmp_path):
+    """axios's own documented alternative API: a direct call on the bare
+    imported module, no `.create()` instance step (imported_namespace_method_call)."""
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "consumer.ts", 'import axios from "axios";\naxios.get("/x");\n')
+    points = detect_repo(tmp_path, pack=pack)
+    assert len(points) == 1
+    assert points[0]["kind"] == "http_client_call"
+    assert points[0]["framework"] == "axios"
+
+
+def test_axios_create_call_itself_produces_no_spurious_point(tmp_path):
+    from oah.discovery.typescript_adapter import detect_repo
+    pack = load_pack("service")
+    _write_ts(tmp_path, "apiClient.ts", (
+        'import axios from "axios";\n'
+        "const apiClient = axios.create({});\n"
+        "export default apiClient;\n"
+    ))
+    points = detect_repo(tmp_path, pack=pack)
+    assert points == []  # construction alone, no consumer file calling a verb
+
+
+def test_default_pack_never_detects_axios(tmp_path):
+    from oah.discovery.typescript_adapter import detect_repo
+    _write_ts(tmp_path, "apiClient.ts", (
+        'import axios from "axios";\n'
+        "const apiClient = axios.create({});\n"
+        "export default apiClient;\n"
+    ))
+    _write_ts(tmp_path, "consumer.ts", (
+        'import apiClient from "./apiClient";\n'
+        'apiClient.get("/x");\n'
+    ))
+    assert detect_repo(tmp_path) == []
+
+
+def test_axios_visible_to_gap_model_as_dependency_dimension():
+    from oah.discovery.typescript_adapter import build_surface_map
+    from oah.discovery.gap_model import build_gap_model
+    import tempfile
+    from pathlib import Path
+
+    pack = load_pack("service")
+    with tempfile.TemporaryDirectory() as d:
+        _write_ts(Path(d), "apiClient.ts", (
+            'import axios from "axios";\n'
+            "const apiClient = axios.create({});\n"
+            "export default apiClient;\n"
+        ))
+        _write_ts(Path(d), "consumer.ts", (
+            'import apiClient from "./apiClient";\n'
+            'apiClient.get("/x");\n'
+        ))
+        surface_map, _ = build_surface_map(Path(d), git_sha="deadbeef", pack=pack)
+        assert surface_map["points"][0]["kind"] == "http_client_call"
+
+        inventory = {"schema_version": "0.1.0", "repo": {"path": "<test>", "git_sha": "deadbeef"},
+                     "loggers": [], "existing_otel_usage": []}
+        gap_model = build_gap_model(surface_map, inventory, pack=pack)
+        assert gap_model["gaps"][0]["dimension"] == "dependency"

@@ -122,7 +122,17 @@ shape too — `chain_hop`, pure known-name-propagation data for a receiver
 resolved through more than one hop of awaited assignment (amqplib's real
 `connect()` → `createChannel()` → the actual queue operation), after
 which the existing suffix-matching machinery handles the rest unchanged
-([028](docs/decisions/028-e12-amqplib-chained-receiver-resolution.md)).
+([028](docs/decisions/028-e12-amqplib-chained-receiver-resolution.md)). A
+fifth, `axios` (`http_client_call`), is the first registry in this pack
+actually verified against a real target repo instead of an SDK's own
+docs — running `oah map` against a real EPAM app found ~291 real axios
+call sites, all through one shared `axios.create()` instance built in one
+file and imported into ~450 others, invisible to a registry-only fix
+(0 detected) until the TypeScript adapter gained its first cross-file
+known-name propagation mechanism (a two-pass repo scan resolving each
+file's imports, including `tsconfig.json` path aliases, against a
+repo-wide export index) — verified end to end at 0 → 294 real call sites
+detected ([032](docs/decisions/032-e12-axios-crossfile-resolution.md)).
 Separately, S11 gained real signal provenance — whether a
 validated event came from auto-instrumentation or from code S10 actually
 edited, verified against a live OTel SDK capture

@@ -104,7 +104,37 @@ single-entry-per-module `module_to_registry` can't express -- `_RegistryContext`
 gained a parallel `module_to_registries` (module -> list) for this, resolved
 at each call site by which entry's own `method_suffixes` contains the
 matched suffix, not by module alone.
+
+Cross-file known-name propagation (docs/decisions/032): every mechanism
+above resolves a receiver only within the FILE that constructs it -- a
+real, previously undocumented gap for TypeScript specifically (SP1's own
+docs/decisions/003 finding 2 named cross-file resolution as needing an LLM
+pass, which this adapter has never had). Found on a real target repo, not
+assumed: a single `axios.create()` instance built in one file and
+`export default`-ed, imported and called in ~450 separate consumer files
+-- 0 of those real call sites detected until this phase. `detect_repo` now
+runs two passes: pass 1 calls `detect_file(..., collect_exports=True)` for
+every file to build a repo-wide `{resolved_file: {export_name:
+resolved_module}}` index (`_collect_export_map`, reading the SAME
+known_names the ordinary walk already populates -- `export const x = ...`
+needs no special handling since `_walk`'s existing per-child recursion
+already processes the declaration inside `export_statement`; only `export
+default <identifier>` and `export { x [as y] }` need a dedicated scan,
+since neither declares anything new, both just reference an existing
+name). Pass 2 resolves each file's own imports (now pre-collected in
+`detect_file` itself, before the walk, rather than inline during it --
+cross-file seeding needs them before the walk starts either way) against
+that index via `_resolve_module_specifier` (relative paths directly;
+tsconfig `compilerOptions.paths` aliases, e.g. `"@/*": ["src/*"]`, via
+`_load_path_aliases`/`_substitute_alias`), and seeds any hit straight into
+`known_names` before the real walk -- from there it flows through every
+EXISTING resolution/suffix-match code path unchanged, exactly as if the
+name had been constructed locally. Single-hop only, real and named: a
+resolved file's own re-exports (`export { x } from './y'`) are not
+followed to a FURTHER file. A repo with no cross-file-resolvable case
+produces byte-identical output to the single-pass version this replaced.
 """
+import json
 import re
 from collections import namedtuple
 from pathlib import Path
@@ -188,6 +218,14 @@ class ImportResolver:
         self.constructor_names = constructor_names
         self.name_alias = {}
         self.imported_names = set()
+        # Every import, regardless of whether its local name matches a
+        # known SDK constructor -- (local, original_or_None_for_default,
+        # module, is_default). name_alias/imported_names only ever capture
+        # SDK-relevant or bare-name info; cross-file known-name propagation
+        # (docs/decisions/032) needs the raw import shape for ANY local
+        # name, since the name being tracked (e.g. a shared `apiClient`
+        # instance) is never itself in constructor_names.
+        self.all_imports = []
 
     def visit_import_statement(self, node, src):
         source_node = node.child_by_field_name("source")
@@ -205,6 +243,7 @@ class ImportResolver:
                 # `import anthropic; anthropic.Anthropic()` does.
                 local = _text(child, src)
                 self.imported_names.add(local)
+                self.all_imports.append((local, None, module, True))
                 if local in self.constructor_names:
                     self.name_alias[local] = (module, local)
             elif child.type == "named_imports":
@@ -218,6 +257,7 @@ class ImportResolver:
                     original = _text(name_node, src)
                     local = _text(alias_node, src) if alias_node is not None else original
                     self.imported_names.add(local)
+                    self.all_imports.append((local, original, module, False))
                     if original in self.constructor_names:
                         self.name_alias[local] = (module, original)
 
@@ -345,6 +385,135 @@ def _string_content(string_node, src):
     for c in string_node.children:
         if c.type == "string_fragment":
             return _text(c, src)
+    return None
+
+
+# --- Cross-file known-name propagation (docs/decisions/032) ---------------
+#
+# Every resolution mechanism above (constructor call, factory call,
+# annotation, chain_hop) only ever tracks a receiver WITHIN the file that
+# constructs it. Real code very often constructs an SDK client/instance
+# ONCE in its own module and re-exports it (`export default apiClient`),
+# with every real call site living in a different file that just imports
+# the already-built instance -- found on a real target repo, not assumed:
+# one axios instance built in one file, called from ~450 others (E12
+# phase 10, docs/decisions/032). `_walk`'s own known-name tracking is
+# unaware of this by design (SP1 finding 2, docs/decisions/003, named the
+# same boundary for Python) -- the mechanism below is what closes it,
+# single-hop only: a name exported directly by the file it's declared in,
+# imported directly by the file that uses it. It does NOT follow a chain
+# of re-exports (`export { x } from './y'`) through a further file -- a
+# real, separate gap, not silently folded in.
+
+def _collect_export_map(root, src, known_names):
+    """Scans root's OWN top-level children (ES module exports are never
+    valid anywhere else) for the three real export shapes that reference an
+    already-resolved local name: `export default <identifier>`,
+    `export const <name> = ...` (the declaration itself already put <name>
+    in known_names via _walk's ordinary per-child recursion -- export_statement
+    is not special-cased there, so nothing extra is needed to populate it),
+    and `export { <name> [as <alias>] }`. Returns {exported_name: resolved_module}
+    for only the names that actually resolved -- an export of an unresolved
+    name is simply absent, not an error. `export default function/class ...`,
+    `export function/class X`, and re-export-from (`export { x } from './y'`,
+    `export * from './y'`) are real, named gaps: none reference a plain
+    identifier already in known_names the way the three handled shapes do."""
+    export_map = {}
+    for child in root.children:
+        if child.type != "export_statement":
+            continue
+        value = child.child_by_field_name("value")
+        if (value is not None and value.type == "identifier"
+                and any(c.type == "default" for c in child.children)):
+            name = _text(value, src)
+            if name in known_names:
+                export_map["default"] = known_names[name]
+            continue
+        decl = next((c for c in child.children if c.type in ("lexical_declaration", "variable_declaration")), None)
+        if decl is not None:
+            for d in decl.named_children:
+                if d.type != "variable_declarator":
+                    continue
+                name_node = d.child_by_field_name("name")
+                if name_node is not None and name_node.type == "identifier":
+                    name = _text(name_node, src)
+                    if name in known_names:
+                        export_map[name] = known_names[name]
+            continue
+        clause = next((c for c in child.children if c.type == "export_clause"), None)
+        if clause is None:
+            continue
+        for spec in clause.named_children:
+            if spec.type != "export_specifier":
+                continue
+            name_node = spec.child_by_field_name("name")
+            alias_node = spec.child_by_field_name("alias")
+            if name_node is None:
+                continue
+            local = _text(name_node, src)
+            exported_as = _text(alias_node, src) if alias_node is not None else local
+            if local in known_names:
+                export_map[exported_as] = known_names[local]
+    return export_map
+
+
+def _load_path_aliases(repo_root):
+    """Reads tsconfig.json's compilerOptions.baseUrl/paths for cross-file
+    import-specifier resolution. Best-effort: a missing file, JSON this
+    stdlib parser can't handle (tsconfig.json commonly permits // comments
+    and trailing commas real TS tooling accepts but `json.loads` does not),
+    or an absent compilerOptions all resolve to "no aliases" -- alias-based
+    imports (e.g. "@/x") then simply never cross-file-resolve; relative
+    imports are unaffected either way. Does not follow a tsconfig "extends"
+    chain -- a real, separate gap, named here rather than guessed at."""
+    tsconfig_path = Path(repo_root) / "tsconfig.json"
+    if not tsconfig_path.is_file():
+        return ".", {}
+    try:
+        data = json.loads(tsconfig_path.read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return ".", {}
+    opts = data.get("compilerOptions") or {}
+    return opts.get("baseUrl") or ".", opts.get("paths") or {}
+
+
+def _substitute_alias(spec, pattern, target):
+    """tsconfig `paths` entries are wildcard patterns (`"@/*": ["src/*"]`),
+    not exact strings, per TS's own documented path-mapping syntax."""
+    if pattern.endswith("*"):
+        prefix = pattern[:-1]
+        if not spec.startswith(prefix) or not target.endswith("*"):
+            return None
+        return target[:-1] + spec[len(prefix):]
+    return target if spec == pattern else None
+
+
+def _resolve_module_specifier(spec, importing_file, repo_root, base_url, paths):
+    """Resolves an import's module specifier to an actual .ts/.tsx file on
+    disk. Relative specifiers (`./x`, `../a/b`) resolve against the
+    importing file's own directory; anything else is checked against
+    tsconfig's path aliases. A bare package specifier (no leading "." and
+    no matching alias, e.g. "axios", "react") returns None -- external
+    packages are already handled by the SDK registries directly, never by
+    this mechanism."""
+    if spec.startswith("."):
+        candidate = importing_file.parent / spec
+    else:
+        resolved_rel = None
+        for pattern, targets in (paths or {}).items():
+            for target in targets or []:
+                resolved_rel = _substitute_alias(spec, pattern, target)
+                if resolved_rel is not None:
+                    break
+            if resolved_rel is not None:
+                break
+        if resolved_rel is None:
+            return None
+        candidate = Path(repo_root) / base_url / resolved_rel
+    for suffix in (".ts", ".tsx", "/index.ts", "/index.tsx"):
+        p = Path(str(candidate) + suffix)
+        if p.is_file():
+            return p.resolve()
     return None
 
 
@@ -660,55 +829,76 @@ def _walk(node, src, resolver, known_names, symbol, class_name, resolved_points,
                     }))
                     next_id[0] += 1
 
-        # Imports are collected in the same walk (not a separate pass) --
-        # a real, deliberate difference from python_adapter.py, which
-        # pre-collects imports before walking calls. TS/JS import
-        # statements are hoisted (always resolvable regardless of source
-        # position within the module), so a single top-level pass over
-        # `node.children` (this function is only ever called with a
-        # function/class/program body, never recursing INTO expressions
-        # looking for nested imports, which don't exist in JS grammar
-        # anyway) sees every import before any call site in practice for
-        # every real corpus file measured -- stated here as a real
-        # simplification, not an oversight.
-        if child.type == "import_statement":
-            resolver.visit_import_statement(child, src)
-
         _walk(child, src, resolver, known_names, symbol, class_name, resolved_points, rel_path, next_id,
               is_async, registry_ctx)
 
 
-def detect_file(path, repo_root, next_id=None, pack=None):
+def detect_file(path, repo_root, next_id=None, pack=None, seed_known_names=None, collect_exports=False):
+    """`seed_known_names` (default None -- byte-identical to every caller
+    before docs/decisions/032) pre-populates known_names before the walk,
+    for cross-file propagation: detect_repo resolves this file's own
+    imports against OTHER files' export maps and passes the result in here
+    exactly as if those names had been constructed locally. `collect_exports`
+    (default False) additionally returns this file's own export_map and its
+    raw import list (`resolver.all_imports`) -- detect_repo's own first pass
+    over the repo needs both, without a second/third parse of the same file."""
     path = Path(path)
     try:
         src = path.read_bytes()
     except OSError:
-        return []
+        return ([], {}, []) if collect_exports else []
     parser = Parser(_LANGUAGE)
     try:
         tree = parser.parse(src)
     except Exception:
-        return []
+        return ([], {}, []) if collect_exports else []
 
     registry_ctx = _DEFAULT_REGISTRY_CONTEXT if pack is None else _registry_context_for_pack(pack)
     resolver = ImportResolver(registry_ctx.constructor_names)
-    known_names = {}
+    # Imports are pre-collected here (not inline during _walk, unlike
+    # earlier phases) precisely BECAUSE cross-file seeding (below) needs
+    # them known before the walk starts -- TS/JS import statements are
+    # hoisted (always resolvable regardless of source position), so a
+    # top-level-only pass over tree.root_node.children sees every import
+    # with no risk of missing one a later, deeper walk would have found.
+    for child in tree.root_node.children:
+        if child.type == "import_statement":
+            resolver.visit_import_statement(child, src)
+    known_names = dict(seed_known_names) if seed_known_names else {}
     rel_path = str(path.relative_to(repo_root)) if repo_root else str(path)
     resolved_points = []
     if next_id is None:
         next_id = [1]
     _walk(tree.root_node, src, resolver, known_names, None, None, resolved_points, rel_path, next_id,
           False, registry_ctx)
+    if collect_exports:
+        return resolved_points, _collect_export_map(tree.root_node, src, known_names), resolver.all_imports
     return resolved_points
 
 
+def _scannable_files(repo_root):
+    """.ts/.tsx files under repo_root, excluding node_modules, .git, dist,
+    and test files -- the same exclusions detect.js already used, plus
+    python_adapter.py's own tests/-directory skip. Factored out of
+    detect_repo so both of its passes (export/import collection, then real
+    detection) walk the identical file set."""
+    files = []
+    for f in sorted(repo_root.rglob("*.ts")) + sorted(repo_root.rglob("*.tsx")):
+        rel = f.relative_to(repo_root)
+        parts = rel.parts
+        if "node_modules" in parts or ".git" in parts or "dist" in parts or "tests" in parts:
+            continue
+        if f.name.startswith("test_") or ".test." in f.name or ".spec." in f.name:
+            continue
+        files.append(f)
+    return files
+
+
 def detect_repo(repo_root, pack=None):
-    """Scan every .ts/.tsx file under repo_root, excluding node_modules,
-    .git, dist, and test files -- the same exclusions detect.js already
-    used, plus python_adapter.py's own tests/-directory skip. next_id is
-    shared across the whole scan (via detect_file's own next_id param) so
-    IDs stay unique per run, not per file -- matching python_adapter.py's
-    own detect_repo/detect_file relationship exactly.
+    """Scan every .ts/.tsx file under repo_root (see _scannable_files).
+    next_id is shared across the whole scan (via detect_file's own next_id
+    param) so IDs stay unique per run, not per file -- matching
+    python_adapter.py's own detect_repo/detect_file relationship exactly.
 
     `pack` (default None -- the genai pack, byte-identical to every caller
     before docs/decisions/018) selects which pack's registries[] entries
@@ -717,18 +907,46 @@ def detect_repo(repo_root, pack=None):
     per call, matching the rest of this codebase's current single-pack-
     per-run architecture (oah/cli.py's commands all load exactly one pack
     today); merging more than one pack's registries in a single scan is a
-    real, separate question this phase doesn't attempt."""
+    real, separate question this phase doesn't attempt.
+
+    Two passes over the file set (docs/decisions/032), not one: pass 1
+    builds a repo-wide index of {resolved_file: export_map} plus each
+    file's own raw import list -- both come from one `collect_exports=True`
+    detect_file call per file, its own resolved_points thrown away (pass
+    1's IDs never leak into the real output; each file gets its own
+    throwaway next_id=[1]). Pass 2 is the real, ID-bearing detection: for
+    each file, resolve its imports (from pass 1) against the export index
+    to build a seed_known_names, then call detect_file again for real. A
+    repo with no cross-file-resolvable case produces byte-identical output
+    to the single-pass version this replaces -- seed_known_names is only
+    ever non-empty when a real hit exists."""
     repo_root = Path(repo_root)
+    files = _scannable_files(repo_root)
+    base_url, paths = _load_path_aliases(repo_root)
+
+    exports_index = {}
+    imports_by_file = {}
+    for f in files:
+        _, export_map, import_specs = detect_file(f, repo_root, [1], pack, collect_exports=True)
+        imports_by_file[f] = import_specs
+        if export_map:
+            exports_index[f.resolve()] = export_map
+
     resolved_points = []
     next_id = [1]
-    for f in sorted(repo_root.rglob("*.ts")) + sorted(repo_root.rglob("*.tsx")):
-        rel = f.relative_to(repo_root)
-        parts = rel.parts
-        if "node_modules" in parts or ".git" in parts or "dist" in parts or "tests" in parts:
-            continue
-        if f.name.startswith("test_") or ".test." in f.name or ".spec." in f.name:
-            continue
-        resolved_points.extend(detect_file(f, repo_root, next_id, pack))
+    for f in files:
+        seed = {}
+        for local, original, module_spec, is_default in imports_by_file[f]:
+            resolved_file = _resolve_module_specifier(module_spec, f, repo_root, base_url, paths)
+            if resolved_file is None:
+                continue
+            export_map = exports_index.get(resolved_file)
+            if export_map is None:
+                continue
+            hit = export_map.get("default" if is_default else original)
+            if hit is not None:
+                seed[local] = hit
+        resolved_points.extend(detect_file(f, repo_root, next_id, pack, seed_known_names=seed))
     return resolved_points
 
 
