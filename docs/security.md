@@ -16,8 +16,16 @@ SP7 maintains a seeded injection-payload test set and E8 runs it as a red-team g
 
 **T2 — Secret exfiltration via the harness's own telemetry/logs.** *Mitigations:*
 secret-pattern redaction on everything the harness writes (its logs, artifacts,
-self-telemetry); artifacts store code *references* (file/line) instead of code bodies
-wherever possible; `.env`-style files are excluded from skill context by default.
+self-telemetry) — real, not just a stated intent: `oah/security/redaction.py`
+(E8, docs/decisions/030) redacts recognizable secret shapes (AWS/Anthropic/OpenAI/
+GitHub/Slack keys, JWTs, PEM private-key blocks, a generic secret-assignment
+pattern) before S1's `code_excerpt` ever leaves `oah/discovery/python_adapter.py`
+— the one place today that copies raw target-repo source into an artifact both
+sent to an LLM and checkpointed to disk. Not yet swept into every other stage
+that reads source (S4-S9 skill context, S6's panel, `oah/validate`'s checkers) —
+a real, named follow-up, not claimed done; artifacts store code *references*
+(file/line) instead of code bodies wherever possible; `.env`-style files are
+excluded from skill context by default.
 
 **T3 — Data egress to model provider.** Analysis necessarily sends code excerpts to
 the LLM. *Mitigations:* private-gateway mode mirroring VVAH (`base_url` override +

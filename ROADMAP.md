@@ -624,6 +624,39 @@ mode (base URL + mTLS), threat model doc. *DoD:* red-team exercise on a corpus r
 seeded with injection payloads and fake secrets produces zero leaks/execution.
 *Depends on:* SP7. *Runs continuously from M1.*
 
+**Threat model + S10 tool allowlist landed earlier** (SP7, `docs/decisions/008`,
+`docs/security-threat-model.md`): four real red-team fixtures against a real
+Claude-based agent, all resisted; S10's agent session has no Edit/Write tool at
+all (a structural restriction, not prompt-level).
+
+**Phase 1: secret redaction landed** (2026-08-27, `docs/decisions/030`).
+Audited what actually existed before this phase: `docs/security.md`'s T2
+mitigation ("secret-pattern redaction on everything the harness writes")
+was a design claim with zero code behind it. A real, concrete leak path:
+`oah/discovery/python_adapter.py`'s `_excerpt` copies raw source lines
+into an S1 ambiguous-candidate's `code_excerpt`, both sent to
+`disambiguate()`'s LLM call and checkpointed to the harness's own state DB
+-- a hardcoded credential near an ambiguous call site (plausible, not
+hypothetical) would leak through both paths unredacted. New
+`oah/security/redaction.py`: provider-specific patterns (AWS, Anthropic,
+OpenAI, GitHub, Slack, JWT, PEM private keys) plus a generic
+secret-assignment catch-all, wired into `_excerpt`. A real bug found and
+fixed while building: the generic catch-all was re-matching a value a
+provider-specific pattern had ALREADY redacted (the placeholder text
+itself is 8+ chars, tripping the generic rule), downgrading a specific
+label to the generic one -- fixed by skipping already-redacted values.
+Scoped to this one already-identified site, not a sweep across S4-S9/S6/
+validate's own source-reading paths -- named as real, separate follow-up
+work, not silently assumed covered. TS/Java adapters have no
+ambiguous-candidate path yet, so neither needed the same wiring.
+
+**Still fully unbuilt, named not implied**: sweeping redaction into every
+other stage that reads source; a directory allowlist specifically for
+S1-S9's *read* scope (S10's write-side allowlist is real); private-gateway
+mode (`base_url` override + mTLS) for `oah/llm_client.py` and S10's Agent
+SDK calls; the red-team-exercise DoD itself at a larger scale than SP7's
+own four fixtures.
+
 ### E9 — Backend targets
 OTel-only emitter (floor), self-hosted Langfuse target (compose + config generation),
 constraint-driven backend selection in S7. *DoD:* same repo instrumentable to both

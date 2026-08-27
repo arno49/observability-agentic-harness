@@ -123,6 +123,26 @@ response = clients["primary"].messages.create(model="x")
     assert ambiguous[0]["scanner_kind"] is None
 
 
+def test_ambiguous_candidate_excerpt_redacts_nearby_hardcoded_secret(tmp_path):
+    """E8 (docs/decisions/030): a hardcoded credential sitting near an
+    ambiguous call site's surrounding lines is a real, plausible shape
+    (credential setup and client construction are often adjacent) --
+    code_excerpt is both sent to disambiguate()'s LLM call and
+    checkpointed into the harness's own state DB, so it must never carry
+    an unredacted secret through either path."""
+    resolved, ambiguous = _detect(tmp_path, """
+import anthropic
+api_key = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"
+clients = {"primary": anthropic.Anthropic(api_key=api_key)}
+response = clients["primary"].messages.create(model="x")
+""")
+    assert resolved == []
+    assert len(ambiguous) == 1
+    excerpt = ambiguous[0]["code_excerpt"]
+    assert "sk-ant-api03" not in excerpt
+    assert "[REDACTED:anthropic_api_key]" in excerpt
+
+
 def test_dynamic_dispatch_is_a_true_miss(tmp_path):
     """getattr(client.messages, method_name)(...) — no `.create`/`.stream`
     token exists anywhere in the source for a suffix match to find. This is

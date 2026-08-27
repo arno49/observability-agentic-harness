@@ -30,6 +30,7 @@ from oah.discovery.registry import (
     CONSTRUCTOR_NAMES, MODULE_TO_REGISTRY, ALL_METHOD_SUFFIXES, SUFFIX_LENGTHS,
     STRUCTURAL_PATTERN_REGISTRIES,
 )
+from oah.security.redaction import redact_secrets
 
 _LANGUAGE = Language(tspython.language())
 
@@ -310,10 +311,18 @@ def _excerpt(src_lines, line, before=3, after=3):
     """Bounded surrounding code around `line` (1-indexed) — data for the LLM
     disambiguation pass, never instructions (skills/s1-surface-mapper/SKILL.md's
     own hard rule; this function exists so that boundary is enforced by what
-    gets extracted, not left to the skill to self-police)."""
+    gets extracted, not left to the skill to self-police).
+
+    Secret-redacted before it leaves this function (E8, docs/decisions/030)
+    -- this excerpt is both sent to disambiguate()'s LLM call (real data
+    egress to a model provider) and checkpointed verbatim into the
+    harness's own state DB / any -o output file, and a hardcoded
+    credential sitting near an ambiguous call site is a real, plausible
+    shape (credential setup and client construction are often adjacent),
+    not a hypothetical."""
     start = max(0, line - 1 - before)
     end = min(len(src_lines), line + after)
-    return "\n".join(src_lines[start:end])
+    return redact_secrets("\n".join(src_lines[start:end]))
 
 
 def _walk_calls(node, src, src_lines, resolver, known, class_name, symbol, local_scope,

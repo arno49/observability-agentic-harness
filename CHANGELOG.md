@@ -3,6 +3,17 @@
 ## [Unreleased]
 
 ### Added
+- E8 phase 1: secret-pattern redaction (`docs/decisions/030`). New
+  `oah/security/redaction.py` -- provider-specific patterns (AWS,
+  Anthropic, OpenAI, GitHub, Slack, JWT, PEM private keys) plus a generic
+  secret-assignment catch-all, wired into
+  `oah/discovery/python_adapter.py`'s `_excerpt` (S1's ambiguous-candidate
+  `code_excerpt`, both LLM-sent and state-DB-persisted -- the one real
+  leak path identified before this phase; `docs/security.md`'s T2
+  mitigation had zero code behind it until now). Found and fixed a real
+  bug while building: the generic catch-all was re-matching a value a
+  provider-specific pattern had already redacted (the placeholder text
+  itself is 8+ chars), downgrading a specific label to the generic one.
 - E11-Java phase 1 (`docs/decisions/029`): a real, tree-sitter-based Java
   S1 adapter (`oah/discovery/java_adapter.py`), `--language java` CLI
   dispatch, and a real Anthropic Java SDK registry entry
