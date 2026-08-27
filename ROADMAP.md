@@ -1145,6 +1145,25 @@ gives a genuinely meaningful answer; `--dynamic` always reports
 `["unknown"]`, a structural limit of its own capture mechanism, not a bug
 routed around.
 
+**`route_is_templated`/`cardinality_guard` landed** (2026-08-27,
+`docs/decisions/026`) -- the last of `docs/decisions/011`'s own two named
+new gates now real (`critical_dependency_extra_nine` landed in phase 6).
+Resolved the open "S5 or S11?" question this gate was deliberately left
+unbuilt over: a `design_fragment` signal carries no runtime value to
+check, so this is a design-time question made self-contained by adding an
+optional `cardinality_guard: {is_templated, unavailable_reason}` field a
+lens's own signal can set. `oah/design/gates.py`'s new
+`check_route_is_templated` joined the **domain-neutral** `ALL_GATES` list
+(the check itself never looks up point kinds, only the field's own
+internal consistency) -- `telemetry-cost`'s own `cardinality_risk` signal
+is the first, and so far only, real consumer.
+`skills/s4-telemetry-cost/SKILL.md` now teaches exactly when to set
+`is_templated: false` (the ADR's own AEM example). Adding a new
+always-run gate broke E13's own committed golden snapshot for genai (one
+new, always-passing finding on every fragment) -- a real, expected
+consequence the snapshot test's own docstring already names its remedy
+for; regenerated, six-line diff, confirmed nothing else shifted.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

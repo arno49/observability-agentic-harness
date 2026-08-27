@@ -34,7 +34,17 @@
           "pii_masked": { "type": "boolean" },
           "supports_decision": { "type": "string" },
           "acting_role": { "type": "string" },
-          "latency_overhead_budget_ms": { "type": "number", "minimum": 0 }
+          "latency_overhead_budget_ms": { "type": "number", "minimum": 0 },
+          "cardinality_guard": {
+            "type": "object",
+            "required": ["is_templated"],
+            "additionalProperties": false,
+            "description": "docs/decisions/011/026: required on the cardinality_risk signal for any route-kind point (http_server_route/declarative_route). is_templated: true when the point's own route value is guaranteed to be a low-cardinality template (S1's has_path_parameter field on the point, plus the framework's own route-registration shape, are real evidence for this -- Express/React Router both are). false when the template can't be statically recovered (e.g. a CMS resolving a URL to a content path by resource type) -- unavailable_reason is then required (oah/design/gates.py's own check_route_is_templated gate enforces this pairing).",
+            "properties": {
+              "is_templated": { "type": "boolean" },
+              "unavailable_reason": { "type": ["string", "null"] }
+            }
+          }
         }
       }
     },

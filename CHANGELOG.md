@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Added
+- `route_is_templated`/`cardinality_guard` (`docs/decisions/026`): the
+  last of `docs/decisions/011`'s two named new gates. A new optional
+  `cardinality_guard: {is_templated, unavailable_reason}` field on any
+  design_fragment signal, gate-checked for internal consistency
+  (`oah/design/gates.py`'s new `check_route_is_templated`, added to the
+  domain-neutral `ALL_GATES`). `telemetry-cost`'s own signal is the first
+  real consumer. Regenerated E13's golden snapshot (a real, expected
+  consequence of a new always-run gate, per that test's own documented
+  remedy).
 - S11 signal provenance (`docs/decisions/025`): `docs/decisions/011`'s own
   named S11 addition -- whether a validated event came from zero-code
   auto-instrumentation or from code S10 actually edited.

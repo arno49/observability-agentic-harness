@@ -122,7 +122,11 @@ chain, verified and deliberately not shipped as a low-confidence
 heuristic). Separately, S11 gained real signal provenance — whether a
 validated event came from auto-instrumentation or from code S10 actually
 edited, verified against a live OTel SDK capture
-([025](docs/decisions/025-s11-signal-provenance.md)). LLM
+([025](docs/decisions/025-s11-signal-provenance.md)). E12's own
+`route_is_templated` gate is also real now — a self-contained
+`cardinality_guard` field any lens's signal can set, gate-checked for
+internal consistency, no point-kind cross-referencing needed
+([026](docs/decisions/026-route-is-templated-gate.md)). LLM
 observability was still the right place to start: it's where OTel semantic
 conventions and APM tooling are least mature, so it's where a gap-modeling harness
 added the most value first.

@@ -54,11 +54,17 @@ never define:
     `:id`-style path already IS the template — the risk here is a
     *different* framework returning the raw resolved path instead of the
     template string at emission time, not the route declaration itself).
-    Name `http.route` as the driver and say explicitly whether the
-    runtime path is guaranteed to stay templated end to end, or whether
-    that is only true at the point of declaration and needs a runtime
-    check (`route_is_templated`, the domain-neutral S5 gate this lens's
-    own signal must satisfy).
+    Name `http.route` as the driver, and set `cardinality_guard` on this
+    signal: `is_templated: true` when the framework's own route
+    registration (what S1 actually found — Express's `:id`-style literal,
+    React Router's own path prop) guarantees a low-cardinality template at
+    emission time; `is_templated: false` with a real, specific
+    `unavailable_reason` when it does not (e.g. a CMS or gateway that
+    resolves a URL to a content path by resource type, so no static route
+    template exists to read at all — `docs/decisions/011`'s own real
+    finding for exactly this shape). S5's `route_is_templated` gate
+    requires `unavailable_reason` whenever `is_templated` is `false` —
+    never leave a `false` unexplained.
   - A `db_query` point whose query text or table/collection name could
     embed a tenant ID, a user ID, or any other unbounded identifier is
     `high` — never attribute raw query text directly to a metric label;

@@ -139,6 +139,12 @@
       "passed": true,
       "reason": "every pause/freeze/throttle step has a resumption condition",
       "severity": "error"
+    },
+    {
+      "gate": "route_is_templated",
+      "passed": true,
+      "reason": "every cardinality_guard with is_templated: false states why",
+      "severity": "error"
     }
   ],
   "surface_map": {

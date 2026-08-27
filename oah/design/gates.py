@@ -192,6 +192,35 @@ def check_decision_menu_resumption_paired(fragment):
     return Finding("decision_menu_resumption_paired", True, "every pause/freeze/throttle step has a resumption condition")
 
 
+def check_route_is_templated(fragment):
+    """docs/decisions/011: 'a route attribute is templated, never a raw
+    path.' Domain-neutral by construction, not genai/service-specific --
+    `cardinality_guard` is an optional signal field (currently only ever
+    set by the service pack's telemetry-cost lens, docs/decisions/026) that
+    any lens's signal may carry; this gate just enforces its own internal
+    consistency wherever it appears. `is_templated: false` (a route whose
+    template can't be statically recovered, e.g. AEM resolving a URL to a
+    content path by resource type per docs/decisions/011's own real
+    candidate finding) must be paired with a real `unavailable_reason`,
+    the same 'a negative claim needs a stated reason' discipline
+    decision_menu_resumption_paired already applies to pause/freeze/
+    throttle steps. A signal with no cardinality_guard at all is
+    unaffected -- this gate only checks the field's own internal
+    consistency when a lens chooses to set it."""
+    bad = [
+        s["name"] for s in fragment.get("signals", [])
+        if s.get("cardinality_guard") is not None
+        and s["cardinality_guard"]["is_templated"] is False
+        and not _non_trivial(s["cardinality_guard"].get("unavailable_reason"))
+    ]
+    if bad:
+        return Finding(
+            "route_is_templated", False,
+            f"signal(s) with cardinality_guard.is_templated: false but no unavailable_reason stated: {bad}",
+        )
+    return Finding("route_is_templated", True, "every cardinality_guard with is_templated: false states why")
+
+
 ALL_GATES = [
     check_every_surface_point_has_decision,
     check_no_phantom_surface_points,
@@ -203,6 +232,7 @@ ALL_GATES = [
     check_latency_budget_declared_per_point,
     check_failure_mode_fail_open,
     check_decision_menu_resumption_paired,
+    check_route_is_templated,
 ]
 
 # Gates that need surface_map_point_ids as a second argument, vs. fragment-only.

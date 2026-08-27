@@ -178,3 +178,43 @@ def test_continue_step_never_needs_resumption_condition():
     findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
     failed = [f for f in findings if f.gate == "decision_menu_resumption_paired"]
     assert failed[0].passed
+
+
+# --- route_is_templated / cardinality_guard (docs/decisions/026) ---------
+
+def test_signal_with_no_cardinality_guard_unaffected():
+    """The gate is a no-op for every signal that doesn't set this optional
+    field -- true for every genai signal today, by construction."""
+    fragment = _fragment()
+    findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
+    result = [f for f in findings if f.gate == "route_is_templated"]
+    assert result[0].passed
+
+
+def test_cardinality_guard_is_templated_true_passes():
+    fragment = _fragment(signals=[{
+        **_fragment()["signals"][0], "cardinality_guard": {"is_templated": True},
+    }])
+    findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
+    result = [f for f in findings if f.gate == "route_is_templated"]
+    assert result[0].passed
+
+
+def test_cardinality_guard_is_templated_false_without_reason_fails():
+    fragment = _fragment(signals=[{
+        **_fragment()["signals"][0], "cardinality_guard": {"is_templated": False},
+    }])
+    findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
+    result = [f for f in findings if f.gate == "route_is_templated"]
+    assert not result[0].passed
+
+
+def test_cardinality_guard_is_templated_false_with_reason_passes():
+    fragment = _fragment(signals=[{
+        **_fragment()["signals"][0],
+        "cardinality_guard": {"is_templated": False,
+                               "unavailable_reason": "AEM resolves URLs to content paths by resource type"},
+    }])
+    findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
+    result = [f for f in findings if f.gate == "route_is_templated"]
+    assert result[0].passed

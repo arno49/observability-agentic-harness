@@ -65,6 +65,16 @@
           "latency_overhead_budget_ms": {
             "type": "number", "minimum": 0,
             "description": "S5: 'latency-overhead budget is declared per call path.'"
+          },
+          "cardinality_guard": {
+            "type": "object",
+            "required": ["is_templated"],
+            "additionalProperties": false,
+            "description": "docs/decisions/011/026: 'a route attribute is templated, never a raw path.' Optional -- set by a lens reasoning about a route-kind point's own cardinality (today: the service pack's telemetry-cost lens). is_templated: false requires unavailable_reason (S5's route_is_templated gate).",
+            "properties": {
+              "is_templated": { "type": "boolean" },
+              "unavailable_reason": { "type": ["string", "null"] }
+            }
           }
         }
       }

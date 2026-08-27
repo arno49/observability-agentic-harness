@@ -33,6 +33,7 @@ VALID_FRAGMENT = {
             "sensitivity_tier": "internal", "pii_masked": False,
             "supports_decision": "whether route templating needs a runtime check",
             "acting_role": "sre", "latency_overhead_budget_ms": 1,
+            "cardinality_guard": {"is_templated": True},
         },
         {
             "name": "oah.telemetry_cost.sampling_rate", "surface_point_ids": ["sp-0001"],
@@ -141,3 +142,47 @@ def test_context_passed_through_when_given():
     design_telemetry_cost([ROUTE_POINT], "deadbeef", context=context, _completion_fn=fake)
     sent = json.loads(captured["messages"][1]["content"])
     assert sent["context"] == context
+
+
+# --- route_is_templated / cardinality_guard (docs/decisions/026) ---------
+
+def test_cardinality_guard_is_templated_true_passes_s5():
+    """VALID_FRAGMENT's own cardinality_risk signal already sets
+    cardinality_guard: {is_templated: true} -- confirms it satisfies S5's
+    route_is_templated gate through the real design_telemetry_cost path,
+    not just gates.py's own unit tests."""
+    result = design_telemetry_cost([ROUTE_POINT], "deadbeef",
+                                    _completion_fn=lambda **kw: _fake_response(VALID_FRAGMENT))
+    findings = run_gates(result, surface_map_point_ids=["sp-0001"])
+    assert gates_passed(findings)
+    route_finding = next(f for f in findings if f.gate == "route_is_templated")
+    assert route_finding.passed
+
+
+def test_cardinality_guard_is_templated_false_needs_unavailable_reason():
+    """docs/decisions/011's own real finding: a CMS/gateway that resolves a
+    URL to a content path by resource type has no statically-recoverable
+    route template. is_templated: false with no unavailable_reason must
+    fail S5's gate, through the real path."""
+    bad = json.loads(json.dumps(VALID_FRAGMENT))
+    bad["signals"][0]["cardinality_guard"] = {"is_templated": False}
+
+    def fake(**kwargs):
+        return _fake_response(bad)
+
+    result = design_telemetry_cost([ROUTE_POINT], "deadbeef", _completion_fn=fake)
+    findings = run_gates(result, surface_map_point_ids=["sp-0001"])
+    assert not gates_passed(findings)
+    route_finding = next(f for f in findings if f.gate == "route_is_templated")
+    assert not route_finding.passed
+
+    # ... and passes once a real reason is stated.
+    good = json.loads(json.dumps(VALID_FRAGMENT))
+    good["signals"][0]["cardinality_guard"] = {
+        "is_templated": False,
+        "unavailable_reason": "AEM resolves URLs to content paths by resource type -- no static route template",
+    }
+    result = design_telemetry_cost([ROUTE_POINT], "deadbeef",
+                                    _completion_fn=lambda **kw: _fake_response(good))
+    findings = run_gates(result, surface_map_point_ids=["sp-0001"])
+    assert gates_passed(findings)
