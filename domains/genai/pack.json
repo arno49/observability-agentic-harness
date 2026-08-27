@@ -34,6 +34,17 @@
       "confidence_note": "Same suffix shape as the python entry above -- the SDK's call surface is the same across languages, only sdk_module differs. Grounded in the SP10 spike's real 3-repo TS corpus (docs/decisions/004) plus a fourth repo added for SP12 (docs/decisions/013), 100% recall (14/14, 0 FP) across all three TS detector shapes combined. E11-TS (docs/decisions/014) is what actually consumes this entry -- oah/discovery/registry.py filters registries by language."
     },
     {
+      "framework": "anthropic-sdk",
+      "surface_kind": "llm_generation",
+      "language": "java",
+      "sdk_module": "com.anthropic.client",
+      "constructor_names": ["AnthropicOkHttpClient", "AnthropicClient", "AnthropicOkHttpClientAsync", "AnthropicClientAsync"],
+      "method_suffixes": [["messages", "create"], ["messages", "stream"]],
+      "detector_shape": "static_builder_chain",
+      "terminal_methods": ["build", "fromEnv"],
+      "confidence_note": "Real, verified via a background research agent against the official README (docs/decisions/029, https://github.com/anthropics/anthropic-sdk-java, package com.anthropic:anthropic-java), NOT corpus-verified. Client construction is a STATIC BUILDER CHAIN, not `new X()` -- `AnthropicOkHttpClient.builder().apiKey(...).build()` or the shorter `AnthropicOkHttpClient.fromEnv()` -- the first registry entry in this project needing detector_shape: static_builder_chain rather than receiver_method_suffix/module_function_call. Call shape (`client.messages().create(params)`/`.stream(params)`) is identical to the Python/TS entries above. Async is a genuinely separate client/call surface (`AnthropicClientAsync`/`AnthropicOkHttpClientAsync`, or `.async()` inserted as an extra hop on a sync client, e.g. `client.async().messages().create(...)`) -- both covered: the async client classes are also declared as chain roots here (same module/terminals), and the `.async()`-hop-on-sync-client form is covered for free since suffix matching only checks the chain's tail. `AnthropicClient` (the interface, never itself chain-called) is included in constructor_names only so a constructor-injected already-typed field/parameter (`AnthropicClient client` with no visible construction in this file) still resolves via annotation_sdk -- the same trust every adapter already extends to a typed parameter."
+    },
+    {
       "framework": "pinecone-sdk",
       "surface_kind": "retrieval",
       "language": "python",

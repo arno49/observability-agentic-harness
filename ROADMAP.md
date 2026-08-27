@@ -762,6 +762,39 @@ helper's own unit tests. **Still not done**: a vendored TS corpus fixture +
 multi-language `oah/eval_corpus.py` scoring (E7's territory), S2's TS
 vendor/manifest detection, and Java.
 
+**Java phase 1 landed** (2026-08-27, `docs/decisions/029`), closing E11's
+own priority order. Two things verified before any adapter code was
+written, same discipline as every prior language port: `tree-sitter-java`'s
+real grammar (explored directly -- `method_invocation.object`/`.name`
+fields represent a call chain as NESTED nodes, not TS's member-expression-
+then-call split) and the real Anthropic/OpenAI Java SDKs' own construction
+pattern (a background research agent against their READMEs) -- both build
+via a **static builder method chain** rooted at a known class name
+(`AnthropicOkHttpClient.builder().apiKey(...).build()` or `.fromEnv()`),
+**never `new X()`**, meaning TS phase 1's own first shape
+(`receiver_method_suffix`) would have had no real registry to attach to.
+`oah/discovery/java_adapter.py` (new) is architecturally closer to the
+Python adapter than the TS one -- Java's own class/field structure fits a
+class-scoped known-name prescan (mirroring Python's `self_attrs`), not
+TS's file-wide model (SP10 finding 3 was JS/TS-specific). One real Java-
+specific addition: unqualified instance-field access (`client.foo()`
+inside the class declaring `private Client client`, no `this.` needed) --
+neither Python nor TS/JS has an equivalent. `static_builder_chain`, a
+fourth receiver-resolution `detector_shape`, is real general
+infrastructure (`terminal_methods` matches a chain's LAST segment
+regardless of how many builder-configuration calls precede it), not an
+Anthropic-only hack. Async detection has no keyword to key off in Java, so
+it checks for a `.async()` hop inserted mid-chain (a real, documented SDK
+pattern) -- suffix matching only checks a chain's tail, so the extra hop
+never blocks the match. CLI dispatch (`--language java`) landed in the
+SAME phase, unlike TS's own (which deferred it). A real gap found by
+testing, not designed around: a single unassigned expression chaining
+construction AND the eventual call together (terminal buried mid-chain,
+not at the end) doesn't resolve -- named, regression-tested, not chased in
+phase 1. Remaining named gaps: OpenAI Java SDK (same shape, not added this
+phase), LangChain4j, Spring AI (DI-based construction, structurally
+harder), a real vendored Java corpus fixture (E7's territory).
+
 ### E13 — Domain pack extraction *(pipeline core; prerequisite for E12)*
 There is no object called a domain pack today: domain-ness is sixteen literals
 scattered across `oah/cli.py`, `oah/design/gates.py`, `oah/discovery/gap_model.py`,

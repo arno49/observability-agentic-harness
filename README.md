@@ -450,14 +450,19 @@ ROADMAP.md     milestones, epics, spikes
 ## Requirements (planned)
 
 - Python ≥ 3.10 (S1–S9, implemented today)
-- **Target-repo language**: `--language {python,typescript}` on `map`, `gaps`,
+- **Target-repo language**: `--language {python,typescript,java}` on `map`, `gaps`,
   `design`, `event-schema`, `dtos`, `readiness` picks the S1 adapter; default
   is `python` (unchanged CLI behavior). TypeScript/TSX runs a real,
   tree-sitter-based adapter (`oah/discovery/typescript_adapter.py`,
-  corpus-verified at 100% recall — `docs/decisions/014`) with no
-  LLM-disambiguation counterpart yet, so a TS run never has candidates left
-  for `map`'s disambiguation pass to resolve. Java is unstarted. See
-  ROADMAP.md's E11 entry for status. `--pack {genai,service}` (same six
+  corpus-verified at 100% recall — `docs/decisions/014`); Java runs a real,
+  tree-sitter-based adapter too (`oah/discovery/java_adapter.py`,
+  `docs/decisions/029`) — its own registry entry needed a new
+  `static_builder_chain` detector shape, since the real Anthropic/OpenAI
+  Java SDKs construct their client via a static builder chain
+  (`X.builder()...build()`/`.fromEnv()`), never `new X()`. Neither
+  TypeScript nor Java has an LLM-disambiguation counterpart yet, so a run
+  in either language never has candidates left for `map`'s disambiguation
+  pass to resolve. `--pack {genai,service}` (same six
   commands, default `genai`) picks the domain pack — `service` only detects
   anything new with `--language typescript` today (its one S1 registry,
   Express, `docs/decisions/018`). `oah inventory` (S2) separately picks up

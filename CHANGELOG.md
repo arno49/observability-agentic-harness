@@ -3,6 +3,28 @@
 ## [Unreleased]
 
 ### Added
+- E11-Java phase 1 (`docs/decisions/029`): a real, tree-sitter-based Java
+  S1 adapter (`oah/discovery/java_adapter.py`), `--language java` CLI
+  dispatch, and a real Anthropic Java SDK registry entry
+  (`domains/genai/pack.json`). Verified before building: the real
+  `tree-sitter-java` grammar (call chains are nested `method_invocation`
+  nodes, not TS's member-expression-then-call split) and the real
+  Anthropic/OpenAI Java SDKs' own construction pattern via a background
+  research agent -- both build their client through a static builder
+  method chain (`X.builder()...build()`/`.fromEnv()`), never `new X()`.
+  New `static_builder_chain` detector shape: a chain rooted at a known
+  class name, recognized by its LAST segment matching a declared
+  `terminal_methods` set (arbitrary builder configuration in between is
+  not matched). Class-scoped known-name prescan (mirroring the Python
+  adapter, not the TypeScript one -- Java's own OOP shape fits it), plus
+  one real Java-specific addition: unqualified instance-field access
+  (`client.foo()` with no `this.`) resolves via a fallback to the current
+  class's own tracked fields, something neither Python nor TS/JS needs.
+  Async detection checks for a `.async()` hop inserted mid-chain (Java has
+  no async/await keyword). A real gap found by testing, not designed
+  around: a single unassigned expression chaining construction and the
+  eventual call together (terminal buried mid-chain) doesn't resolve --
+  named and regression-tested, not chased in phase 1.
 - E12 phase 9 (`docs/decisions/028`): the `amqplib` registry
   (`queue_producer`/`queue_consumer`) and a fourth, genuinely new
   `detector_shape`, `chain_hop` -- pure known-name-propagation data (no

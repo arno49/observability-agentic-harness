@@ -114,6 +114,40 @@ def test_map_language_typescript_dispatches_to_ts_adapter(tmp_path):
     assert manifest["stages_completed"] == ["s1"]
 
 
+def test_map_language_java_dispatches_to_java_adapter(tmp_path):
+    """E11-Java's own CLI dispatch (docs/decisions/029): --language java
+    must route `oah map` through oah/discovery/java_adapter.py, not
+    silently no-op or fall back to the Python adapter."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "App.java").write_text(
+        "import com.anthropic.client.okhttp.AnthropicOkHttpClient;\n"
+        "public class App {\n"
+        "    void run() {\n"
+        "        var client = AnthropicOkHttpClient.fromEnv();\n"
+        "        client.messages().create(null);\n"
+        "    }\n"
+        "}\n"
+    )
+    _init_git_repo(target)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    out = workdir / "sm.json"
+    result = _run(["map", str(target), "--language", "java",
+                   "--run-id", "java-run", "-o", str(out)], cwd=workdir)
+    assert result.returncode == 0, result.stderr
+
+    surface_map = json.loads(out.read_text())
+    assert surface_map["repo"]["primary_language"] == "java"
+    assert surface_map["coverage_stats"]["points_total"] == 1
+    assert surface_map["points"][0]["kind"] == "llm_generation"
+
+    manifest = json.loads((workdir / ".oah" / "runs" / "java-run.json").read_text())
+    assert manifest["target"]["primary_language"] == "java"
+    assert manifest["stages_completed"] == ["s1"]
+
+
 def test_map_pack_service_dispatches_to_express_registry(tmp_path):
     """E12 phase 3 (docs/decisions/018): --pack service must actually reach
     the service pack's Express registry through the real CLI, not just at

@@ -36,7 +36,8 @@ happens to share a final segment.
 """
 from oah.domains.loader import load_pack
 
-_RECEIVER_SHAPES = ("receiver_method_suffix", "module_function_call", "imported_namespace_method_call")
+_RECEIVER_SHAPES = ("receiver_method_suffix", "module_function_call", "imported_namespace_method_call",
+                     "static_builder_chain")
 
 # A registry entry with no "language" field predates E11-TS's TypeScript
 # adapter (docs/decisions/014) and was always implicitly Python-only --
@@ -134,6 +135,30 @@ def chain_hop_index(pack, language=_DEFAULT_LANGUAGE):
         (r["sdk_module"], r["via_method"]): r["produces_module"]
         for r in _chain_hop_entries(pack, language)
     }
+
+
+def java_static_builder_index(pack, language="java"):
+    """{class_simple_name: (sdk_module, frozenset(terminal_methods))} from
+    this pack's static_builder_chain entries -- Java's own real GenAI SDK
+    shape (docs/decisions/029): the real Anthropic/OpenAI Java SDKs
+    construct their client via a static method chain rooted at a known,
+    IMPORTED CLASS NAME (`AnthropicOkHttpClient.builder().apiKey(...)
+    .build()` or `.fromEnv()`), not `new X()` or a module-level factory.
+    The language adapter checks a chain's ROOT against this index's keys
+    and, if found, its LAST segment against that entry's terminal_methods
+    -- everything in between is arbitrary builder configuration, not
+    matched. Once resolved, sdk_module flows through the same
+    receiver_method_suffix machinery build_registry_index already derives
+    (static_builder_chain is one of _RECEIVER_SHAPES) -- this index only
+    answers the construction-recognition half."""
+    index = {}
+    for r in pack.get("registries", []):
+        if r["detector_shape"] != "static_builder_chain" or r.get("language", _DEFAULT_LANGUAGE) != language:
+            continue
+        terminals = frozenset(r.get("terminal_methods") or [])
+        for name in r.get("constructor_names") or []:
+            index[name] = (r["sdk_module"], terminals)
+    return index
 
 
 def structural_pattern_registries(pack, language=_DEFAULT_LANGUAGE):

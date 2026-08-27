@@ -84,10 +84,12 @@ _AGENT_MODEL_HELP = (
 
 _LANGUAGE_HELP = (
     "Which S1 adapter to run against the target repo: python (default -- "
-    "oah.discovery.python_adapter) or typescript (oah.discovery.typescript_adapter, "
-    "E11-TS -- real, corpus-verified, but with no LLM-disambiguation counterpart yet, "
-    "so it never returns still-ambiguous candidates). Explicit, not auto-sniffed from "
-    "file extensions -- a mixed-language repo has no single right guess."
+    "oah.discovery.python_adapter), typescript (oah.discovery.typescript_adapter, "
+    "E11-TS), or java (oah.discovery.java_adapter, E11-Java, docs/decisions/029). "
+    "typescript and java are both real but neither has an LLM-disambiguation "
+    "counterpart yet, so neither ever returns still-ambiguous candidates. Explicit, "
+    "not auto-sniffed from file extensions -- a mixed-language repo has no single "
+    "right guess."
 )
 
 _PACK_HELP = (
@@ -95,24 +97,28 @@ _PACK_HELP = (
     "and semconv namespaces: genai (default -- LLM-application observability) or "
     "service (docs/decisions/011, E12 -- ordinary request-driven services; only real "
     "with --language typescript today, since the service pack's one S1 registry "
-    "(Express, docs/decisions/018) has no Python-adapter counterpart yet)."
+    "(Express, docs/decisions/018) has no Python- or Java-adapter counterpart yet)."
 )
 
 
 def _build_surface_map(target, git_sha, language, pack=None, disambiguated=None):
-    """The one place that decides which S1 adapter runs. Both adapters
+    """The one place that decides which S1 adapter runs. All three adapters
     return the same (surface_map, still_ambiguous) 2-tuple shape, so every
     call site downstream of this needs no per-language branching.
 
     `pack` (the loaded pack dict, default None -- genai) selects which
     pack's registries S1 matches against, e.g. load_pack("service") to
     also resolve Express route registrations (docs/decisions/018). Only
-    threaded to the TypeScript adapter today -- python_adapter.py's own
-    registries remain genai-only (no Python service-domain registries
-    exist yet), a real, named scope boundary rather than a silent gap:
-    --pack service with --language python runs but finds nothing new."""
+    threaded to the TypeScript adapter today -- python_adapter.py's and
+    java_adapter.py's own registries remain genai-only (no Python or Java
+    service-domain registries exist yet), a real, named scope boundary
+    rather than a silent gap: --pack service with --language python or
+    --language java runs but finds nothing new."""
     if language == "typescript":
         from oah.discovery.typescript_adapter import build_surface_map
+        return build_surface_map(target, git_sha=git_sha, disambiguated=disambiguated, pack=pack)
+    elif language == "java":
+        from oah.discovery.java_adapter import build_surface_map
         return build_surface_map(target, git_sha=git_sha, disambiguated=disambiguated, pack=pack)
     else:
         from oah.discovery.python_adapter import build_surface_map
@@ -1303,7 +1309,7 @@ def build_parser():
     p_map.add_argument("--no-disambiguate", action="store_true",
                         help="Skip the LLM disambiguation pass; leave ambiguous candidates unresolved")
     p_map.add_argument("--model", default=None, help=_MODEL_HELP)
-    p_map.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_map.add_argument("--language", choices=["python", "typescript", "java"], default="python", help=_LANGUAGE_HELP)
     p_map.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_map.set_defaults(func=cmd_map)
 
@@ -1317,7 +1323,7 @@ def build_parser():
     p_gaps.add_argument("-o", "--output", default=None, help="Write gap_model.json here instead of stdout")
     p_gaps.add_argument("--context", default=None,
                          help="Path to a context.yaml from `oah interview` — weights priority by workflow criticality")
-    p_gaps.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_gaps.add_argument("--language", choices=["python", "typescript", "java"], default="python", help=_LANGUAGE_HELP)
     p_gaps.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_gaps.set_defaults(func=cmd_gaps)
 
@@ -1332,7 +1338,7 @@ def build_parser():
     p_design.add_argument("-o", "--output", default=None, help="Write the design fragment + gate findings here instead of stdout")
     p_design.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_design.add_argument("--model", default=None, help=_MODEL_HELP)
-    p_design.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_design.add_argument("--language", choices=["python", "typescript", "java"], default="python", help=_LANGUAGE_HELP)
     p_design.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_design.set_defaults(func=cmd_design)
 
@@ -1341,7 +1347,7 @@ def build_parser():
     p_event_schema.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_event_schema.add_argument("-o", "--output", default=None, help="Write event_schema.json here instead of stdout")
     p_event_schema.add_argument("--model", default=None, help=_MODEL_HELP)
-    p_event_schema.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_event_schema.add_argument("--language", choices=["python", "typescript", "java"], default="python", help=_LANGUAGE_HELP)
     p_event_schema.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_event_schema.set_defaults(func=cmd_event_schema)
 
@@ -1352,7 +1358,7 @@ def build_parser():
                               "workflow-criticality rollout_step ordering (architecture.md S7)")
     p_dtos.add_argument("-o", "--output", default=None, help="Write implementation_dto.json here instead of stdout")
     p_dtos.add_argument("--model", default=None, help=_MODEL_HELP)
-    p_dtos.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_dtos.add_argument("--language", choices=["python", "typescript", "java"], default="python", help=_LANGUAGE_HELP)
     p_dtos.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_dtos.set_defaults(func=cmd_dtos)
 
@@ -1361,7 +1367,7 @@ def build_parser():
     p_readiness.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_readiness.add_argument("-o", "--output", default=None, help="Write readiness_report.json here instead of stdout")
     p_readiness.add_argument("--model", default=None, help=_MODEL_HELP)
-    p_readiness.add_argument("--language", choices=["python", "typescript"], default="python", help=_LANGUAGE_HELP)
+    p_readiness.add_argument("--language", choices=["python", "typescript", "java"], default="python", help=_LANGUAGE_HELP)
     p_readiness.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)
     p_readiness.set_defaults(func=cmd_readiness)
 
@@ -1382,7 +1388,7 @@ def build_parser():
                                     "--mode fix, whose recommendation.decision must be 'ready' or "
                                     "'ready_with_conditions' (architecture.md)")
     p_instrument.add_argument("--model", default=None, help=_AGENT_MODEL_HELP)
-    p_instrument.add_argument("--language", choices=["python", "typescript"], default="python",
+    p_instrument.add_argument("--language", choices=["python", "typescript", "java"], default="python",
                                help="Recorded on a freshly-created run manifest only (S10 itself runs no S1 "
                                     "adapter -- it applies an already-generated --dtos file). Matters only when "
                                     "--run-id doesn't resume an existing `oah map` manifest.")
