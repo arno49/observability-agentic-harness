@@ -109,7 +109,15 @@ already owns.
 Every `design_fragment` signal must satisfy S5's ordinary gates by
 construction: `surface_point_ids`, `maps_to`, `sensitivity_tier`,
 `supports_decision`, `acting_role`. `failure_mode` is always
-`"fail_open"`.
+`"fail_open"`. When `context.yaml` is given, check each covered point's
+own `workflow_hint` against `context.workflows[].pii_presence`: a
+direct-PII workflow needs `sensitivity_tier` at least `confidential` on
+every signal covering it (`docs/decisions/040`'s `sensitivity_tier_meets_pii_floor`
+gate enforces this), and whenever tier lands at `confidential`/`restricted`
+this way, also set `pii_masked: true` — found for real on a full pilot
+run: `oah.dependency.edge_name` correctly reached `confidential` for a
+direct-PII edge but omitted `pii_masked`, failing S5's separate
+`pii_masked_above_tier` gate.
 
 **`health_thresholds` (`docs/decisions/039`) — normally omit it here, for
 the same reason the slo lens does.** The reliability condition this edge

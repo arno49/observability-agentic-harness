@@ -1637,6 +1637,42 @@ batch-size/complexity-related at real scale (375 points in one call), not
 a simple kind-mismatch language problem — to be confirmed by the full
 re-run, next.
 
+**Step 3 landed: full 375-point real re-run, one self-inflicted
+regression found and fixed.** `oah readiness` re-run against the same
+`mf-analyzer-web` target/pack/context as the original pilot found a real
+false-positive bug in this same day's own Phase D: three `telemetry-cost`
+signals legitimately shared one unnamespaced attribute (tier genuinely
+agreed, so Option B correctly didn't split the name) but disagreed on
+`health_thresholds[].rationale` — free prose tied to each signal's own
+distinct points — which the Phase D equality check (rationale included)
+treated as a hard conflict, blocking S7/S8 for the whole run.
+`oah/design/event_schema.py`'s `_health_thresholds_signature` now
+compares only `(state, condition, basis)` per tier; verified against the
+real fragments that triggered it (`build_event_schema` now succeeds, 21
+attributes, where it previously raised). 2 new regression tests.
+
+Other real findings, sorted by cause: `sensitivity_tier_meets_pii_floor`
+worked exactly as designed, catching real under-classification in
+`tracing`/`ops` on the `chat` journey (neither lens has the SKILL.md floor
+reminder yet — `ops` only got the Option B health_thresholds rule
+earlier, not the floor reminder — a named follow-up). A new
+`pii_masked_above_tier` failure directly caused by the floor mechanism:
+`dependency`'s pointer signal correctly reached `confidential` but
+omitted `pii_masked: true` — fixed same day, `skills/s4-dependency/SKILL.md`
+now reminds to set it. Two `consistency_assertions_referential_integrity`
+failures checked against the pre-`docs/decisions/039` original run and
+confirmed **pre-existing** (the model names `maps_to.attribute` values
+instead of real `signal.name` values in `fields_involved` — already
+failed identically before any of tonight's work), not investigated
+further. `pii-governance` still fails with `signals: [] should be
+non-empty` on a ~75-point batch — the step-1 finding (`ops` does *not*
+refuse on a kind mismatch at small scale, and succeeded here at full
+375-point scale too) rules out both "kind mismatch" and "batch size
+alone" as the root cause; not investigated further this pass. Overall
+verdict is still `remediate_before_release` — for different, mostly
+pre-existing or narrower reasons than the original run, not the original
+S7 conflict, which now holds clean at real scale.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

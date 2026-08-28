@@ -366,6 +366,18 @@
   the test's own documented intended-change path (`docs/decisions/039`),
   not a wiring regression; diff checked by hand first (6 lines, nothing
   else moved).
+- `build_event_schema` (S7) raised a false-positive `EventSchemaConflictError`
+  on `health_thresholds`, found on a full 375-point real Sonnet re-run
+  (`docs/decisions/040`): two signals legitimately shared one unnamespaced
+  attribute (their `sensitivity_tier` genuinely agreed) but disagreed on
+  `health_thresholds[].rationale` -- free prose tied to each signal's own
+  distinct points, never meant to be identical. The conflict check now
+  compares only `(state, condition, basis)` per tier via a new
+  `_health_thresholds_signature`, ignoring `rationale`; a real `basis`
+  disagreement still raises. Verified against the actual fragments that
+  triggered the bug. `skills/s4-dependency/SKILL.md` also gained a
+  reminder to set `pii_masked: true` whenever the PII floor pushes tier to
+  confidential/restricted -- a real gap the same re-run surfaced.
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a

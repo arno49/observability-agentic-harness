@@ -127,3 +127,51 @@ def test_conflicting_health_thresholds_raises_not_silently_resolved():
     }])
     with pytest.raises(EventSchemaConflictError, match="health_thresholds"):
         build_event_schema([f1, f2], "deadbeef")
+
+
+def test_health_thresholds_differing_only_in_rationale_is_no_conflict():
+    """docs/decisions/040's own real false positive, found on a real
+    375-point Sonnet run: two telemetry-cost signals legitimately shared
+    one unnamespaced attribute (their sensitivity_tier genuinely agreed,
+    so Option B correctly did not split the name) but had different
+    rationale text -- free prose grounded in each signal's own distinct
+    points, never meant to be identical. Only state/condition/basis are
+    compared; rationale is free to differ."""
+    f1 = _fragment("telemetry-cost", [{
+        **_signal("x", "oah.telemetry_cost.cardinality_risk", kind="oah_extension"),
+        "health_thresholds": [
+            {"state": "green", "condition": "cardinality_risk == low", "basis": "assumed",
+             "rationale": "portfolio CRUD calls are mostly bounded by a small operation enum"},
+            {"state": "red", "condition": "cardinality_risk == high", "basis": "assumed",
+             "rationale": "would require confirming an unbounded portfolio ID in the URL"},
+        ],
+    }])
+    f2 = _fragment("ops", [{
+        **_signal("y", "oah.telemetry_cost.cardinality_risk", kind="oah_extension"),
+        "health_thresholds": [
+            {"state": "green", "condition": "cardinality_risk == low", "basis": "assumed",
+             "rationale": "these 57 sql-analysis endpoints route through analysis-operation templates"},
+            {"state": "red", "condition": "cardinality_risk == high", "basis": "assumed",
+             "rationale": "would require confirming an unbounded job/table identifier in the URL"},
+        ],
+    }])
+    result = build_event_schema([f1, f2], "deadbeef")
+    validate("event_schema", result)
+    assert result["summary"]["attribute_count"] == 1
+
+
+def test_health_thresholds_differing_in_basis_still_conflicts():
+    """rationale is free text, but basis (assumed vs confirmed) is a real
+    factual claim -- disagreeing there stays a real conflict."""
+    f1 = _fragment("telemetry-cost", [{
+        **_signal("x", "oah.telemetry_cost.cardinality_risk", kind="oah_extension"),
+        "health_thresholds": [{"state": "red", "condition": "cardinality_risk == high",
+                                "basis": "assumed", "rationale": "a"}],
+    }])
+    f2 = _fragment("ops", [{
+        **_signal("y", "oah.telemetry_cost.cardinality_risk", kind="oah_extension"),
+        "health_thresholds": [{"state": "red", "condition": "cardinality_risk == high",
+                                "basis": "confirmed", "rationale": "b"}],
+    }])
+    with pytest.raises(EventSchemaConflictError, match="health_thresholds"):
+        build_event_schema([f1, f2], "deadbeef")

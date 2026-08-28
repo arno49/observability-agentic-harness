@@ -22,10 +22,37 @@ deferred open question at design time; resolved the same way as
 reason. A fragment that declares no `health_thresholds` for an attribute
 another fragment does is not a conflict -- silence isn't a competing
 claim.
+
+A real Sonnet run against `mf-analyzer-web`'s full 375-point batch (this
+same day) found Phase D's own first implementation was too strict: two
+`telemetry-cost` signals legitimately shared one unnamespaced attribute
+(same `state`/`condition` per tier, correctly *not* split per Option B
+since their `sensitivity_tier` genuinely agreed) but disagreed on
+`health_thresholds[].rationale` -- free prose grounded in each signal's
+own distinct evidence (`"portfolio CRUD calls..."` vs `"57 axios call
+sites..."`), never meant to be identical across point groups. Comparing
+the raw threshold list (rationale included) raised a false-positive
+conflict that blocked S7/S8 entirely for the whole run -- exactly the
+failure mode this ADR family exists to prevent, self-inflicted. Fixed:
+conflict comparison now ignores `rationale` (documented reasoning, not a
+factual claim) and compares only the `(state, condition, basis)` triple
+per tier -- a real disagreement on where the line is drawn, or on
+evidence basis, still raises; two signals reaching the same classification
+through different reasoning does not.
 """
 from oah.domains.loader import load_pack
 
 _GENAI_PACK = load_pack("genai")
+
+
+def _health_thresholds_signature(thresholds):
+    """The comparable part of a health_thresholds list for conflict
+    detection -- (state, condition, basis) per tier, sorted by state.
+    Deliberately excludes `rationale`: free prose grounded in whatever
+    points a given signal covers, expected to differ even when two
+    signals agree on the actual classification (docs/decisions/040's own
+    real false-positive, found and fixed the same day)."""
+    return tuple(sorted((t["state"], t["condition"], t["basis"]) for t in thresholds))
 
 
 class EventSchemaConflictError(Exception):
@@ -74,7 +101,7 @@ def build_event_schema(design_fragments, repo_git_sha, semconv_pin=None, pack=No
             if thresholds:
                 if existing["health_thresholds"] is None:
                     existing["health_thresholds"] = thresholds
-                elif existing["health_thresholds"] != thresholds:
+                elif _health_thresholds_signature(existing["health_thresholds"]) != _health_thresholds_signature(thresholds):
                     raise EventSchemaConflictError(
                         f"attribute {attribute!r} designed with health_thresholds="
                         f"{existing['health_thresholds']!r} by {sorted(existing['source_lenses'])} but "
