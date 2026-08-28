@@ -469,7 +469,14 @@ ROADMAP.md     milestones, epics, spikes
   `docs/decisions/029`) — its own registry entry needed a new
   `static_builder_chain` detector shape, since the real Anthropic/OpenAI
   Java SDKs construct their client via a static builder chain
-  (`X.builder()...build()`/`.fromEnv()`), never `new X()`. Neither
+  (`X.builder()...build()`/`.fromEnv()`), never `new X()`. A second Java
+  genai registry entry, Spring AI's `ChatClient` (`docs/decisions/036`),
+  landed the same way `pg`'s TS entry did — zero adapter code, one
+  registry entry, reusing `static_builder_chain` to cover both the
+  dominant DI-injected-field shape and the rarer local
+  `ChatClient.builder(model).build()` form. Corpus-verified on a real
+  ~4400-file Spring backend (the actual service behind mf-analyzer-web's
+  own chat feature): 0 → 13 real call sites. Neither
   TypeScript nor Java has an LLM-disambiguation counterpart yet, so a run
   in either language never has candidates left for `map`'s disambiguation
   pass to resolve. `--pack {genai,service}` (same six

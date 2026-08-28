@@ -377,3 +377,116 @@ import com.example.widgetlib.WidgetClient;
 public class App { void run() { new WidgetClient().send("x"); } }
 """)
     assert detect_file(path, tmp_path) == []
+
+
+# --- Spring AI ChatClient (docs/decisions/036) ------------------------------
+# Corpus-verified against a real ~4400-file Java/Spring backend (a real
+# EPAM repo, the one behind mf-analyzer-web's own chat feature): 13 real
+# call sites across 8 files, 0 before this entry.
+
+def test_springai_constructor_injected_field_resolved(tmp_path):
+    """The dominant real shape: a Spring-managed ChatClient field, never
+    constructed in this file at all (DI-injected, often via Lombok's
+    @RequiredArgsConstructor which doesn't even write a visible
+    constructor) -- resolved purely via its declared type."""
+    resolved = _detect(tmp_path, """
+import org.springframework.ai.chat.client.ChatClient;
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
+public class ChatController {
+    private final ChatClient chatClient;
+
+    public void run(String userMessage) {
+        var resp = chatClient.prompt()
+                .system("You are a helpful assistant.")
+                .user(userMessage)
+                .call()
+                .content();
+    }
+}
+""")
+    assert len(resolved) == 1
+    assert resolved[0]["kind"] == "llm_generation"
+    assert resolved[0]["framework"] == "spring-ai"
+
+
+def test_springai_local_builder_then_use_resolved(tmp_path):
+    resolved = _detect(tmp_path, """
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
+
+public class Service {
+    public void run(ChatModel model) {
+        var client = ChatClient.builder(model).build();
+        var resp = client.prompt().user("hi").call().chatResponse();
+    }
+}
+""")
+    assert len(resolved) == 1
+    assert resolved[0]["framework"] == "spring-ai"
+
+
+def test_springai_call_entity_terminal_also_resolved(tmp_path):
+    resolved = _detect(tmp_path, """
+import org.springframework.ai.chat.client.ChatClient;
+
+public class Service {
+    private final ChatClient chatClient;
+    public Service(ChatClient chatClient) { this.chatClient = chatClient; }
+    public void run() {
+        var result = chatClient.prompt().user("x").call().entity(Object.class);
+    }
+}
+""")
+    assert len(resolved) == 1
+
+
+def test_springai_bare_call_with_no_terminal_extraction_not_matched(tmp_path):
+    """`.call()` alone returns an intermediate spec object, not a result --
+    never itself the end of a real Spring AI call site. A real precision
+    guard, not a theoretical one: matching a bare `.call()` would also
+    collide with unrelated `.call()` methods on unrelated types."""
+    resolved = _detect(tmp_path, """
+import org.springframework.ai.chat.client.ChatClient;
+
+public class Service {
+    private final ChatClient chatClient;
+    public Service(ChatClient chatClient) { this.chatClient = chatClient; }
+    public void run() {
+        var spec = chatClient.prompt().user("x").call();
+    }
+}
+""")
+    assert resolved == []
+
+
+def test_springai_unrelated_call_chain_produces_no_spurious_point(tmp_path):
+    resolved = _detect(tmp_path, """
+public class Service {
+    void run(java.util.concurrent.Callable<String> task) throws Exception {
+        String result = task.call();
+    }
+}
+""")
+    assert resolved == []
+
+
+def test_springai_inline_construct_and_call_in_one_expression_is_a_named_gap(tmp_path):
+    """Real, found on the motivating repo, not a synthetic corner case: a
+    single unassigned expression chaining construction AND the call
+    together (no intermediate variable) is the same named gap
+    docs/decisions/029's own Java adapter already documents for the
+    Anthropic entry (terminal buried mid-chain) -- confirmed occurring in
+    real production Spring AI code too, not fixed here."""
+    resolved = _detect(tmp_path, """
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
+
+public class Service {
+    public String run(ChatModel model) {
+        return ChatClient.builder(model).build().prompt().user("hi").call().content();
+    }
+}
+""")
+    assert resolved == []

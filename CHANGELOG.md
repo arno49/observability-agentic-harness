@@ -3,6 +3,18 @@
 ## [Unreleased]
 
 ### Added
+- Spring AI `ChatClient` registry for the Java genai pack
+  (`docs/decisions/036`). Found via a second real pilot repo (a ~4400-file
+  Java/Spring backend, the actual service behind mf-analyzer-web's chat
+  feature): `oah map --language java` reported 0 points, since the only
+  existing Java entry covers the raw Anthropic SDK, not Spring AI. One new
+  registry entry, zero adapter code changes -- `static_builder_chain`
+  covers both the dominant DI-injected-field shape and the rarer local
+  `ChatClient.builder(model).build()` form. Verified: 0 -> 13 real call
+  sites across 8 files. A real, confirmed-in-production instance of the
+  Anthropic entry's own named gap (construction and call chained in one
+  unassigned expression) was found on the same repo and named, not fixed.
+
 - `oah estimate` gains `--language`/`--pack` (`docs/decisions/035`). It
   always hardcoded the Python adapter with no language flag at all, so a
   TypeScript target silently reported `candidate_call_sites: 0` (not an

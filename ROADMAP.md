@@ -1385,6 +1385,30 @@ the motivating repo: 0 → 375 candidate call sites, $0.67 → $16.40 total
 estimate (most of the swing is S10's per-DTO agentic-session cost, now
 computed against the real point count instead of zero).
 
+**Spring AI `ChatClient` registry for the Java genai pack** (2026-08-27,
+`docs/decisions/036`): a second real pilot repo, `legacy-code-transpilers`
+(a real ~4400-file Java/Spring backend — the actual service behind
+`mf-analyzer-web`'s own chat feature). `oah map --language java` reported
+0 points on 4443 files scanned: the Java genai pack's only entry
+(`docs/decisions/029`) covers the raw Anthropic Java SDK, and this repo
+routes its LLM calls through Spring AI's `ChatClient` instead, a
+completely different abstraction. One new registry entry, zero adapter
+code changes (the same "second registry entry, no new mechanism"
+precedent `pg`'s TS entry set): `static_builder_chain` covers both real
+shapes at once — the dominant DI-injected-field case (`private final
+ChatClient chatClient;`, often via Lombok's `@RequiredArgsConstructor`,
+resolved purely by its declared type, no visible construction needed) and
+the rarer local `ChatClient.builder(model).build()` form. Method suffixes
+are 2-segment (`call`+terminal: `chatResponse`/`content`/`entity`), not a
+bare `["call"]` — a bare `.call()` returns an intermediate spec object,
+never itself a real call site, and matching it alone would risk colliding
+with unrelated `.call()` methods (a real, tested precision guard).
+Verified end to end: 0 → 13 real call sites across 8 files. A real,
+confirmed-in-production instance of the Anthropic entry's own already-
+named gap (a single unassigned expression chaining construction and the
+call together, terminal buried mid-chain) was found on this same repo (4
+files) and named, not fixed.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and
