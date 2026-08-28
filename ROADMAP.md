@@ -1793,6 +1793,24 @@ running the pending full 375/75-point re-run (`043`'s own next step)
 before this fix would have reconfirmed a failure that was already
 predictable for free.
 
+**`ops`'s latency-budget "mystery" closed; `telemetry-cost`'s PII-mask gap
+diagnosed (`docs/decisions/045`), both by free data analysis, no code
+change.** Diffing `every_surface_point_has_decision`'s and
+`latency_budget_declared_per_point`'s own missing-point-ID lists for
+`ops` in the saved `intermediates_sonnet_v3.json` shows they are the
+identical 374-point set — `ops`'s latency-budget failure isn't a second,
+separate bug, it's a direct consequence of the coverage bug `043` already
+fixed (a point with no `ops` signal at all trivially has no
+latency-overhead budget declared either). `telemetry-cost`'s three
+`pii_masked_above_tier` failures were all `sensitivity_tier: confidential`
+with `pii_masked` entirely absent — the exact shape `042`'s already-landed
+reminder fix targets, raising confidence past "plausible" without
+constituting live proof. The one item with no free substitute: confirming
+`043`'s `ops`/`slo` coverage fix and `044`'s `slo`/`dependency`
+latency-budget fix at the real full 375/75-point scale — isolated batches
+already proved the mechanism, only a real full-scale live run proves it
+holds at the scale that originally failed.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

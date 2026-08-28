@@ -458,6 +458,17 @@
   remains open. Prose-only; 762 tests passing, unchanged. Not yet
   live-verified -- deliberately, to avoid re-confirming a freely
   diagnosable failure on the next full-scale run.
+- `ops`'s previously-"unexplained" `latency_budget_declared_per_point`
+  failure and `telemetry-cost`'s `pii_masked_above_tier` failure
+  (`docs/decisions/045`), both resolved by free analysis of the saved
+  `intermediates_sonnet_v3.json`, no code change: `ops`'s
+  `every_surface_point_has_decision` and `latency_budget_declared_per_point`
+  failures name the identical 374 point IDs -- not a second bug, a direct
+  consequence of the coverage bug `043` already fixed. `telemetry-cost`'s
+  three failing signals were all `confidential`-tier with `pii_masked`
+  entirely absent, the exact shape `042`'s already-landed reminder fix
+  targets. Neither substitutes for the still-pending full 375/75-point
+  live re-run.
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a
