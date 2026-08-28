@@ -133,9 +133,11 @@ carries PII risk should be flagged `confidential` and `pii_masked: true`),
 `supports_decision`, `acting_role`. When `context.yaml` is given, check
 each point's own `workflow_hint` against `context.workflows[].pii_presence`:
 a point whose workflow is `pii_presence: "direct"` needs `sensitivity_tier`
-at least `confidential` on every signal covering it — S5's
-`sensitivity_tier_meets_pii_floor` gate enforces this deterministically
-(`docs/decisions/040`), so treat it as a hard floor, not a suggestion.
+at least `confidential` on every signal covering it, with `pii_masked:
+true` set to match — S5's `sensitivity_tier_meets_pii_floor` gate enforces
+the tier deterministically (`docs/decisions/040`), and `pii_masked_above_tier`
+separately checks the companion field, so treat both as a hard floor, not
+a suggestion.
 
 **Namespace the attribute name when tier genuinely varies by journey
 (`docs/decisions/040`, Option B).** If you would otherwise give the same

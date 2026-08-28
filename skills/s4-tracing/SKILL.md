@@ -85,7 +85,8 @@ For each point in the input batch, design one signal:
     would overclaim what S1 has actually verified.
 
 Every signal must satisfy S5's gates by construction: `surface_point_ids`,
-`maps_to` (`oah_extension` + `oah.tracing.propagation_risk`),
+`maps_to` (`oah_extension` + `oah.tracing.propagation_risk`, or a
+`.`-suffixed variant of it — see the namespacing rule below),
 `sensitivity_tier` (this signal describes execution-context metadata, not
 call content — `internal` is the right default, never higher unless a
 point's own kind already implies sensitive content, which this lens does
@@ -105,6 +106,24 @@ on every signal covering it, with `pii_masked: true` set to match — S5's
 `sensitivity_tier_meets_pii_floor` gate enforces this deterministically
 (`docs/decisions/040`), so treat it as a hard floor overriding the
 `internal` default above, not a suggestion.
+
+**Namespace the attribute name when tier genuinely varies by journey
+(`docs/decisions/040`, Option B) — do not just split the signal `name`.**
+If some points in this batch belong to a direct-PII workflow (floored to
+`confidential` per the rule above) and others don't (staying `internal`),
+do **not** give both groups' signals the same `maps_to.attribute`
+(`oah.tracing.propagation_risk`) at two disagreeing tiers — S7's
+event-schema merge hard-fails on exactly that
+(`EventSchemaConflictError`), the same failure class this pack's own
+`telemetry-cost`/`dependency` lenses already had before they got this
+same reminder. Giving the direct-PII group's signal a distinct `name`
+(e.g. `..._chat_direct_pii`) is not enough by itself if `maps_to.attribute`
+stays the shared `oah.tracing.propagation_risk` — S7 merges by
+`maps_to.attribute`, not by `name`. Suffix the **attribute** too (e.g.
+`oah.tracing.propagation_risk.chat`) for the group whose tier actually
+differs; leave every other group on the unsuffixed default. Only split
+when the tier genuinely differs for a real reason — do not namespace
+defensively when every point actually deserves the same tier.
 
 `failure_mode` is always `"fail_open"` — telemetry loss must never break
 the product being instrumented.

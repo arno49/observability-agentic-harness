@@ -1724,6 +1724,31 @@ all 13 gates pass (first attempt hit a real 600s `litellm.Timeout` for a
 response this size — not a logic bug — resolved by re-running with a
 longer timeout). 762 tests passing.
 
+**A fourth full real re-run confirms the fixes, and finds one new
+self-inflicted regression (`docs/decisions/042`).** Explicit user choice
+to spend real API budget once more, to see whether `oah readiness`
+actually behaves differently now. It does: `pii-governance` (12 signals,
+full coverage, all gates pass), `consistency_assertions_referential_integrity`,
+and `sensitivity_tier_meets_pii_floor` all hold clean at real scale.
+`build_event_schema` raised again, though — `tracing` correctly floored
+its `chat`-journey signal to `confidential` (the reminder from
+`docs/decisions/040`'s Third addendum working) but kept the same
+unnamespaced `oah.tracing.propagation_risk` attribute across all three of
+its own signals; splitting the signal `name` alone did nothing, since S7
+merges by `maps_to.attribute`. Directly attributable to adding the
+PII-floor reminder without also adding Option B namespacing guidance to
+`tracing` — fixed the same way, mirroring `telemetry-cost`/`dependency`'s
+existing paragraph. Verified mechanically (the real triggering fragment,
+hand-patched exactly as the new rule instructs, re-run through
+`build_event_schema`: conflict resolved, 26 attributes) rather than via a
+fifth live model call — a stated tradeoff, not silently skipped.
+`every_surface_point_has_decision`/`latency_budget_declared_per_point`
+failures for `ops`/`slo`/`dependency` checked directly against the
+pre-today intermediates and confirmed **pre-existing**, unrelated to any
+of this session's work, not investigated further — `ops` (1/375 points
+covered) and `slo` (~9/75) are now this investigation's single largest
+remaining named gap, root cause completely unknown.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

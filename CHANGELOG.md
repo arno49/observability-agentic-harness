@@ -412,6 +412,25 @@
   reminder `telemetry-cost` already had was also mirrored into `ops` and
   `tracing`, the two lenses the same re-run caught under-classifying
   `chat`-journey signals.
+- A fourth full real re-run (`docs/decisions/042`) found `build_event_schema`
+  raising again -- `tracing` correctly floored its `chat`-journey signal
+  to `confidential` (the fix above working) but kept the same unnamespaced
+  `oah.tracing.propagation_risk` attribute across all its signals; giving
+  the floored signal a distinct `name` wasn't enough, since S7 merges by
+  `maps_to.attribute`. `skills/s4-tracing/SKILL.md` gained the same Option
+  B namespacing guidance `telemetry-cost`/`dependency` already have.
+  Verified mechanically against the real triggering fragment (hand-patched
+  exactly per the new rule, re-run through `build_event_schema`: conflict
+  resolved, 26 attributes) rather than a fifth live model call.
+  `skills/s4-telemetry-cost/SKILL.md`'s own PII-floor paragraph also
+  gained the "`pii_masked: true` to match" reminder `ops`/`tracing`
+  already had, closing a real wording inconsistency found alongside a new
+  (not confirmed pre-existing) `pii_masked_above_tier` failure on the same
+  run. `every_surface_point_has_decision`/`latency_budget_declared_per_point`
+  failures for `ops`/`slo`/`dependency` checked against the pre-session
+  intermediates and confirmed pre-existing, not investigated further --
+  `ops` (1/375 points covered) and `slo` (~9/75) are the largest named gap
+  left open.
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a
