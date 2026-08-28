@@ -198,6 +198,26 @@
           },
           "description": "Named data classes that must not be logged"
         },
+        "health_thresholds": {
+          "type": "array",
+          "description": "docs/decisions/039: every signal that declared health_thresholds, rolled up per lens from the raw S4 design_fragments -- not deduplicated/merged across lenses, since S7's merge policy for a conflicting threshold set on the same attribute is an open question this report does not resolve. Omitted entirely when no fragment declared any.",
+          "items": {
+            "type": "object",
+            "required": ["attribute", "lens", "surface_point_ids", "thresholds"],
+            "properties": {
+              "attribute": { "type": ["string", "null"] },
+              "lens": { "type": "string" },
+              "surface_point_ids": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "thresholds": {
+                "type": "array",
+                "description": "Verbatim copy of the signal's own health_thresholds (design_fragment.schema.json)."
+              }
+            }
+          }
+        },
         "open_blocker": {
           "type": [
             "string",

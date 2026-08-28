@@ -192,3 +192,84 @@ def test_event_schema_attributes_become_key_signals():
         EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, event_schema, EMPTY_DTOS, repo_git_sha="deadbeef",
     )
     assert "gen_ai.usage.input_tokens" in report["observability_plan"]["key_signals"]
+
+
+FRAGMENT_WITH_HEALTH_THRESHOLDS = {
+    "schema_version": "0.1.0", "lens": "telemetry-cost", "repo_git_sha": "deadbeef", "failure_mode": "fail_open",
+    "signals": [{
+        "name": "oah.telemetry_cost.cardinality_risk",
+        "surface_point_ids": ["sp-0001"],
+        "maps_to": {"kind": "oah_extension", "attribute": "oah.telemetry_cost.cardinality_risk"},
+        "sensitivity_tier": "internal", "supports_decision": "sampling adjustment", "acting_role": "cost owner",
+        "health_thresholds": [
+            {"state": "green", "condition": "cardinality_risk == low", "basis": "assumed", "rationale": "stable"},
+            {"state": "red", "condition": "cardinality_risk == high", "basis": "assumed", "rationale": "unbounded"},
+        ],
+    }],
+}
+
+
+def test_no_design_fragments_omits_health_thresholds_section():
+    """docs/decisions/039 -- absent by default, like data_and_governance."""
+    report = build_readiness_report(
+        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS, repo_git_sha="deadbeef",
+    )
+    validate("readiness_report", report)
+    assert "health_thresholds" not in report["observability_plan"]
+    assert report["observability_plan"]["alert_triggers"] == []
+
+
+def test_health_thresholds_rolled_up_from_design_fragments():
+    report = build_readiness_report(
+        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS,
+        repo_git_sha="deadbeef", design_fragments=[FRAGMENT_WITH_HEALTH_THRESHOLDS],
+    )
+    validate("readiness_report", report)
+    rollup = report["observability_plan"]["health_thresholds"]
+    assert len(rollup) == 1
+    assert rollup[0]["attribute"] == "oah.telemetry_cost.cardinality_risk"
+    assert rollup[0]["lens"] == "telemetry-cost"
+    assert len(rollup[0]["thresholds"]) == 2
+
+
+def test_health_thresholds_red_state_becomes_alert_trigger():
+    report = build_readiness_report(
+        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS,
+        repo_git_sha="deadbeef", design_fragments=[FRAGMENT_WITH_HEALTH_THRESHOLDS],
+    )
+    triggers = report["observability_plan"]["alert_triggers"]
+    assert len(triggers) == 1
+    assert "cardinality_risk == high" in triggers[0]
+    assert "green" not in "".join(triggers)
+
+
+def test_assumed_health_thresholds_surfaced_in_evidence_position_assumed():
+    report = build_readiness_report(
+        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS,
+        repo_git_sha="deadbeef", design_fragments=[FRAGMENT_WITH_HEALTH_THRESHOLDS],
+    )
+    assumed = report["recommendation"]["evidence_position"]["assumed"]
+    assert any("basis=assumed" in a for a in assumed)
+
+
+def test_confirmed_health_thresholds_flagged_as_unverified_not_trusted():
+    """docs/decisions/039's own named gap: no S5 gate blocks a lens from
+    claiming basis=confirmed at S4 time, when it's never true this early.
+    S9 must not silently promote that claim into evidence_position.confirmed."""
+    fragment = {
+        **FRAGMENT_WITH_HEALTH_THRESHOLDS,
+        "signals": [{
+            **FRAGMENT_WITH_HEALTH_THRESHOLDS["signals"][0],
+            "health_thresholds": [
+                {"state": "red", "condition": "cardinality_risk == high", "basis": "confirmed",
+                 "rationale": "unbounded"},
+            ],
+        }],
+    }
+    report = build_readiness_report(
+        EMPTY_GAP_MODEL, PASSING_GATE_FINDINGS, PASSING_PANEL, EMPTY_EVENT_SCHEMA, EMPTY_DTOS,
+        repo_git_sha="deadbeef", design_fragments=[fragment],
+    )
+    unknown = report["recommendation"]["evidence_position"]["unknown"]
+    assert any("basis=confirmed" in u and "unverified" in u for u in unknown)
+    assert not any("confirmed" in c for c in report["recommendation"]["evidence_position"]["confirmed"])

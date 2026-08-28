@@ -75,6 +75,32 @@
               "is_templated": { "type": "boolean" },
               "unavailable_reason": { "type": ["string", "null"] }
             }
+          },
+          "health_thresholds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "description": "docs/decisions/039: generalizes slo_spec.alert_tiers' state/condition/reason idea to any signal, deliberately without its burn-rate math -- most signals (a categorical cardinality risk, a binary compliance flag) aren't ratio-based indicators. Optional -- only for a signal that represents a genuinely measurable, classifiable runtime condition; a signal with no meaningful healthy-vs-not reading (e.g. a tool-dispatch marker) should omit this field entirely rather than fill it in as decoration.",
+            "items": {
+              "type": "object",
+              "required": ["state", "condition", "basis", "rationale"],
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "enum": ["green", "amber", "red"],
+                  "description": "No two entries in one signal's health_thresholds may share a state -- ambiguous which one wins at runtime (oah/design/gates.py's check_health_thresholds_well_formed)."
+                },
+                "condition": {
+                  "type": "string",
+                  "description": "The actual trigger, numeric or categorical -- e.g. 'p99_latency_ms > 500' or 'cardinality_risk == high'. Free text, not a formula language -- same precedent as slo_spec's own short_window_rationale (docs/decisions/011 Finding 3: no safe generic derivation exists)."
+                },
+                "basis": {
+                  "enum": ["confirmed", "assumed"],
+                  "description": "Reuses readiness_report.schema.json's own evidence_position vocabulary. A signal designed at S4 has no live run to draw on by pipeline construction -- 'confirmed' is reserved for a not-yet-built post-S11 recalibration mechanism (docs/decisions/039); no gate currently blocks a lens from mistakenly asserting it early, a named deliberate gap."
+                },
+                "rationale": { "type": "string" }
+              }
+            }
           }
         }
       }

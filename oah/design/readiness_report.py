@@ -58,8 +58,34 @@ def _decide(gate_findings, panel_verdicts, gap_model):
     )
 
 
+def _health_thresholds_rollup(design_fragments):
+    """docs/decisions/039: surfaces every signal's own health_thresholds,
+    per lens, without merging across lenses -- S7's merge policy for a
+    conflicting threshold set on the same attribute is an explicitly
+    deferred open question (docs/decisions/039 Deferred), so this rolls up
+    from the raw per-lens design_fragments (same source --save-intermediates
+    already writes), never from event_schema's own deduplicated
+    attributes, to avoid silently picking a winner that hasn't been
+    decided."""
+    rollup = []
+    for fragment in design_fragments or []:
+        lens = fragment.get("lens", "unknown")
+        for signal in fragment.get("signals", []):
+            thresholds = signal.get("health_thresholds")
+            if not thresholds:
+                continue
+            rollup.append({
+                "attribute": signal.get("maps_to", {}).get("attribute"),
+                "lens": lens,
+                "surface_point_ids": sorted(signal.get("surface_point_ids", [])),
+                "thresholds": thresholds,
+            })
+    return rollup
+
+
 def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schema, dtos,
-                            context=None, repo_git_sha=None, run_manifest_ref=None):
+                            context=None, repo_git_sha=None, run_manifest_ref=None,
+                            design_fragments=None):
     decision, rationale, top_blocker = _decide(gate_findings, panel_verdicts, gap_model)
 
     workflows = (context or {}).get("workflows", [])
@@ -94,6 +120,12 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
             f"S6 reviewed personas ({len(ran_personas)} of 3: {sorted(ran_personas)}) found no error-severity issues"
         )
 
+    health_thresholds = _health_thresholds_rollup(design_fragments)
+    alert_triggers = [
+        f"{entry['attribute']} ({entry['lens']}, {t['basis']}): red when {t['condition']}"
+        for entry in health_thresholds for t in entry["thresholds"] if t["state"] == "red"
+    ]
+
     unknown = []
     if not gate_findings:
         unknown.append("S5 gates have not run -- no design fragment exists yet to check (S4 did not produce one)")
@@ -107,6 +139,26 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
     ]
     if not workflow_names:
         unknown.append("no context.yaml interview has run -- workflow criticality, PII presence, and governance answers are all unknown")
+
+    assumed = []
+    assumed_thresholds = sum(1 for e in health_thresholds for t in e["thresholds"] if t["basis"] == "assumed")
+    if assumed_thresholds:
+        assumed.append(
+            f"{assumed_thresholds} health_thresholds entrie(s) across {len(health_thresholds)} signal(s) are "
+            f"basis=assumed -- no live run exists yet in this pipeline to measure a real value against "
+            f"(docs/decisions/039)"
+        )
+    confirmed_thresholds = sum(1 for e in health_thresholds for t in e["thresholds"] if t["basis"] == "confirmed")
+    if confirmed_thresholds:
+        # docs/decisions/039's own named gap: no S5 gate blocks a lens from
+        # asserting basis="confirmed" at S4 time, when it is, by pipeline
+        # construction, never true this early -- flagged here rather than
+        # silently trusted, same "confidence alone never moves an item into
+        # confirmed" rule this module's own docstring states.
+        unknown.append(
+            f"{confirmed_thresholds} health_thresholds entrie(s) claim basis=confirmed, but no S10/S11 "
+            f"evidence exists in this run to support that -- treat as unverified until corroborated"
+        )
 
     has_dtos = bool(dtos.get("dtos"))
     if not has_dtos:
@@ -157,6 +209,7 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
         },
         "observability_plan": {
             "key_signals": key_signals,
+            "alert_triggers": alert_triggers,
         },
         "failure_response": {
             "failure_modes": ["telemetry loss (declared fail_open in every S4 fragment reviewed)"],
@@ -169,7 +222,7 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
             "next_action_owner": "unknown -- not derivable without context.yaml",
             "evidence_position": {
                 "confirmed": confirmed,
-                "assumed": [],
+                "assumed": assumed,
                 "unknown": unknown,
             },
         },
@@ -185,5 +238,7 @@ def build_readiness_report(gap_model, gate_findings, panel_verdicts, event_schem
             report["data_and_governance"]["trust_boundary_verification"] = trust_boundary_verification
         if (context or {}).get("tool_action_boundary"):
             report["data_and_governance"]["tool_action_boundary"] = context["tool_action_boundary"]
+    if health_thresholds:
+        report["observability_plan"]["health_thresholds"] = health_thresholds
 
     return report

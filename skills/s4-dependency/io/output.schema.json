@@ -40,7 +40,24 @@
               "pii_masked": { "type": "boolean" },
               "supports_decision": { "type": "string" },
               "acting_role": { "type": "string" },
-              "latency_overhead_budget_ms": { "type": "number", "minimum": 0 }
+              "latency_overhead_budget_ms": { "type": "number", "minimum": 0 },
+              "health_thresholds": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "description": "docs/decisions/039. Normally omit here -- this lens's own dependency_model (required_dependency_target/budget_split) already covers reliability health more rigorously; only for a genuinely separate condition the edge structure doesn't cover.",
+                "items": {
+                  "type": "object",
+                  "required": ["state", "condition", "basis", "rationale"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "state": { "enum": ["green", "amber", "red"] },
+                    "condition": { "type": "string" },
+                    "basis": { "enum": ["confirmed", "assumed"] },
+                    "rationale": { "type": "string" }
+                  }
+                }
+              }
             }
           }
         },

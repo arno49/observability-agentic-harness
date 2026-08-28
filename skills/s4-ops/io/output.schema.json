@@ -34,7 +34,24 @@
           "pii_masked": { "type": "boolean" },
           "supports_decision": { "type": "string" },
           "acting_role": { "type": "string" },
-          "latency_overhead_budget_ms": { "type": "number", "minimum": 0 }
+          "latency_overhead_budget_ms": { "type": "number", "minimum": 0 },
+          "health_thresholds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "description": "docs/decisions/039. Required on the degradation_response signal (green/amber/red mapped to normal/safe_fallback/unsafe_fallback); omit elsewhere per this skill's own Task/Hard rules.",
+            "items": {
+              "type": "object",
+              "required": ["state", "condition", "basis", "rationale"],
+              "additionalProperties": false,
+              "properties": {
+                "state": { "enum": ["green", "amber", "red"] },
+                "condition": { "type": "string" },
+                "basis": { "enum": ["confirmed", "assumed"] },
+                "rationale": { "type": "string" }
+              }
+            }
+          }
         }
       }
     },

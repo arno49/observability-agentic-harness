@@ -849,7 +849,7 @@ def cmd_readiness(args):
 
     report = build_readiness_report(
         gap_model, gate_findings, panel_verdicts, event_schema, dtos,
-        context=context, repo_git_sha=git_sha,
+        context=context, repo_git_sha=git_sha, design_fragments=fragments,
     )
     validate("readiness_report", report)
 

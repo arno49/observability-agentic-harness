@@ -3,6 +3,27 @@
 ## [Unreleased]
 
 ### Added
+- Any signal in any lens can now declare `health_thresholds` -- a
+  `green`/`amber`/`red` state, a `condition`, a `basis`
+  (`assumed`/`confirmed`), and a `rationale` (`docs/decisions/039`).
+  Generalizes the state/condition/reason idea behind `slo_spec.alert_tiers`
+  to any signal, deliberately without its burn-rate math, since most
+  signals (a categorical cardinality risk, a binary compliance flag)
+  aren't ratio-based indicators. A new S5 gate,
+  `check_health_thresholds_well_formed`, checks the set is structurally
+  sound (no duplicate states, a real `red` state, non-trivial text) --
+  the threshold values themselves stay a lens judgment call. Rolled out
+  to the `telemetry-cost` and `ops` lenses (required on their one
+  genuinely metric-shaped signal) and named as normally-omit for `slo`/
+  `dependency` (their own richer mechanisms already cover it). Verified
+  end to end with a real Sonnet call, which also caught and fixed a real
+  bug: each lens's own `skills/*/io/output.schema.json` is a separate
+  hand-maintained copy of the strict-mode output schema, so the canonical
+  schema edit alone never reached the model until every targeted lens's
+  own copy was updated too. `oah readiness`'s S9 report now rolls up
+  every declared `health_thresholds` into
+  `observability_plan.health_thresholds` and turns each `red` state into
+  an `observability_plan.alert_triggers` entry.
 - `oah readiness` gains `--save-intermediates PATH` (`docs/decisions/038`).
   `readiness_report.json`'s own recommendation only ever aggregates gate
   names and counts -- the detail behind a real verdict (which surface
@@ -298,6 +319,22 @@
   `build_telemetry_inventory`, no new CLI flag. Deliberately the smaller
   half of S2's TypeScript gap -- real source-level TS logger/error-handling
   scanning remains unbuilt, named as follow-up.
+
+### Fixed
+- Test isolation: once a dev machine's `~/.env` carries a real
+  `ANTHROPIC_API_KEY`, `python-dotenv`'s inconsistent autoload could inject
+  it into a test process mid-run, so a CLI-level test that deliberately
+  leaves one lens unmocked would silently make a real, live model call
+  instead of failing fast on a missing-credential check (found via a
+  `faulthandler` stack dump showing a real blocked HTTPS read inside
+  `test_cli_design.py`). `tests/conftest.py` gained an autouse
+  `_block_real_anthropic_credentials` fixture forcing the variable empty
+  for every test, restored automatically afterward.
+- `tests/fixtures/e13_snapshot/naive_memory.json` regenerated to include
+  the new `health_thresholds_well_formed` gate's own (passing) finding --
+  the test's own documented intended-change path (`docs/decisions/039`),
+  not a wiring regression; diff checked by hand first (6 lines, nothing
+  else moved).
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a

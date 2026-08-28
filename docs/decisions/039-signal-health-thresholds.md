@@ -1,7 +1,8 @@
 # 039 — Generalized per-signal health thresholds (`health_thresholds`)
 
-Status: **designed, not yet built**. Decomposed into phases below;
-none landed yet.
+Status: **phases A-C landed** (2026-08-28, same-day autonomous
+follow-through). Phase D (S7 merge policy for conflicting thresholds)
+remains an open, deferred question -- see Deferred below.
 
 ## Context
 
@@ -214,3 +215,48 @@ gets, not buried in `--save-intermediates`-only output.
   conflict by itself — Option B or A would; this ADR treats the
   `health_thresholds` gap as a separate, structurally related finding from
   the same investigation, not a fix for the same bug.
+
+## Verification (phases A-C, 2026-08-28)
+
+Unit tests alone were not trusted as sufficient — a real Sonnet call
+against 2 real `mf-analyzer-web` `http_client_call` points was run
+against the updated `telemetry-cost` SKILL.md before considering Phase B
+done. The first attempt produced schema-valid output with no
+`health_thresholds` at all, despite an explicit Hard Rule requiring it.
+Root cause, found by reading `oah/design/lens.py`'s `design_lens()`
+rather than assumed: the strict-mode structured-output schema sent to the
+model on every lens call is loaded from that skill's own
+`io/output.schema.json` — a hand-maintained, self-contained copy of
+`design_fragment.schema.json` (the same precedent already stated in each
+of those files' own `description` fields) — not the canonical
+`schemas/design_fragment.schema.json` this ADR's Phase A edited. The
+model was structurally incapable of emitting a field its own output
+schema never declared, regardless of what the prompt asked for. Fixed by
+adding the identical `health_thresholds` property to all four targeted
+lenses' own `io/output.schema.json` files (`s4-telemetry-cost`, `s4-ops`,
+`s4-slo`, `s4-dependency`); re-ran the same real Sonnet call and confirmed
+`health_thresholds` now present, well-formed, and gate-passing on both
+points. This is a real, general lesson for this repo, not specific to
+this one field: **a schema change under `schemas/` is not complete until
+every lens's own `io/output.schema.json` copy that should honor it is
+also updated** — nothing currently checks this consistency automatically,
+a named gap this ADR does not fix.
+
+Separately, running the full non-Docker test suite for regression-checking
+surfaced a real, pre-existing environmental hazard, unrelated to this
+ADR's own code: with a real `ANTHROPIC_API_KEY` now present in `~/.env`
+(fixed earlier in this session's own credential-loading work), any
+CLI-level test that leaves one lens unmocked can silently make a real,
+live model call instead of failing fast on a missing-credential check —
+observed directly as a live HTTPS read against Anthropic's API from
+inside `tests/test_cli_design.py::test_design_reports_gate_failures_with_nonzero_exit`,
+via a `faulthandler.dump_traceback_later` stack dump, not guessed at.
+Fixed at the source, not just worked around for this one verification
+run: `tests/conftest.py` gained an autouse `_block_real_anthropic_credentials`
+fixture forcing `ANTHROPIC_API_KEY=""` (empty, not unset — python-dotenv's
+default `load_dotenv(override=False)` only fills in a variable that is
+entirely absent, so an empty value blocks it the same way an explicit
+`delenv` inside an individual test already does) for every test, restored
+automatically by `monkeypatch` after each one. Full suite re-verified
+clean with this fixture alone, no manual env export: 748 passed, 0
+failed, 0:03:56.

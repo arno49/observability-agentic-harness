@@ -221,6 +221,46 @@ def check_route_is_templated(fragment):
     return Finding("route_is_templated", True, "every cardinality_guard with is_templated: false states why")
 
 
+def check_health_thresholds_well_formed(fragment):
+    """docs/decisions/039: `health_thresholds` generalizes slo_spec.alert_tiers'
+    state/condition/reason idea to any signal. Optional, like cardinality_guard
+    -- this gate only checks internal consistency wherever a lens chooses to
+    set it, never whether a signal should have had one. Two things checked,
+    both structural (the threshold VALUES stay a lens judgment call, same
+    division of labor slo_gates.py already draws between "the math is
+    internally consistent" and "the target was the right one"): no two
+    entries share a state (ambiguous which one wins at runtime), and a
+    non-empty list must name a real 'red' state -- the same 'a declared
+    mechanism must be complete' precedent decision_menu_resumption_paired
+    already applies, since a threshold set that never names the unhealthy
+    state is decoration, not a threshold. `condition`/`rationale`
+    non-triviality is included here too rather than left to schema alone,
+    matching every other free-text field this module checks."""
+    bad = []
+    for s in fragment.get("signals", []):
+        thresholds = s.get("health_thresholds")
+        if not thresholds:
+            continue
+        states = [t["state"] for t in thresholds]
+        reasons = []
+        if len(states) != len(set(states)):
+            reasons.append("duplicate state(s)")
+        if "red" not in states:
+            reasons.append("no 'red' state declared")
+        trivial = [t["state"] for t in thresholds
+                   if not _non_trivial(t.get("condition")) or not _non_trivial(t.get("rationale"))]
+        if trivial:
+            reasons.append(f"empty/trivial condition or rationale for state(s): {trivial}")
+        if reasons:
+            bad.append({"signal": s["name"], "reasons": reasons})
+    if bad:
+        return Finding(
+            "health_thresholds_well_formed", False,
+            f"signal(s) with malformed health_thresholds: {bad}",
+        )
+    return Finding("health_thresholds_well_formed", True, "every declared health_thresholds set is well-formed")
+
+
 ALL_GATES = [
     check_every_surface_point_has_decision,
     check_no_phantom_surface_points,
@@ -233,6 +273,7 @@ ALL_GATES = [
     check_failure_mode_fail_open,
     check_decision_menu_resumption_paired,
     check_route_is_templated,
+    check_health_thresholds_well_formed,
 ]
 
 # Gates that need surface_map_point_ids as a second argument, vs. fragment-only.

@@ -535,7 +535,30 @@ ROADMAP.md     milestones, epics, spikes
   silently discarded once S9 assembled its summary. The flag writes that
   detail (`design_fragments`, `gate_findings`, `panel_verdicts`,
   `event_schema`, `dtos`) alongside the normal report, zero extra model
-  calls.
+  calls. A real Sonnet run against the same repo found a second, distinct
+  gap: no signal field anywhere says what a *healthy* runtime value looks
+  like, except `slo_spec.alert_tiers`, confined to the `slo` lens
+  (`docs/decisions/039`). Every signal in any lens can now optionally carry
+  `health_thresholds` — a `green`/`amber`/`red` state, a `condition`, a
+  `basis` (`assumed`/`confirmed`, reusing `evidence_position`'s own
+  vocabulary), and a `rationale` — deliberately not a copy of
+  `alert_tiers`' burn-rate math, which only fits ratio-based indicators; a
+  new S5 gate (`check_health_thresholds_well_formed`) checks the set is
+  structurally sound (no duplicate states, a real `red` state, non-trivial
+  text) without judging the threshold values themselves. Rolled out to the
+  four lenses whose signals are genuinely metric-shaped
+  (`telemetry-cost`/`ops` required on their one categorical signal;
+  `slo`/`dependency` told to normally omit it, since their own richer
+  mechanisms already cover it) — verified end to end with a real Sonnet
+  call against the motivating repo, and only after fixing a second bug the
+  first attempt surfaced: each lens's own `skills/*/io/output.schema.json`
+  is a hand-maintained copy of the shape used for strict-mode structured
+  output, so the schema addition alone didn't reach the model until every
+  targeted lens's own copy was updated too. S9's readiness report now
+  rolls up every declared `health_thresholds` (per lens, not merged across
+  lenses — that merge policy is an open question, not decided here) into
+  `observability_plan.health_thresholds` and turns each `red` state into a
+  human-readable `alert_triggers` entry.
 - `pip install oah` alone is enough for `doctor`, `estimate`, `map --no-disambiguate`,
   `inventory`, `gaps`, and `interview` — fully deterministic, no LLM credential.
 - `pip install "oah[llm]"` plus an `ANTHROPIC_API_KEY` (or another provider

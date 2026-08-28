@@ -111,6 +111,16 @@ construction: `surface_point_ids`, `maps_to`, `sensitivity_tier`,
 `supports_decision`, `acting_role`. `failure_mode` is always
 `"fail_open"`.
 
+**`health_thresholds` (`docs/decisions/039`) — normally omit it here, for
+the same reason the slo lens does.** The reliability condition this edge
+cares about — is the dependency failing more than its budget allows —
+already lives in `dependency_model` (`required_dependency_target`,
+`budget_split`), a real, purpose-built mechanism. The `design_fragment`
+half's own signal is typically just a pointer (`oah.dependency.edge_name`)
+with no runtime value of its own to classify. Only set `health_thresholds`
+on a `design_fragment` signal here if it names a genuinely separate
+condition the edge structure doesn't already cover.
+
 ## Hard rules
 
 - Output must validate against `io/output.schema.json` — a wrapper object

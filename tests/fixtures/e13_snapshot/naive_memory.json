@@ -145,6 +145,12 @@
       "passed": true,
       "reason": "every cardinality_guard with is_templated: false states why",
       "severity": "error"
+    },
+    {
+      "gate": "health_thresholds_well_formed",
+      "passed": true,
+      "reason": "every declared health_thresholds set is well-formed",
+      "severity": "error"
     }
   ],
   "surface_map": {

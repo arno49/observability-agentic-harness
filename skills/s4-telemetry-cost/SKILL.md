@@ -101,6 +101,22 @@ never define:
   burn-rate inputs, incident-relevant spans) get a longer one. State the
   tradeoff explicitly, not just a number — a retention window is a real
   cost/investigability tradeoff, not an arbitrary default.
+- **Health thresholds on the cardinality-risk signal** (`docs/decisions/039`):
+  the `oah.telemetry_cost.cardinality_risk` signal is exactly the shape
+  `health_thresholds` exists for — a categorical runtime condition with a
+  real unhealthy state. Set `health_thresholds` on it directly from the
+  same `low`/`medium`/`high` classification you already produced:
+  `green` → `condition: "cardinality_risk == low"`, `amber` →
+  `"cardinality_risk == medium"`, `red` → `"cardinality_risk == high"`,
+  each with its own `rationale` (reuse the reasoning that set the risk
+  level in the first place — do not write a generic rationale). `basis`
+  is always `"assumed"` here: this lens never has a live run to measure
+  against, only static evidence from S1. Do **not** add
+  `health_thresholds` to `sampling_rate`, `retention_days`, or
+  `sampling_rationale`/`retention_rationale` — those are cost/tradeoff
+  decisions this lens makes, not runtime conditions with a healthy/
+  unhealthy reading; filling in thresholds for them would be decoration,
+  not signal.
 - **Budget-exhaustion hooks**: when a point's cardinality risk is `high`
   or its combined sampling+retention footprint could plausibly exceed a
   backend's ingest quota, add a `decision_menu_steps` entry of type
@@ -139,6 +155,16 @@ outage.
   itself is S1/S5's job via `route_is_templated`; this lens designs the
   cost-decision layer that *reasons about* cardinality, not the
   templating mechanism itself).
+- Every signal whose `maps_to.attribute` is
+  `oah.telemetry_cost.cardinality_risk` MUST set `health_thresholds`
+  (`docs/decisions/039`): `green`/`amber`/`red` mapped directly to that
+  signal's own `low`/`medium`/`high` classification, `basis: "assumed"`,
+  and a `rationale` for each state. This is a hard requirement for this
+  one specific signal — not optional decoration — precisely because it is
+  the signal `docs/decisions/039` was written to fix; every other signal
+  in this lens (`cardinality_driver`, `sampling_rate`,
+  `sampling_rationale`, `retention_days`, `retention_rationale`) still
+  omits `health_thresholds` per the Task section above.
 
 ## Self-validation (required before returning)
 

@@ -62,6 +62,15 @@ an `oah_extension` (`oah.ops.*` namespace):
   fallback; a categorical field, not a free-text one, so silent-failure
   and unsafe-fallback rates are actually measurable in aggregate, per
   architecture.md.
+  Set `health_thresholds` on this signal directly from that categorical
+  read (`docs/decisions/039`): `green` → `condition:
+  "degradation_response == normal"`, `amber` → `"degradation_response ==
+  safe_fallback"`, `red` → `"degradation_response == unsafe_fallback"`,
+  each `rationale` naming why that response counts as that state for this
+  point, `basis: "assumed"` (this lens never has a live run to measure
+  against). Do not set `health_thresholds` on `release_id`,
+  `rollback_target`, or `incident_owner` — those are identity/routing
+  fields, not runtime conditions with a healthy/unhealthy reading.
 - **Rollback observability**: `oah.ops.rollback_target` — identifies what
   this point could roll back to (a prior prompt version, model config, or
   retrieval index) if it is rollback-capable at all; for a point that
@@ -113,6 +122,13 @@ the product being instrumented.
 - Do not design signals for points not in the input batch.
 - Do not design a persistent-smoke-test or alert-plan signal — out of
   scope per this SKILL's own scope boundary above.
+- Every signal whose `maps_to.attribute` is `oah.ops.degradation_response`
+  MUST set `health_thresholds` (`docs/decisions/039`): `green`/`amber`/`red`
+  mapped directly to that signal's own `normal`/`safe_fallback`/
+  `unsafe_fallback` classification, `basis: "assumed"`, and a `rationale`
+  for each state. This is a hard requirement for this one specific
+  signal — every other signal in this lens (`release_id`,
+  `rollback_target`, `incident_owner`) still omits `health_thresholds`.
 
 ## Self-validation (required before returning)
 

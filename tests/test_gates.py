@@ -218,3 +218,90 @@ def test_cardinality_guard_is_templated_false_with_reason_passes():
     findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
     result = [f for f in findings if f.gate == "route_is_templated"]
     assert result[0].passed
+
+
+def test_signal_with_no_health_thresholds_unaffected():
+    """docs/decisions/039 -- no-op for every signal that doesn't set this
+    optional field, true for every existing genai/service signal today."""
+    fragment = _fragment()
+    validate("design_fragment", fragment)
+    findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
+    result = [f for f in findings if f.gate == "health_thresholds_well_formed"]
+    assert result[0].passed
+
+
+def test_health_thresholds_well_formed_passes():
+    fragment = _fragment(signals=[{
+        **_fragment()["signals"][0],
+        "health_thresholds": [
+            {"state": "green", "condition": "cardinality_risk == low", "basis": "assumed",
+             "rationale": "route set is small and stable"},
+            {"state": "amber", "condition": "cardinality_risk == medium", "basis": "assumed",
+             "rationale": "growing but not yet unbounded"},
+            {"state": "red", "condition": "cardinality_risk == high", "basis": "assumed",
+             "rationale": "unbounded label risks cardinality explosion at the backend"},
+        ],
+    }])
+    validate("design_fragment", fragment)
+    findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
+    result = [f for f in findings if f.gate == "health_thresholds_well_formed"]
+    assert result[0].passed
+
+
+def test_health_thresholds_duplicate_state_fails():
+    fragment = _fragment(signals=[{
+        **_fragment()["signals"][0],
+        "health_thresholds": [
+            {"state": "red", "condition": "cardinality_risk == high", "basis": "assumed", "rationale": "a"},
+            {"state": "red", "condition": "cardinality_risk == medium", "basis": "assumed", "rationale": "b"},
+        ],
+    }])
+    findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
+    result = [f for f in findings if f.gate == "health_thresholds_well_formed"]
+    assert not result[0].passed
+    assert "duplicate state" in result[0].reason
+
+
+def test_health_thresholds_without_red_state_fails():
+    """A declared threshold set that never names the unhealthy state is
+    decoration, not a threshold -- same 'a declared mechanism must be
+    complete' precedent as decision_menu_resumption_paired."""
+    fragment = _fragment(signals=[{
+        **_fragment()["signals"][0],
+        "health_thresholds": [
+            {"state": "green", "condition": "cardinality_risk == low", "basis": "assumed", "rationale": "fine"},
+        ],
+    }])
+    findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
+    result = [f for f in findings if f.gate == "health_thresholds_well_formed"]
+    assert not result[0].passed
+    assert "no 'red' state" in result[0].reason
+
+
+def test_health_thresholds_only_red_state_passes():
+    """A binary compliance signal may legitimately declare only the
+    unhealthy state, with no meaningful middle ground."""
+    fragment = _fragment(signals=[{
+        **_fragment()["signals"][0],
+        "health_thresholds": [
+            {"state": "red", "condition": "pii_masked == false", "basis": "assumed",
+             "rationale": "unmasked PII above declared tier is never acceptable"},
+        ],
+    }])
+    validate("design_fragment", fragment)
+    findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
+    result = [f for f in findings if f.gate == "health_thresholds_well_formed"]
+    assert result[0].passed
+
+
+def test_health_thresholds_trivial_condition_fails():
+    fragment = _fragment(signals=[{
+        **_fragment()["signals"][0],
+        "health_thresholds": [
+            {"state": "red", "condition": "   ", "basis": "assumed", "rationale": "real reason"},
+        ],
+    }])
+    findings = run_gates(fragment, surface_map_point_ids=["sp-0001"])
+    result = [f for f in findings if f.gate == "health_thresholds_well_formed"]
+    assert not result[0].passed
+    assert "empty/trivial" in result[0].reason

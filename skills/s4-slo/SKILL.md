@@ -139,6 +139,18 @@ construction: `surface_point_ids`, `maps_to`, `sensitivity_tier`,
 `supports_decision`, `acting_role`. `failure_mode` is always
 `"fail_open"`.
 
+**`health_thresholds` (`docs/decisions/039`) — normally omit it here.**
+`health_thresholds` generalizes the state/condition/reason idea behind
+your own `alert_tiers` to any signal in any lens. For *this* lens's
+`design_fragment` half, that idea almost always already lives in
+`slo_spec.alert_tiers` — the more rigorous, purpose-built multi-window
+burn-rate model, not the simpler generic one. Do not double-encode the
+same availability condition in both places. Only set `health_thresholds`
+on a `design_fragment` signal here if it represents a genuinely separate
+operational condition your `alert_tiers` doesn't already cover (rare for
+this lens) — e.g. a signal about the SLO definition's own staleness, not
+about the availability indicator itself.
+
 ## Hard rules
 
 - Output must validate against `io/output.schema.json` — a wrapper object

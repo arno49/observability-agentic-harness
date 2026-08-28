@@ -1449,7 +1449,8 @@ New `--save-intermediates PATH` writes exactly that already-computed
 data alongside the normal report, zero additional model calls.
 
 **Real Sonnet pilot run + a design gap named: `health_thresholds`**
-(2026-08-28, `docs/decisions/039`, **designed, not yet built**). The first
+(2026-08-28, `docs/decisions/039`, **phases A-C landed same day** — see
+next entry). The first
 real (non-local-model) `oah readiness` run against `mf-analyzer-web`'s
 375 real points produced `remediate_before_release`: the `ops` lens
 failed schema validation cleanly (`signals: [] should be non-empty`, a
@@ -1478,22 +1479,81 @@ ratio-based indicators, so that shape doesn't fit them. A new S5 gate,
 state, non-trivial `condition`/`rationale`) — same division of labor
 `slo_gates.py` already draws between "the math is internally consistent"
 and "the target was the right one," which stays a lens judgment call.
-Decomposed into phases, none landed: (A) schema field + gate, zero
-behavior change for any existing fragment; (B) targeted SKILL.md rollout
-to `slo`/`telemetry-cost`/`ops`/`dependency` only, not all lenses; (C) S9
+Decomposed into phases: (A) schema field + gate, zero behavior change for
+any existing fragment; (B) targeted SKILL.md rollout to
+`slo`/`telemetry-cost`/`ops`/`dependency` only, not all lenses; (C) S9
 report roll-up, `basis: assumed` flagged with the same honesty treatment
-`evidence_position` gets; (D, open question) S7 merge policy when two
-lenses design the same attribute with conflicting thresholds. Real,
-named, deliberately deferred: a post-S11 recalibration path that could
-promote `basis` to `confirmed`, a gate blocking a lens from claiming
-`confirmed` before any run has happened, and Option B (namespaced
-attribute names) as a smaller independent fix for the original
-`sensitivity_tier` conflict. The separately-discussed journey-first S4
-batching proposal (group points by `workflow_hint` before calling lenses;
-derive `sensitivity_tier` deterministically from `context.yaml`) is
-structurally related — it would reduce how often this class of S7
-conflict arises at all — but is a distinct, larger, not-yet-agreed
-proposal, tracked separately.
+`evidence_position` gets; (D, open question, deferred) S7 merge policy
+when two lenses design the same attribute with conflicting thresholds.
+Real, named, deliberately deferred: a post-S11 recalibration path that
+could promote `basis` to `confirmed`, a gate blocking a lens from
+claiming `confirmed` before any run has happened, and Option B
+(namespaced attribute names) as a smaller independent fix for the
+original `sensitivity_tier` conflict. The separately-discussed
+journey-first S4 batching proposal (group points by `workflow_hint`
+before calling lenses; derive `sensitivity_tier` deterministically from
+`context.yaml`) is structurally related — it would reduce how often this
+class of S7 conflict arises at all — but is a distinct, larger,
+not-yet-agreed proposal, tracked separately.
+
+**Phases A-C landed** (2026-08-28, same-day autonomous follow-through on
+the design above). `health_thresholds` added to `design_fragment.schema.json`'s
+signal object; `check_health_thresholds_well_formed` added to
+`oah/design/gates.py`'s domain-neutral `ALL_GATES` (same precedent as
+`check_route_is_templated`, `docs/decisions/026`) — 8 new gate tests, all
+passing. SKILL.md rollout: `telemetry-cost` and `ops` each gained a Hard
+Rule requiring `health_thresholds` on their one genuinely metric-shaped
+signal (`cardinality_risk`, `degradation_response`); `slo` and
+`dependency` were told to normally omit it, since their own richer
+mechanisms (`alert_tiers`, `dependency_model`) already cover it. **A real
+bug surfaced and fixed during verification, not just claimed working**:
+the first real Sonnet call against the updated `telemetry-cost` SKILL.md
+(2 real `mf-analyzer-web` points) produced no `health_thresholds` at all,
+schema-valid but silently missing the new field — root cause, found by
+reading `oah/design/lens.py`'s `design_lens()`: the strict-mode structured
+output schema sent to the model is loaded from each skill's own
+`io/output.schema.json`, a hand-maintained, self-contained copy of
+`design_fragment.schema.json` (matching every other lens's own stated
+precedent) — the canonical schema edit never reached the four targeted
+lenses' own copies, so the model was structurally unable to emit a field
+its own output schema didn't declare, regardless of the SKILL.md prompt.
+Fixed by propagating the field into all four targeted lenses'
+`io/output.schema.json` files; re-verified end to end with a second real
+Sonnet call against the same 2 real points — `health_thresholds` now
+present, well-formed (3 states, correct `basis: "assumed"`, real
+rationale per state) on both. S9's `readiness_report.py` gained a
+`design_fragments` parameter and rolls declared `health_thresholds` up
+into `observability_plan.health_thresholds` (per-lens, not merged across
+lenses — Option D stays deferred) and turns each `red` state into an
+`observability_plan.alert_triggers` entry; a lens claiming
+`basis: "confirmed"` at S4 time (never true by pipeline construction) is
+flagged in `evidence_position.unknown` as unverified rather than silently
+promoted to `evidence_position.confirmed` — 5 new tests, all passing.
+Real, separate, pre-existing bug found and fixed while running the full
+test suite for regression-checking (not caused by this phase's own
+`design_fragment.schema.json`/`gates.py` changes, but fixed in the same
+phase since it blocked verifying them): running the suite with a real
+`ANTHROPIC_API_KEY` now present in `~/.env` (fixed for credential-loading
+reasons during the earlier Sonnet pilot phase) meant any CLI-level test
+that leaves one lens unmocked could silently make a real, live, possibly
+slow model call instead of failing fast on a missing-credential check —
+found via a `faulthandler.dump_traceback_later` stack dump showing
+`test_cli_design.py::test_design_reports_gate_failures_with_nonzero_exit`
+blocked on a live HTTPS read from Anthropic's API. Fixed at the source:
+`tests/conftest.py` gained an autouse `_block_real_anthropic_credentials`
+fixture forcing `ANTHROPIC_API_KEY=""` for every test (empty, not unset —
+`python-dotenv`'s own `override=False` default only fills in a variable
+that's entirely absent), restored automatically after each test via
+`monkeypatch`. One more real, unrelated regression surfaced along the
+way and fixed: `tests/test_e13_domain_pack_snapshot.py`'s committed
+golden snapshot (`tests/fixtures/e13_snapshot/naive_memory.json`) no
+longer matched, since the new `health_thresholds_well_formed` gate now
+legitimately adds one more (passing) finding to every fragment's
+`gate_findings` — exactly the test's own documented intended-change path,
+not a wiring bug; the snapshot was regenerated and the diff checked by
+hand first (6 lines, only the new gate's own finding, nothing else
+moved). Full suite green after both fixes: **748 passed, 0 failed**,
+0:03:56.
 
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
