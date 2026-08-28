@@ -1777,6 +1777,22 @@ critical workflow got a full `slo_spec`; every other point got an honest
 `every_surface_point_has_decision` satisfied honestly). Not yet re-run at
 the original full 375/75-point scale.
 
+**`latency_budget_declared_per_point`'s `slo`/`dependency` failures: root
+cause found and fixed, NOT live-verified (`docs/decisions/044`).** Found
+while auditing readiness before spending further API budget: the
+2026-08-25 commit that added the `latency_overhead_budget_ms` instruction
+to all 9 then-existing lenses landed two commits before `slo` and
+`dependency` were built, so those two lenses' own SKILL.md files never
+received it — a pure, deterministic prompt gap, not a model-compliance
+question, confirmed by `grep` alone. Fixed by adding the same instruction
+to both. `ops`'s own instance of this gate failure is a separate,
+still-unexplained case — its SKILL.md already has the instruction and the
+gate failed anyway at full scale — left open, not guessed at. Prose-only
+change; 762 tests passing, unchanged. Deliberately not live-verified yet:
+running the pending full 375/75-point re-run (`043`'s own next step)
+before this fix would have reconfirmed a failure that was already
+predictable for free.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

@@ -446,6 +446,18 @@
   and a 6-point mixed-criticality batch for `slo` (real `slo_spec` for
   the genuinely critical point, honest `oah.slo.no_objective_designed`
   placeholders elsewhere, coverage gate satisfied honestly).
+- `latency_budget_declared_per_point`'s pre-existing `slo`/`dependency`
+  failures (`docs/decisions/044`): found, before spending further API
+  budget on another full re-run, that the 2026-08-25 commit adding the
+  `latency_overhead_budget_ms` instruction to all lenses landed two
+  commits before `slo`/`dependency` were built -- those two SKILL.md
+  files never received it, a pure deterministic prompt gap confirmed by
+  `grep` alone, not a model-compliance question. Fixed by adding the same
+  instruction to both. `ops`'s own instance of this failure is a separate,
+  still-unexplained case (its SKILL.md already has the instruction) and
+  remains open. Prose-only; 762 tests passing, unchanged. Not yet
+  live-verified -- deliberately, to avoid re-confirming a freely
+  diagnosable failure on the next full-scale run.
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a

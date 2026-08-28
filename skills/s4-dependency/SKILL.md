@@ -109,7 +109,10 @@ already owns.
 Every `design_fragment` signal must satisfy S5's ordinary gates by
 construction: `surface_point_ids`, `maps_to`, `sensitivity_tier`,
 `supports_decision`, `acting_role`. `failure_mode` is always
-`"fail_open"`. When `context.yaml` is given, check each covered point's
+`"fail_open"`. Also set `latency_overhead_budget_ms` on at least one
+signal per point — S5 gates on it being declared per point, not per
+signal — a concrete millisecond estimate for the overhead this lens's
+own edge-pointer capture adds to the call path. When `context.yaml` is given, check each covered point's
 own `workflow_hint` against `context.workflows[].pii_presence`: a
 direct-PII workflow needs `sensitivity_tier` at least `confidential` on
 every signal covering it (`docs/decisions/040`'s `sensitivity_tier_meets_pii_floor`

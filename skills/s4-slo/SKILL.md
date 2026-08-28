@@ -151,7 +151,10 @@ not silence.
 Every `design_fragment` signal must satisfy S5's ordinary gates by
 construction: `surface_point_ids`, `maps_to`, `sensitivity_tier`,
 `supports_decision`, `acting_role`. `failure_mode` is always
-`"fail_open"`.
+`"fail_open"`. Also set `latency_overhead_budget_ms` on at least one
+signal per point — S5 gates on it being declared per point, not per
+signal — a concrete millisecond estimate for the overhead this lens's
+own pointer/indicator capture adds to the call path.
 
 **`health_thresholds` (`docs/decisions/039`) — normally omit it here.**
 `health_thresholds` generalizes the state/condition/reason idea behind
