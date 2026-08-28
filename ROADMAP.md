@@ -1483,9 +1483,9 @@ Decomposed into phases: (A) schema field + gate, zero behavior change for
 any existing fragment; (B) targeted SKILL.md rollout to
 `slo`/`telemetry-cost`/`ops`/`dependency` only, not all lenses; (C) S9
 report roll-up, `basis: assumed` flagged with the same honesty treatment
-`evidence_position` gets; (D, open question, deferred) S7 merge policy
-when two lenses design the same attribute with conflicting thresholds.
-Real, named, deliberately deferred: a post-S11 recalibration path that
+`evidence_position` gets; (D) S7 merge policy when two lenses design the
+same attribute with conflicting thresholds — resolved same-day, see
+below. Real, named, deliberately deferred: a post-S11 recalibration path that
 could promote `basis` to `confirmed`, a gate blocking a lens from
 claiming `confirmed` before any run has happened, and Option B
 (namespaced attribute names) as a smaller independent fix for the
@@ -1524,7 +1524,7 @@ present, well-formed (3 states, correct `basis: "assumed"`, real
 rationale per state) on both. S9's `readiness_report.py` gained a
 `design_fragments` parameter and rolls declared `health_thresholds` up
 into `observability_plan.health_thresholds` (per-lens, not merged across
-lenses — Option D stays deferred) and turns each `red` state into an
+lenses — kept that way even after Phase D landed, see below) and turns each `red` state into an
 `observability_plan.alert_triggers` entry; a lens claiming
 `basis: "confirmed"` at S4 time (never true by pipeline construction) is
 flagged in `evidence_position.unknown` as unverified rather than silently
@@ -1554,6 +1554,24 @@ not a wiring bug; the snapshot was regenerated and the diff checked by
 hand first (6 lines, only the new gate's own finding, nothing else
 moved). Full suite green after both fixes: **748 passed, 0 failed**,
 0:03:56.
+
+**Phase D landed** (2026-08-28, user decision: hard-fail, matching
+`sensitivity_tier`'s own precedent, over leaving it deferred).
+`oah/design/event_schema.py`'s `build_event_schema` now tracks each
+merged attribute's `health_thresholds` the same way it already tracks
+`kind`/`sensitivity_tier`: a fragment that declares none where another
+does is not a conflict (silence isn't a competing claim); two fragments
+that both declare one and disagree raise `EventSchemaConflictError`,
+never merged by picking one arbitrarily. Deliberately does **not** surface
+the resolved value in `event_schema.json`'s own merged `attributes[]`
+output — that stays the S9 readiness-report rollup's job (Phase C),
+kept per-lens/per-fragment there rather than duplicated at this layer. 6
+new tests (no-conflict-on-silence, no-conflict-on-identical-values,
+conflict-on-disagreement); the `naive-memory` E13 snapshot needed no
+regeneration this time (that fixture declares no `health_thresholds`
+anywhere, so the newly-tracked field stays `None` throughout and never
+reaches the merged output). Full suite re-verified green after this
+phase too.
 
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe

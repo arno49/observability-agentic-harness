@@ -81,3 +81,49 @@ def test_empty_fragments_produces_empty_valid_schema():
     result = build_event_schema([], "deadbeef")
     validate("event_schema", result)
     assert result["attributes"] == []
+
+
+_GREEN_LOW = {"state": "green", "condition": "cardinality_risk == low", "basis": "assumed", "rationale": "x"}
+_RED_HIGH = {"state": "red", "condition": "cardinality_risk == high", "basis": "assumed", "rationale": "y"}
+_RED_DIFFERENT = {"state": "red", "condition": "cardinality_risk == very_high", "basis": "assumed", "rationale": "z"}
+
+
+def test_one_lens_declaring_health_thresholds_and_the_other_not_is_no_conflict():
+    """docs/decisions/039 Phase D: silence isn't a competing claim -- only
+    two fragments that BOTH declare health_thresholds for the same
+    attribute and disagree is a conflict."""
+    f1 = _fragment("telemetry-cost", [{
+        **_signal("x", "oah.telemetry_cost.cardinality_risk", kind="oah_extension"),
+        "health_thresholds": [_GREEN_LOW, _RED_HIGH],
+    }])
+    f2 = _fragment("ops", [_signal("y", "oah.telemetry_cost.cardinality_risk", kind="oah_extension")])
+    result = build_event_schema([f1, f2], "deadbeef")
+    validate("event_schema", result)
+    assert result["summary"]["attribute_count"] == 1
+
+
+def test_identical_health_thresholds_from_two_lenses_is_no_conflict():
+    f1 = _fragment("telemetry-cost", [{
+        **_signal("x", "oah.telemetry_cost.cardinality_risk", kind="oah_extension"),
+        "health_thresholds": [_GREEN_LOW, _RED_HIGH],
+    }])
+    f2 = _fragment("ops", [{
+        **_signal("y", "oah.telemetry_cost.cardinality_risk", kind="oah_extension"),
+        "health_thresholds": [_GREEN_LOW, _RED_HIGH],
+    }])
+    result = build_event_schema([f1, f2], "deadbeef")
+    validate("event_schema", result)
+    assert result["summary"]["attribute_count"] == 1
+
+
+def test_conflicting_health_thresholds_raises_not_silently_resolved():
+    f1 = _fragment("telemetry-cost", [{
+        **_signal("x", "oah.telemetry_cost.cardinality_risk", kind="oah_extension"),
+        "health_thresholds": [_GREEN_LOW, _RED_HIGH],
+    }])
+    f2 = _fragment("ops", [{
+        **_signal("y", "oah.telemetry_cost.cardinality_risk", kind="oah_extension"),
+        "health_thresholds": [_GREEN_LOW, _RED_DIFFERENT],
+    }])
+    with pytest.raises(EventSchemaConflictError, match="health_thresholds"):
+        build_event_schema([f1, f2], "deadbeef")

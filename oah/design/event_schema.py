@@ -13,7 +13,15 @@ Conflict handling is the one place this isn't pure bookkeeping: two
 fragments (from different lenses, or the same lens run twice) can name the
 same underlying `maps_to.attribute` with disagreeing `kind` or
 `sensitivity_tier`. That's not this module's call to silently resolve —
-raised as a real error, not merged by picking one arbitrarily.
+raised as a real error, not merged by picking one arbitrarily. A signal's
+optional `health_thresholds` (docs/decisions/039) gets the identical
+treatment when two fragments both declare one for the same attribute and
+disagree -- docs/decisions/039 named this Phase D as an explicitly
+deferred open question at design time; resolved the same way as
+`sensitivity_tier` rather than merged/picked arbitrarily, for the same
+reason. A fragment that declares no `health_thresholds` for an attribute
+another fragment does is not a conflict -- silence isn't a competing
+claim.
 """
 from oah.domains.loader import load_pack
 
@@ -21,10 +29,10 @@ _GENAI_PACK = load_pack("genai")
 
 
 class EventSchemaConflictError(Exception):
-    """Two fragments disagree about the same attribute's kind or
-    sensitivity_tier. A caller must not silently pick one -- this needs a
-    human or S6 to resolve, same principle as S5's own scope boundary
-    around judgment calls."""
+    """Two fragments disagree about the same attribute's kind,
+    sensitivity_tier, or health_thresholds. A caller must not silently
+    pick one -- this needs a human or S6 to resolve, same principle as
+    S5's own scope boundary around judgment calls."""
 
 
 def build_event_schema(design_fragments, repo_git_sha, semconv_pin=None, pack=None):
@@ -47,6 +55,7 @@ def build_event_schema(design_fragments, repo_git_sha, semconv_pin=None, pack=No
                     "stability": "development",
                     "deprecated_by": None,
                     "sensitivity_tier": tier,
+                    "health_thresholds": None,
                     "source_lenses": set(),
                     "surface_point_ids": set(),
                 }
@@ -61,6 +70,16 @@ def build_event_schema(design_fragments, repo_git_sha, semconv_pin=None, pack=No
                     f"attribute {attribute!r} designed at sensitivity_tier={existing['sensitivity_tier']!r} "
                     f"by {sorted(existing['source_lenses'])} but tier={tier!r} by lens={lens!r}"
                 )
+            thresholds = signal.get("health_thresholds")
+            if thresholds:
+                if existing["health_thresholds"] is None:
+                    existing["health_thresholds"] = thresholds
+                elif existing["health_thresholds"] != thresholds:
+                    raise EventSchemaConflictError(
+                        f"attribute {attribute!r} designed with health_thresholds="
+                        f"{existing['health_thresholds']!r} by {sorted(existing['source_lenses'])} but "
+                        f"health_thresholds={thresholds!r} by lens={lens!r}"
+                    )
             existing["source_lenses"].add(lens)
             existing["surface_point_ids"].update(signal["surface_point_ids"])
 

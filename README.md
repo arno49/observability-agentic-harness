@@ -556,9 +556,12 @@ ROADMAP.md     milestones, epics, spikes
   output, so the schema addition alone didn't reach the model until every
   targeted lens's own copy was updated too. S9's readiness report now
   rolls up every declared `health_thresholds` (per lens, not merged across
-  lenses — that merge policy is an open question, not decided here) into
-  `observability_plan.health_thresholds` and turns each `red` state into a
-  human-readable `alert_triggers` entry.
+  lenses at the report layer) into `observability_plan.health_thresholds`
+  and turns each `red` state into a human-readable `alert_triggers` entry.
+  S7's own event-schema merge now hard-fails when two lenses design the
+  same attribute with disagreeing `health_thresholds`, identical treatment
+  to an existing `sensitivity_tier` disagreement — a fragment that
+  declares none where another does is not a conflict.
 - `pip install oah` alone is enough for `doctor`, `estimate`, `map --no-disambiguate`,
   `inventory`, `gaps`, and `interview` — fully deterministic, no LLM credential.
 - `pip install "oah[llm]"` plus an `ANTHROPIC_API_KEY` (or another provider

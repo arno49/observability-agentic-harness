@@ -1,8 +1,9 @@
 # 039 — Generalized per-signal health thresholds (`health_thresholds`)
 
-Status: **phases A-C landed** (2026-08-28, same-day autonomous
-follow-through). Phase D (S7 merge policy for conflicting thresholds)
-remains an open, deferred question -- see Deferred below.
+Status: **phases A-D landed** (2026-08-28). Phase D was resolved the same
+way `sensitivity_tier` already is -- hard-fail on a genuine conflict,
+never merged by picking one arbitrarily -- per explicit user decision
+after weighing the option against leaving it deferred.
 
 ## Context
 
@@ -179,12 +180,17 @@ gets, not buried in `--save-intermediates`-only output.
   buildable, small addition, deliberately left out of this phase's scope
   rather than added speculatively before any lens has actually been
   observed doing this.
-- **S7 merge policy when two lenses design the same `maps_to.attribute`
-  with *different* `health_thresholds`.** `sensitivity_tier` mismatches
-  hard-fail today (S7's own stated invariant); whether a threshold
-  mismatch deserves the same treatment, or is legitimately advisory and
-  allowed to differ per lens, is an open judgment call — not decided by
-  this ADR.
+- ~~S7 merge policy when two lenses design the same `maps_to.attribute`
+  with different `health_thresholds`~~ — **resolved (Phase D, same day)**:
+  `build_event_schema` now raises `EventSchemaConflictError` on a genuine
+  disagreement, the identical treatment `sensitivity_tier` already gets —
+  never merged by picking one arbitrarily. A fragment that declares no
+  `health_thresholds` where another does is not a conflict; only two
+  fragments that both declare one and disagree raise. Does **not**
+  surface the resolved value in `event_schema.json`'s own merged
+  `attributes[]` output — that remains the S9 readiness-report rollup's
+  job (Phase C), kept deliberately per-lens/per-fragment there rather
+  than duplicated at this layer.
 - **Option B** (namespaced attribute names for genuinely per-journey
   `sensitivity_tier` splits) — a real, independent, smaller fix for the
   original S7 conflict this ADR was prompted by investigating; not

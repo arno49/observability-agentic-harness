@@ -23,7 +23,12 @@
   own copy was updated too. `oah readiness`'s S9 report now rolls up
   every declared `health_thresholds` into
   `observability_plan.health_thresholds` and turns each `red` state into
-  an `observability_plan.alert_triggers` entry.
+  an `observability_plan.alert_triggers` entry. S7's `build_event_schema`
+  also treats a `health_thresholds` disagreement between two lenses on the
+  same attribute the same way it already treats a `sensitivity_tier`
+  disagreement -- a hard `EventSchemaConflictError`, never merged by
+  picking one arbitrarily; a fragment that declares none where another
+  does is not a conflict.
 - `oah readiness` gains `--save-intermediates PATH` (`docs/decisions/038`).
   `readiness_report.json`'s own recommendation only ever aggregates gate
   names and counts -- the detail behind a real verdict (which surface
