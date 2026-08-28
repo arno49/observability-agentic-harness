@@ -1673,6 +1673,30 @@ verdict is still `remediate_before_release` — for different, mostly
 pre-existing or narrower reasons than the original run, not the original
 S7 conflict, which now holds clean at real scale.
 
+**Two of the step-3 gaps closed same day, cheap ones first (user's own
+prioritization call).** The PII-floor SKILL.md reminder `telemetry-cost`
+already had was mirrored into `ops` and `tracing`, the two lenses step 3
+caught genuinely under-classifying `chat`-journey signals. The
+`consistency_assertions_referential_integrity` field-naming bug (`fields_
+involved` getting `maps_to.attribute` names instead of real `signal.name`
+values) turned out to have a findable root cause on inspection: no lens's
+SKILL.md ever explains what `fields_involved` should contain, and the bare
+`{"type": "array", "items": {"type": "string"}}` schema doesn't disambiguate
+a signal's own name from any other string in the fragment. Fixed at the
+schema level — `fields_involved`'s item schema gained a one-line
+`description` naming the requirement explicitly, applied to the canonical
+schema plus all 12 `skills/s4-*/io/output.schema.json` copies that declare
+it (the now-familiar per-lens-schema-duplication mechanic from
+`docs/decisions/039`). Verified against the exact real repro (`s4-ops` on
+the `chatService.ts` `streamChat` point that originally failed): the new
+fragment's `fields_involved` correctly names real signals, and all 13 S5
+gates pass, including `sensitivity_tier_meets_pii_floor` (confirming the
+new `ops` reminder worked in the same call). Full details:
+`docs/decisions/040`'s Third addendum. `pii-governance`'s empty-signals
+failure and the journey-first-batching architecture question remain open,
+deferred again by explicit choice — real API budget already spent on step
+3, further spend is the user's call, not a default.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

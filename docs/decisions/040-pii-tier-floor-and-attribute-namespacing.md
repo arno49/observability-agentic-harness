@@ -232,3 +232,67 @@ not "fully ready" — several real, named, mostly pre-existing gaps remain
 (`pii-governance`'s empty-signals bug, the assertion-naming pattern, the
 floor reminder not yet in every lens, `tracing`'s narrow-by-design scope
 vs. a cross-cutting gate expecting full point coverage).
+
+## Third addendum (2026-08-28, same day) — two cheap, targeted fixes from the step-3 gap list
+
+Two of the step-3 findings above were cheap enough (no architecture
+question, no new design work) to close the same day, per explicit user
+choice to take the low-cost items first before deciding whether to spend
+more real API budget chasing `pii-governance`'s still-unexplained failure
+or opening the journey-first-batching architecture discussion.
+
+**PII-floor SKILL.md reminder extended to `ops` and `tracing`.** Step 3
+found `sensitivity_tier_meets_pii_floor` correctly catching real
+under-classification in both lenses (four signals in `ops`, one in
+`tracing`, all covering the `chat` direct-PII journey, still at
+`internal`) — the gate was doing its job, but neither lens's SKILL.md
+carried the reminder paragraph `telemetry-cost` already had. Both gained
+the mirrored paragraph (mechanically identical wording, `ops` also
+reminding to set `pii_masked: true` to match; `tracing` explicit that the
+floor overrides its own stated `internal`-by-default guidance).
+
+**`consistency_assertions_referential_integrity`'s field-naming bug —
+root cause found, fixed at the schema level.** Re-examining the real
+step-3 failures (not just the original run) showed the model wasn't
+picking arbitrary wrong values — it was consistently substituting
+`maps_to.attribute` names (`oah.ops.release_id`) or literal schema-path
+strings (`signals[].sensitivity_tier`) for the real `signal.name` values
+`fields_involved` requires. Checked every lens's SKILL.md: **none of them
+say anything about `consistency_assertions` or `fields_involved` at
+all** — the model had only the bare JSON Schema (`{"type": "array",
+"items": {"type": "string"}}`) to infer the field's meaning from, which
+doesn't distinguish a signal's own `name` from any other string floating
+around the fragment. Not a lens-specific gap, so not a lens-specific fix:
+`schemas/design_fragment.schema.json`'s `fields_involved` item schema
+gained a `description` ("must be a signals[].name value already declared
+in this fragment — never a maps_to.attribute name"), mechanically applied
+to all 13 places this substructure is duplicated (the canonical schema +
+the 12 `skills/s4-*/io/output.schema.json` copies that declare
+`consistency_assertions`; `s8-dto-generator`'s own `consistency_assertions`
+field has an unrelated shape — plain descriptive strings, not
+`fields_involved` objects — and was correctly left untouched) — the same
+`io/output.schema.json`-duplication mechanic `docs/decisions/039`'s own
+Verification section already named as a standing footgun.
+
+Verified against the exact real repro: re-ran `s4-ops` against the same
+`sp-0018` point (the `chatService.ts` `streamChat` call, the one whose
+`release_id_stamp`/`degradation_response_class` pair originally triggered
+the failure) with the same `context_v2.yaml`. The new fragment's
+`fields_involved` now correctly reads `["degradation_response_class",
+"release_id_stamp"]` (real signal names) instead of the old
+`["oah.ops.release_id", "oah.ops.rollback_target"]` (attribute names).
+All 13 S5 gates pass on the resulting fragment, including
+`sensitivity_tier_meets_pii_floor` (all four signals landed at
+`confidential`/`pii_masked: true` for this direct-PII `chat` point,
+confirming the new `ops` SKILL.md reminder above also worked in the same
+call) and `consistency_assertions_referential_integrity` itself. One new
+regression test (`test_fields_involved_schema_warns_against_maps_to_attribute_names`)
+guards the schema description against silent reversion — the gate's own
+enforcement logic was never wrong and already had coverage; what was
+missing was upstream guidance, which isn't something a gate-logic test
+alone would catch regressing.
+
+Still open, unchanged from the Second addendum: `pii-governance`'s
+empty-signals failure (root cause unknown) and the journey-first-batching
+architecture question — both explicitly deferred again, not attempted
+this pass.

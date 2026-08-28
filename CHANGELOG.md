@@ -378,6 +378,20 @@
   triggered the bug. `skills/s4-dependency/SKILL.md` also gained a
   reminder to set `pii_masked: true` whenever the PII floor pushes tier to
   confidential/restricted -- a real gap the same re-run surfaced.
+- `consistency_assertions_referential_integrity`'s `fields_involved`
+  field-naming bug (`docs/decisions/040`): the model was consistently
+  substituting `maps_to.attribute` values, or literal schema-path strings,
+  for the real `signal.name` values the gate requires -- because no lens's
+  SKILL.md, and no schema description, ever said what `fields_involved`
+  should contain. Fixed at the schema level: `fields_involved`'s item
+  schema gained a one-line `description` naming the requirement, applied
+  to the canonical schema plus all 12 `skills/s4-*/io/output.schema.json`
+  copies that declare it. Verified against the exact real repro (`s4-ops`
+  on the point that originally failed) -- the new fragment correctly names
+  real signals and all 13 S5 gates pass. The `sensitivity_tier_meets_pii_floor`
+  reminder `telemetry-cost` already had was also mirrored into `ops` and
+  `tracing`, the two lenses the same re-run caught under-classifying
+  `chat`-journey signals.
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a

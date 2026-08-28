@@ -72,7 +72,7 @@
         "required": ["description", "fields_involved"],
         "properties": {
           "description": { "type": "string" },
-          "fields_involved": { "type": "array", "minItems": 2, "items": { "type": "string" } }
+          "fields_involved": { "type": "array", "minItems": 2, "items": { "type": "string", "description": "must be a signals[].name value already declared in this fragment -- never a maps_to.attribute name" } }
         }
       }
     },

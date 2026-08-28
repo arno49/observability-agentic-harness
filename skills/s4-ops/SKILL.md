@@ -107,6 +107,15 @@ on at least one signal per point — S5 gates on it being declared per
 point, not per signal — a concrete millisecond estimate for the overhead
 this lens's own capture adds to the call path.
 
+When `context.yaml` is given, check each point's own `workflow_hint`
+against `context.workflows[].pii_presence`: a point whose workflow is
+`pii_presence: "direct"` (e.g. incident routing or rollback triggered from
+a direct-PII journey like `chat`) needs `sensitivity_tier` at least
+`confidential` on every signal covering it, with `pii_masked: true` set to
+match — S5's `sensitivity_tier_meets_pii_floor` gate enforces this
+deterministically (`docs/decisions/040`), so treat it as a hard floor, not
+a suggestion.
+
 `failure_mode` is always `"fail_open"` — telemetry loss must never break
 the product being instrumented.
 

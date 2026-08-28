@@ -87,6 +87,22 @@ def test_consistency_assertion_referencing_unknown_signal_fails():
     assert "does_not_exist" in str(failed[0].reason)
 
 
+def test_fields_involved_schema_warns_against_maps_to_attribute_names():
+    """Regression guard for docs/decisions/040's step-3 finding: models were
+    putting maps_to.attribute values (and even literal schema paths like
+    'signals[].sensitivity_tier') into fields_involved instead of real
+    signal.name values, which the gate above correctly rejects but nothing
+    told the model not to do in the first place. The fix is a schema
+    description, not gate logic -- this guards it from silently regressing."""
+    import json
+    from pathlib import Path
+
+    schema = json.loads((Path(__file__).parent.parent / "schemas" / "design_fragment.schema.json").read_text())
+    items_schema = schema["properties"]["consistency_assertions"]["items"]["properties"]["fields_involved"]["items"]
+    assert "signal" in items_schema.get("description", "").lower()
+    assert "maps_to.attribute" in items_schema.get("description", "")
+
+
 def test_advisory_contradiction_pair_flagged_as_warning_not_error():
     fragment = _fragment(signals=[
         _fragment()["signals"][0],
