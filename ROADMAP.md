@@ -1409,6 +1409,27 @@ named gap (a single unassigned expression chaining construction and the
 call together, terminal buried mid-chain) was found on this same repo (4
 files) and named, not fixed.
 
+**S2 gains a real Java telemetry inventory** (2026-08-27,
+`docs/decisions/037`): closes the gap the phase above named explicitly —
+`oah gaps --language java` still reported all 13 Spring AI call sites
+dark after the S1 fix, because no Java S2 scanner existed at all (the
+same "fell back to the Python scanner's honest-empty result" shape
+`docs/decisions/033` already fixed for TypeScript). New
+`oah/discovery/java_telemetry_scanner.py`: `@Slf4j`-annotated classes
+(Lombok synthesizes the `log` field at compile time, never visible in
+source — the same class of implicit construction the S1 adapter already
+had to trust for `@RequiredArgsConstructor`) and explicit
+`LoggerFactory.getLogger(...)` fields under any name, `System.out/err
+.println`, `io.opentelemetry.*` imports, and `try`/`catch` classification
+with REAL exception types (Java's own `catch` carries genuine static
+types, including real multi-catch, unlike TS's documented "not
+applicable"). No cross-file mechanism built — Java loggers are per-class
+by real convention (confirmed by reading the corpus), never a shared
+singleton the way TS's own logger shape was, so none was needed. Verified
+end to end: 0 → 4560 logger call sites, 0 → 1461 error_handling entries
+across 3477 files in 3.6s; `oah gaps` on the 13 Spring AI points moved
+from 13 dark / 0 partial to 3 dark / 10 partial.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

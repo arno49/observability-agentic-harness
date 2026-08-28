@@ -3,6 +3,18 @@
 ## [Unreleased]
 
 ### Added
+- S2 (existing telemetry inventory) now supports Java (`docs/decisions/037`).
+  `oah gaps --language java` still reported all points dark after the Spring
+  AI S1 fix (`docs/decisions/036`) since no Java S2 scanner existed. New
+  `oah/discovery/java_telemetry_scanner.py` detects `@Slf4j`-annotated
+  classes (Lombok synthesizes the `log` field at compile time, invisible in
+  source), explicit `LoggerFactory.getLogger(...)` fields, `System.out/err`
+  printing, `io.opentelemetry.*` imports, and `try`/`catch` classification
+  with real exception types. No cross-file mechanism needed -- Java loggers
+  are per-class by convention. Verified: 0 -> 4560 logger call sites, 0 ->
+  1461 error_handling entries on a real ~4400-file repo; `oah gaps` moved
+  from 13 dark to 3 dark / 10 partial on the Spring AI call sites.
+
 - Spring AI `ChatClient` registry for the Java genai pack
   (`docs/decisions/036`). Found via a second real pilot repo (a ~4400-file
   Java/Spring backend, the actual service behind mf-analyzer-web's chat

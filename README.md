@@ -496,8 +496,19 @@ ROADMAP.md     milestones, epics, spikes
   files), `@opentelemetry/*` imports, and `try`/`catch` classification
   (swallowed/logged/reraised). Verified end to end on that repo: `oah gaps`
   went from 100% `dark` (S2 structurally blind to the target's own source)
-  to 265 dark / 110 partial once S2 could see it. Java has no S2 scanner
-  yet — a named gap, not silently claimed. `--context`-weighted priority
+  to 265 dark / 110 partial once S2 could see it. Java now has a real S2
+  scanner too (`docs/decisions/037`): `@Slf4j`-annotated classes (Lombok
+  synthesizes the `log` field at compile time, never visible in source)
+  and explicit `LoggerFactory.getLogger(...)` fields, `System.out/err`
+  `.println`, `io.opentelemetry.*` imports, and `try`/`catch`
+  classification with REAL exception types (unlike TS, Java's `catch`
+  carries genuine static types) — no cross-file mechanism needed, Java
+  loggers are per-class by real convention, confirmed by reading the
+  corpus, not assumed. Verified on the real Java/Spring backend behind
+  mf-analyzer-web's own chat feature: 0 → 4560 logger call sites, 0 →
+  1461 error_handling entries; `oah gaps` on the 13 Spring AI call sites
+  from `docs/decisions/036` moved from 13 dark to 3 dark / 10 partial.
+  `--context`-weighted priority
   (`docs/decisions/034`) is now real for TypeScript too: `workflow_hint`
   was previously set only by Python's LLM disambiguation pass, so
   `oah gaps --context` was a silent no-op on every TS target — the

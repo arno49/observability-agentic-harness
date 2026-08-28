@@ -88,9 +88,8 @@ _LANGUAGE_HELP = (
     "repo: python (default -- oah.discovery.python_adapter + telemetry_scanner), "
     "typescript (oah.discovery.typescript_adapter, E11-TS, + ts_telemetry_scanner, "
     "docs/decisions/033), or java (oah.discovery.java_adapter, E11-Java, "
-    "docs/decisions/029 -- S2 has no Java scanner yet, a named gap, falls back to "
-    "the Python one, which finds nothing on a Java repo). typescript and java S1 "
-    "are both real but neither has an LLM-disambiguation counterpart yet, so "
+    "docs/decisions/029, + java_telemetry_scanner, docs/decisions/037). typescript "
+    "and java S1 are both real but neither has an LLM-disambiguation counterpart yet, so "
     "neither ever returns still-ambiguous candidates. Explicit, not auto-sniffed "
     "from file extensions -- a mixed-language repo has no single right guess."
 )
@@ -133,13 +132,14 @@ def _build_telemetry_inventory(target, git_sha, language):
     _build_surface_map's own dispatch shape exactly (docs/decisions/033).
     `oah/discovery/telemetry_scanner.py`'s Python scanner stays the
     default for every existing caller (E13's byte-identical guarantee);
-    `typescript` dispatches to the new `oah/discovery/ts_telemetry_scanner.py`
-    (docs/decisions/033). `java` has no S2 scanner yet -- a real, named gap,
-    not silently guessed at -- and falls back to the Python scanner, which
-    finds nothing on a Java repo (no `*.py` files), the same honest-empty
-    result every caller already got before this dispatch existed."""
+    `typescript` dispatches to `oah/discovery/ts_telemetry_scanner.py`
+    (docs/decisions/033); `java` dispatches to
+    `oah/discovery/java_telemetry_scanner.py` (docs/decisions/037)."""
     if language == "typescript":
         from oah.discovery.ts_telemetry_scanner import build_telemetry_inventory
+        return build_telemetry_inventory(target, git_sha=git_sha)
+    if language == "java":
+        from oah.discovery.java_telemetry_scanner import build_telemetry_inventory
         return build_telemetry_inventory(target, git_sha=git_sha)
     from oah.discovery.telemetry_scanner import build_telemetry_inventory
     return build_telemetry_inventory(target, git_sha=git_sha)

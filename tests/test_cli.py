@@ -233,3 +233,26 @@ def test_inventory_default_language_is_python_unchanged(tmp_path):
     assert result.returncode == 0, result.stderr
     inventory = json.loads(result.stdout)
     assert inventory["summary"]["files_scanned"] == 0
+
+
+def test_inventory_language_java_dispatches_to_java_scanner(tmp_path):
+    """docs/decisions/037's own CLI dispatch: --language java must route
+    `oah inventory` through oah/discovery/java_telemetry_scanner.py."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "App.java").write_text(
+        "import lombok.extern.slf4j.Slf4j;\n"
+        "@Slf4j\n"
+        "public class App { void run() { log.error(\"boom\"); } }\n"
+    )
+    _init_git_repo(target)
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    result = _run(["inventory", str(target), "--language", "java"], cwd=workdir)
+    assert result.returncode == 0, result.stderr
+
+    inventory = json.loads(result.stdout)
+    assert inventory["summary"]["files_scanned"] == 1
+    assert inventory["summary"]["logger_call_sites"] == 1
+    assert inventory["loggers"][0]["logger_kind"] == "stdlib_logging"
