@@ -1811,6 +1811,38 @@ latency-budget fix at the real full 375/75-point scale — isolated batches
 already proved the mechanism, only a real full-scale live run proves it
 holds at the scale that originally failed.
 
+**That full-scale live run made, with explicit user go-ahead: `043`/`044`
+confirmed for real; `ops`'s own self-inflicted S7 conflict found and
+fixed (`docs/decisions/046`).** A real `oah readiness` run against
+`mf-analyzer-web` at the original 375/75-point scale confirms
+`every_surface_point_has_decision`, `latency_budget_declared_per_point`,
+and `pii_masked_above_tier` all pass on every one of the 6 lens fragments
+— `043`'s coverage fix and `044`'s latency-budget fix both hold at real
+scale, and `045`'s diagnosis of `ops`'s and `telemetry-cost`'s failures
+is confirmed correct. `build_event_schema` failed again, though — the
+same class of self-inflicted conflict `042` fixed for `tracing`, now real
+for `ops`: with coverage fixed, `ops` covers all four of the target's
+workflows and correctly floors the direct-PII `chat` journey to
+`confidential` while the rest stay `internal`, but all four of `ops`'s
+own attribute categories (`release_id`, `degradation_response`,
+`rollback_target`, `incident_owner`) shared one unsuffixed
+`maps_to.attribute` across journeys. `042` had explicitly declined to
+namespace `ops` speculatively, citing no evidence at the time — fixing
+`043`'s coverage bug is exactly what created the conditions for the
+collision to become real. Fixed with the same Option B namespacing
+paragraph `tracing`/`telemetry-cost`/`dependency` already have, verified
+mechanically (the real triggering fragment hand-patched exactly per the
+new rule, re-run through `build_event_schema`: conflict resolved, 35
+attributes). The verdict is still `remediate_before_release`, but now for
+a genuinely different, out-of-scope reason: S9's dark-gap check reports
+265 unaddressed p0/p1 `gap_model` entries with zero existing telemetry —
+real, expected, not a design defect; it's M3's own still-open DoD (real
+`oah instrument` application), not anything `039`-`046`'s design-lens
+fixes were ever meant to close. This closes the loop `039` opened: every
+S5 gate and S7 conflict found across real `mf-analyzer-web` runs in this
+ADR chain is now fixed-and-confirmed-at-scale or fixed-and-mechanically-
+verified.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

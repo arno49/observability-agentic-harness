@@ -469,6 +469,22 @@
   entirely absent, the exact shape `042`'s already-landed reminder fix
   targets. Neither substitutes for the still-pending full 375/75-point
   live re-run.
+- Full 375/75-point live `oah readiness` re-run against `mf-analyzer-web`
+  (`docs/decisions/046`) confirms `every_surface_point_has_decision`,
+  `latency_budget_declared_per_point`, and `pii_masked_above_tier` all
+  pass on every one of 6 lens fragments -- `043`/`044`'s fixes hold at
+  real scale. Found a new self-inflicted S7 conflict in `ops`, same class
+  `042` fixed for `tracing`: with coverage fixed, `ops` now spans all four
+  of the target's workflows and correctly floors the direct-PII `chat`
+  journey to `confidential`, but all four of its own attribute categories
+  shared one unsuffixed `maps_to.attribute` across journeys.
+  `skills/s4-ops/SKILL.md` gained the same Option B namespacing guidance
+  `tracing`/`telemetry-cost`/`dependency` already have. Verified
+  mechanically against the real triggering fragment (conflict resolved,
+  35 attributes) rather than a sixth live call. Readiness verdict is
+  still `remediate_before_release`, now for an out-of-scope, expected
+  reason: 265 unaddressed p0/p1 `gap_model` entries with zero existing
+  telemetry -- S10 instrumentation was never in this ADR chain's scope.
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a

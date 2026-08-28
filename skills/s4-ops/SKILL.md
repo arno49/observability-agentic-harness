@@ -137,6 +137,26 @@ a suggestion.
 `failure_mode` is always `"fail_open"` — telemetry loss must never break
 the product being instrumented.
 
+**Namespace an `oah.ops.*` attribute when its `sensitivity_tier` genuinely
+varies by journey (`docs/decisions/040`, Option B; found for real at full
+scale, `docs/decisions/046`).** A batch spanning journeys with
+different `pii_presence` floors each of `release_id`,
+`degradation_response`, `rollback_target`, and `incident_owner` to
+different tiers per journey (e.g. `confidential` for a direct-PII journey
+like `chat`, `internal` for the rest) — S7 merges by `maps_to.attribute`,
+not by signal `name`, so leaving all of a point's signals on the shared
+unsuffixed attribute (`oah.ops.release_id`, etc.) collides the moment two
+journeys in the same batch land at different tiers, exactly the class of
+conflict `docs/decisions/042` fixed for `tracing`. If you would otherwise
+give the same `oah.ops.*` attribute to signals from journeys whose real
+`sensitivity_tier` differs, give each journey's variant its own
+`.`-suffixed name instead (e.g. `oah.ops.release_id.chat`), the same
+pattern `skills/s4-telemetry-cost/SKILL.md` and
+`skills/s4-dependency/SKILL.md` already teach. Only split the name when
+the tier genuinely differs for a real reason — do not namespace
+defensively when every journey in the batch actually deserves the same
+tier.
+
 ## Hard rules
 
 - Output must validate against `io/output.schema.json` (itself
