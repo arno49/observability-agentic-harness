@@ -791,6 +791,7 @@ def cmd_readiness(args):
     inventory = _build_telemetry_inventory(args.target, git_sha, language)
     gap_model = build_gap_model(surface_map, inventory, context=context, pack=pack)
 
+    fragments = []
     gate_findings = []
     panel_verdicts = []
     empty_kind_counts = {f"{v}_count": 0 for v in pack["attribute_kind_values"]}
@@ -857,6 +858,26 @@ def cmd_readiness(args):
         print(f"Wrote {args.output}")
     else:
         print(json.dumps(report, indent=2))
+
+    save_intermediates_path = getattr(args, "save_intermediates", None)
+    if save_intermediates_path:
+        # S9's own readiness_report only ever surfaces an AGGREGATE count
+        # per gate name (build_readiness_report's own design) -- every
+        # per-point/per-lens detail (which surface point, which fragment,
+        # gate_findings[].reason's own point-ID list) was computed right
+        # here and then silently discarded before this flag existed. Real
+        # cost: after a real 375-point run against mf-analyzer-web
+        # (docs/decisions/032-036's own pilot), "remediate_before_release"
+        # had no way to be explained beyond gate names and counts -- this
+        # is that data, saved instead of thrown away.
+        Path(save_intermediates_path).write_text(json.dumps({
+            "design_fragments": fragments,
+            "gate_findings": gate_findings,
+            "panel_verdicts": panel_verdicts,
+            "event_schema": event_schema,
+            "dtos": dtos,
+        }, indent=2) + "\n")
+        print(f"Wrote intermediates to {save_intermediates_path}", file=sys.stderr)
 
     print(f"\nrecommendation: {report['recommendation']['decision']}", file=sys.stderr)
     print(f"rationale: {report['recommendation']['rationale']}", file=sys.stderr)
@@ -1398,6 +1419,12 @@ def build_parser():
     p_readiness.add_argument("target", help="Path to the target repository")
     p_readiness.add_argument("--context", default=None, help="Path to a context.yaml from `oah interview`")
     p_readiness.add_argument("-o", "--output", default=None, help="Write readiness_report.json here instead of stdout")
+    p_readiness.add_argument("--save-intermediates", default=None,
+                              help="Also write the S4-S8 detail behind this run's summary (design_fragments, "
+                                   "gate_findings with their real per-point reasons, panel_verdicts, event_schema, "
+                                   "dtos) to this path -- readiness_report.json's own recommendation only ever "
+                                   "aggregates gate names and counts; this is the detail that's otherwise "
+                                   "computed and silently discarded once S9 assembles its summary.")
     p_readiness.add_argument("--model", default=None, help=_MODEL_HELP)
     p_readiness.add_argument("--language", choices=["python", "typescript", "java"], default="python", help=_LANGUAGE_HELP)
     p_readiness.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)

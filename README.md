@@ -223,7 +223,7 @@ oah gaps <target> [--context context.yaml] [-o out.json]        # S3: gap model
 oah design <target> [--context context.yaml] [-o out.json] [--model MODEL]      # S4 lenses + S5 gates + S6 panel
 oah event-schema <target> [--context context.yaml] [-o out.json] [--model MODEL]  # S7: event schema
 oah dtos <target> [--context context.yaml] [-o out.json] [--model MODEL]          # S8: implementation DTOs
-oah readiness <target> [--context context.yaml] [-o out.json] [--model MODEL]     # S9: readiness report
+oah readiness <target> [--context context.yaml] [-o out.json] [--model MODEL] [--save-intermediates path.json]  # S9: readiness report
 oah instrument <target> --dtos implementation_dto.json [-o out.json] [--run-id ID]        # S10 report-only
 oah instrument <target> --dtos implementation_dto.json --mode fix --readiness readiness_report.json  # S10 fix
 oah validate <target> --dtos implementation_dto.json --instrument-report instrument_report.json [-o out.json] [--dynamic] [--live --start-command CMD --port N --requests requests.json [--event-schema event_schema.json] [--setup-script SCRIPT]]  # S11, R4 always + real R2 with --dynamic + R1 mechanism with --live
@@ -525,7 +525,17 @@ ROADMAP.md     milestones, epics, spikes
   silently reported `candidate_call_sites: 0` (not an error) and every
   downstream dollar figure was wrong by construction. Now takes
   `--language`/`--pack` like its siblings; verified on the same repo: 0 →
-  375 candidate call sites, $0.67 → $16.40 total estimate.
+  375 candidate call sites, $0.67 → $16.40 total estimate. `oah readiness`
+  gained `--save-intermediates path.json` (`docs/decisions/038`): explaining
+  a real `remediate_before_release` verdict from the same 375-point run found
+  that `readiness_report.json`'s own recommendation only ever aggregates
+  gate names and counts (`5× every_surface_point_has_decision`) — the
+  detail behind it (which surface point, which lens, the gate's own real
+  per-point reason string) was already computed inside `cmd_readiness` and
+  silently discarded once S9 assembled its summary. The flag writes that
+  detail (`design_fragments`, `gate_findings`, `panel_verdicts`,
+  `event_schema`, `dtos`) alongside the normal report, zero extra model
+  calls.
 - `pip install oah` alone is enough for `doctor`, `estimate`, `map --no-disambiguate`,
   `inventory`, `gaps`, and `interview` — fully deterministic, no LLM credential.
 - `pip install "oah[llm]"` plus an `ANTHROPIC_API_KEY` (or another provider

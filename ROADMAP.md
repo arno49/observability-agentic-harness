@@ -1430,6 +1430,24 @@ end to end: 0 → 4560 logger call sites, 0 → 1461 error_handling entries
 across 3477 files in 3.6s; `oah gaps` on the 13 Spring AI points moved
 from 13 dark / 0 partial to 3 dark / 10 partial.
 
+**`oah readiness` gains `--save-intermediates`** (2026-08-27,
+`docs/decisions/038`): explaining a real `remediate_before_release`
+verdict from the 375-point mf-analyzer-web run in plain language found
+that `readiness_report.json`'s own recommendation only ever aggregates
+gate names and counts (`5× every_surface_point_has_decision`, `3×
+no_phantom_surface_points`, ...) — not which surface point, which lens's
+fragment, or the gate's own real per-point reason string
+(`check_every_surface_point_has_decision`'s own code already produces
+`"N surface point(s) have no design decision in this fragment: [...]"`, a
+specific, useful message that never reached the final report). Root
+cause: `cmd_readiness` computes the full S4-S8 detail
+(`design_fragments`/`gate_findings`/`panel_verdicts`/`event_schema`/
+`dtos`) in local variables, feeds it into S9's own aggregate assembly,
+and lets it go out of scope — `oah design -o` already saves this same
+detail for its own S4-S6 scope, `readiness` never had an equivalent.
+New `--save-intermediates PATH` writes exactly that already-computed
+data alongside the normal report, zero additional model calls.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

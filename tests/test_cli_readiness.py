@@ -80,3 +80,67 @@ def test_readiness_no_points_skips_gracefully(tmp_path):
 
     args = argparse.Namespace(target=str(target), context=None, output=None)
     assert cmd_readiness(args) == 0
+
+
+# --- --save-intermediates ---------------------------------------------------
+# readiness_report.json's own recommendation only ever aggregates gate names
+# and counts -- found while explaining a real remediate_before_release verdict
+# from a real 375-point run (docs/decisions/032-036's own mf-analyzer-web
+# pilot) that had no way to say WHICH point/lens triggered which gate beyond
+# a bare name and a count. The detail (design_fragments, gate_findings with
+# their real per-point reasons, panel_verdicts) was already computed inside
+# cmd_readiness and silently discarded before this flag existed.
+
+def test_save_intermediates_writes_real_detail_behind_the_summary(tmp_path):
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text(
+        "import anthropic\nclient = anthropic.Anthropic()\n"
+        "response = client.messages.create(model='x')\n"
+    )
+    _init_git_repo(target)
+
+    def fake_lens(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+        point_id = points[0]["id"]
+        return {
+            "schema_version": "0.1.0", "lens": "generation-capture", "repo_git_sha": repo_git_sha,
+            "failure_mode": "fail_open",
+            "signals": [{
+                "name": "gen_ai.usage.input_tokens", "surface_point_ids": [point_id],
+                "maps_to": {"kind": "otel_genai", "attribute": "gen_ai.usage.input_tokens"},
+                "sensitivity_tier": "internal", "pii_masked": False,
+                "supports_decision": "cost attribution", "acting_role": "cost owner",
+                "latency_overhead_budget_ms": 5,
+            }],
+        }
+
+    def fake_panel(design_fragments, repo_git_sha, context=None, model=None, _completion_fn=None):
+        return {"schema_version": "0.1.0", "persona": "cost_skeptic", "repo_git_sha": repo_git_sha,
+                "overall": "pass", "findings": []}
+
+    intermediates_path = tmp_path / "intermediates.json"
+    args = argparse.Namespace(target=str(target), context=None, output=None,
+                               save_intermediates=str(intermediates_path))
+    with patch("oah.design.lens.design_generation_capture", side_effect=fake_lens), \
+         patch("oah.design.panel.run_cost_skeptic", side_effect=fake_panel):
+        rc = cmd_readiness(args)
+
+    assert rc == 0
+    saved = json.loads(intermediates_path.read_text())
+    assert set(saved.keys()) == {"design_fragments", "gate_findings", "panel_verdicts", "event_schema", "dtos"}
+    assert saved["design_fragments"][0]["lens"] == "generation-capture"
+    assert saved["panel_verdicts"][0]["persona"] == "cost_skeptic"
+
+
+def test_no_save_intermediates_flag_writes_nothing_extra(tmp_path):
+    """Byte-identical default: a Namespace without save_intermediates at
+    all (the shape every caller had before this flag existed) must not
+    raise, and must not write anything beyond the normal report."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text("x = 1\n")
+    _init_git_repo(target)
+
+    args = argparse.Namespace(target=str(target), context=None, output=None)
+    assert cmd_readiness(args) == 0
+    assert not (tmp_path / "intermediates.json").exists()

@@ -3,6 +3,15 @@
 ## [Unreleased]
 
 ### Added
+- `oah readiness` gains `--save-intermediates PATH` (`docs/decisions/038`).
+  `readiness_report.json`'s own recommendation only ever aggregates gate
+  names and counts -- the detail behind a real verdict (which surface
+  point, which lens, the gate's own real per-point reason string) was
+  already computed inside `cmd_readiness` and silently discarded once S9
+  assembled its summary. The flag writes `design_fragments`,
+  `gate_findings`, `panel_verdicts`, `event_schema`, and `dtos` alongside
+  the normal report, zero additional model calls.
+
 - S2 (existing telemetry inventory) now supports Java (`docs/decisions/037`).
   `oah gaps --language java` still reported all points dark after the Spring
   AI S1 fix (`docs/decisions/036`) since no Java S2 scanner existed. New
