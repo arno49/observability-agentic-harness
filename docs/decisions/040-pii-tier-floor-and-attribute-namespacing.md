@@ -129,7 +129,33 @@ original motivating S7 conflict had it existed at the time.
   structural guarantee — this remains probabilistic, not gate-enforced;
   there is no deterministic way to *require* correct namespacing without
   re-deriving the same judgment call the namespacing decision itself is.
-- Real, named, not addressed here: the same namespacing gap likely exists
-  in other lenses that haven't been observed hitting it yet; the
-  batching-mechanism half of the original proposal remains a distinct,
-  larger, not-yet-agreed question.
+- Real, named, not addressed here: the batching-mechanism half of the
+  original proposal remains a distinct, larger, not-yet-agreed question.
+
+## Addendum (2026-08-28, same day) — `dependency` had the identical bug, found for real
+
+Preparing for a full-scale readiness re-verification, the pilot run's
+already-collected `--save-intermediates` output
+(`docs/decisions/038`) was analyzed (plain code, no new model calls):
+grouping every captured fragment's signals by `maps_to.attribute` and
+checking whether each attribute's covered points spanned journeys with
+disagreeing `sensitivity_tier`. Result: `telemetry-cost` had it on all
+six of its own attributes (confirming the fix above was necessary, not
+overbuilt); `dependency`'s `oah.dependency.edge_name` had the identical
+pattern (`direct`-PII `chat` journey at `confidential`, an `indirect`-PII
+journey at `internal`, same shared name); `tracing`'s
+`oah.tracing.propagation_risk` spans both PII levels but never actually
+disagrees on tier (no real risk); `pii-governance`/`slo` showed no
+cross-journey signal in this run's own data at all.
+
+`dependency`'s own conflict never surfaced in the original run's S7
+error — `build_event_schema` raises on the *first* conflict it finds and
+`telemetry-cost` came first in fragment order, silently masking this
+second, identical bug.
+
+`skills/s4-dependency/SKILL.md` gained the same Option B guidance
+`telemetry-cost` already has, scoped to its one real pointer signal
+(`oah.dependency.edge_name`). `pii-governance` and `slo` were left
+untouched — no evidence from real data that they need it, matching this
+whole ADR-family's "targeted, not blanket, evidence before building"
+precedent.

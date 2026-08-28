@@ -121,6 +121,21 @@ with no runtime value of its own to classify. Only set `health_thresholds`
 on a `design_fragment` signal here if it names a genuinely separate
 condition the edge structure doesn't already cover.
 
+**Namespace `oah.dependency.edge_name` when `sensitivity_tier` genuinely
+varies by journey (`docs/decisions/040`, Option B).** Found for real, not
+speculatively: a real pilot run's own collected fragments showed this
+exact signal spanning both a direct-PII journey (`confidential`) and an
+indirect-PII journey (`internal`) under one shared attribute name — the
+same class of S7 conflict `docs/decisions/039`/`040` names for
+`telemetry-cost`, silently masked in that run only because
+`build_event_schema` raises on the *first* conflict it finds and never
+reached this one. If you would otherwise give `oah.dependency.edge_name`
+to edges from two journeys whose real `sensitivity_tier` differs, give
+each journey's variant its own name instead (e.g.
+`oah.dependency.edge_name.chat`), the same pattern
+`skills/s4-telemetry-cost/SKILL.md` already teaches. Only split the name
+when the tier genuinely differs for a real reason.
+
 ## Hard rules
 
 - Output must validate against `io/output.schema.json` — a wrapper object

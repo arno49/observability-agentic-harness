@@ -1608,9 +1608,34 @@ other `none` — the model produced
 for the direct-PII point and plain `oah.telemetry_cost.cardinality_risk`
 at `internal` for the other, on its own initiative from the new
 guidance; the floor gate passed. 8 new gate tests. Real, named, not
-addressed here: the same namespacing gap likely exists in other lenses
-not yet observed hitting it; the batching-mechanism half of the original
-proposal remains open.
+addressed here: the batching-mechanism half of the original proposal
+remains open.
+
+**`dependency` had the identical bug — found for real, same day.**
+Preparing for a full-scale readiness re-verification: analyzing the
+pilot's own already-collected `--save-intermediates` output (plain code,
+no new model calls) by grouping every fragment's signals by
+`maps_to.attribute` and checking for cross-journey `sensitivity_tier`
+disagreement found `telemetry-cost` really did have it on all six of its
+own attributes (confirming the fix was necessary), and `dependency`'s
+`oah.dependency.edge_name` had the identical pattern — never surfaced in
+the original run because `build_event_schema` raises on the *first*
+conflict it finds, and `telemetry-cost` came first in fragment order,
+silently masking this second bug. `tracing`'s `oah.tracing.propagation_risk`
+spans both PII levels but never actually disagrees on tier (no real
+risk); `pii-governance`/`slo` showed nothing in this run's own data.
+`skills/s4-dependency/SKILL.md` gained the identical Option B guidance —
+`pii-governance`/`slo` left untouched, no evidence they need it.
+A separate, real, negative-evidence finding from a small isolated
+`design_ops` probe against 2 real `http_client_call` points (testing
+whether the lens's own `llm_generation`-framed SKILL.md text causes it to
+refuse designing for a kind mismatch, per the service pack's own
+`target_kinds: None` routing every point to it): it did **not** refuse —
+produced 8 sensible signals despite the mismatched framing. The original
+run's `signals: [] should be non-empty` failure is therefore likely
+batch-size/complexity-related at real scale (375 points in one call), not
+a simple kind-mismatch language problem — to be confirmed by the full
+re-run, next.
 
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe

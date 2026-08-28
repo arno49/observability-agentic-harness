@@ -47,6 +47,14 @@
   `oah.telemetry_cost.cardinality_risk.ai_prompt_context` at `confidential`
   for a direct-PII point and plain `oah.telemetry_cost.cardinality_risk`
   at `internal` for a `none`-PII point, on its own initiative.
+- `skills/s4-dependency/SKILL.md` gained the identical Option B guidance
+  (`docs/decisions/040`) -- analyzing the pilot's own already-collected
+  `--save-intermediates` data (plain code, no new model calls) found
+  `oah.dependency.edge_name` had the exact same cross-journey tier
+  disagreement `telemetry-cost` had, never surfaced in the original run
+  because `build_event_schema` raises on the first conflict found and
+  `telemetry-cost` came first. `pii-governance`/`slo` showed no evidence
+  of the same pattern in that run's own data and were left untouched.
 - `oah readiness` gains `--save-intermediates PATH` (`docs/decisions/038`).
   `readiness_report.json`'s own recommendation only ever aggregates gate
   names and counts -- the detail behind a real verdict (which surface
