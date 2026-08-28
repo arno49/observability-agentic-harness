@@ -153,7 +153,7 @@ def test_eof_partway_through_interview_also_raises_cleanly():
 
 
 # --- Surfacing S1's workflow_hint guesses (docs/decisions/034) -------------
-# `_find_workflow` (gap_model.py) requires an exact (stripped/lowered)
+# `find_workflow` (gap_model.py) requires an exact (stripped/lowered)
 # string match between a point's workflow_hint and a workflow name typed
 # here -- without seeing the actual hints S1 found, the owner has no real
 # way to type a name that connects to anything.

@@ -135,7 +135,7 @@ def _workflow_hint_counts(surface_map):
     first -- docs/decisions/034. S1's workflow_hint (Python: the LLM
     disambiguation pass; TypeScript: deterministic module/route-derived,
     docs/decisions/034) is only ever a best-effort GUESS at a product
-    workflow name; `oah/discovery/gap_model.py`'s own `_find_workflow`
+    workflow name; `oah/discovery/gap_model.py`'s own `find_workflow`
     requires it to literally match (stripped/lowered) a workflow name the
     owner types here. Surfacing the actual hints S1 found, before asking
     for workflow names, is what closes that loop in practice -- without

@@ -449,7 +449,7 @@ def _declarative_route_note(literal, prefix):
 # needed: the skill's own stated source signal (module/route/symbol names)
 # is exactly what a route's own static path segments or a defining file's
 # own module name already give us. A HINT, not a verified mapping --
-# S3's `_find_workflow` (oah/discovery/gap_model.py) still requires this to
+# S3's `find_workflow` (oah/discovery/gap_model.py) still requires this to
 # literally match a context.yaml workflow name, exactly the same
 # already-approximate contract the Python-produced hint has always had;
 # nothing here guarantees the alignment, only that a hint now EXISTS to

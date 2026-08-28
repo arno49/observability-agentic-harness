@@ -22,6 +22,7 @@ in general.
 """
 from dataclasses import dataclass, field
 
+from oah.discovery.gap_model import find_workflow
 from oah.domains.loader import load_pack
 
 
@@ -261,6 +262,45 @@ def check_health_thresholds_well_formed(fragment):
     return Finding("health_thresholds_well_formed", True, "every declared health_thresholds set is well-formed")
 
 
+_TIER_RANK = {"public": 0, "internal": 1, "confidential": 2, "restricted": 3}
+
+
+def check_sensitivity_tier_meets_pii_floor(fragment, point_workflow_hints=None, context=None):
+    """docs/decisions/040: a workflow `context.yaml` records as
+    `pii_presence: "direct"` gets a deterministic `sensitivity_tier` floor
+    of `confidential` on every signal covering one of its points -- the
+    same asymmetric 'only `direct` triggers deterministic treatment'
+    precedent `oah/discovery/gap_model.py`'s own gap-priority weighting
+    already uses (`indirect`/`none` never get special-cased there either),
+    extended here to S5. A floor, not an assignment: the model can still
+    choose `restricted` if it judges that's warranted, it just can't go
+    below `confidential` once a covered point's own workflow is
+    direct-PII. Does NOT by itself prevent two different journeys'
+    signals from colliding on the same `maps_to.attribute` at different
+    (both floor-compliant) tiers -- that's Option B's job (namespaced
+    attribute names, taught in the affected lens's own SKILL.md), a
+    deliberately separate mechanism. No-op when `context` is None (no
+    interview has run yet) or `point_workflow_hints` is empty/None."""
+    if not context or not point_workflow_hints:
+        return Finding("sensitivity_tier_meets_pii_floor", True, "no context.yaml/workflow data to check against")
+    bad = []
+    for s in fragment.get("signals", []):
+        floor = None
+        for pid in s.get("surface_point_ids", []):
+            workflow = find_workflow(point_workflow_hints.get(pid), context)
+            if workflow is not None and workflow.get("pii_presence") == "direct":
+                floor = "confidential"
+                break
+        if floor is not None and _TIER_RANK[s["sensitivity_tier"]] < _TIER_RANK[floor]:
+            bad.append({"signal": s["name"], "tier": s["sensitivity_tier"], "floor": floor})
+    if bad:
+        return Finding(
+            "sensitivity_tier_meets_pii_floor", False,
+            f"signal(s) under-classified for a direct-PII workflow (must be at least 'confidential'): {bad}",
+        )
+    return Finding("sensitivity_tier_meets_pii_floor", True, "no signal is under-classified for a direct-PII workflow")
+
+
 ALL_GATES = [
     check_every_surface_point_has_decision,
     check_no_phantom_surface_points,
@@ -274,6 +314,7 @@ ALL_GATES = [
     check_decision_menu_resumption_paired,
     check_route_is_templated,
     check_health_thresholds_well_formed,
+    check_sensitivity_tier_meets_pii_floor,
 ]
 
 # Gates that need surface_map_point_ids as a second argument, vs. fragment-only.
@@ -291,14 +332,23 @@ _NEEDS_PACK = {
     check_advisory_possible_missing_consistency_assertion,
 }
 
+# Gates that read context.yaml's workflow data (docs/decisions/040) -- given
+# a {point_id: workflow_hint} map and the loaded context, both None by
+# default so a caller with no interview yet gets the gate's own no-op path.
+_NEEDS_WORKFLOW_CONTEXT = {
+    check_sensitivity_tier_meets_pii_floor,
+}
 
-def run_gates(fragment, surface_map_point_ids, pack=None):
+
+def run_gates(fragment, surface_map_point_ids, pack=None, point_workflow_hints=None, context=None):
     findings = []
     for gate in ALL_GATES:
         if gate in _NEEDS_POINT_IDS:
             findings.append(gate(fragment, surface_map_point_ids))
         elif gate in _NEEDS_PACK:
             findings.append(gate(fragment, pack=pack))
+        elif gate in _NEEDS_WORKFLOW_CONTEXT:
+            findings.append(gate(fragment, point_workflow_hints=point_workflow_hints, context=context))
         else:
             findings.append(gate(fragment))
     return findings

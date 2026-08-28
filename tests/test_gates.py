@@ -305,3 +305,92 @@ def test_health_thresholds_trivial_condition_fails():
     result = [f for f in findings if f.gate == "health_thresholds_well_formed"]
     assert not result[0].passed
     assert "empty/trivial" in result[0].reason
+
+
+_DIRECT_PII_CONTEXT = {
+    "schema_version": "0.1.0", "repo_git_sha": "deadbeef", "interviewed_at": "2026-01-01T00:00:00Z",
+    "workflows": [
+        {"name": "chat", "criticality": "high", "pii_presence": "direct"},
+        {"name": "billing", "criticality": "medium", "pii_presence": "none"},
+    ],
+}
+
+
+def test_no_context_leaves_pii_floor_gate_a_noop():
+    """docs/decisions/040 -- no interview has run yet, nothing to check
+    against, matches every other context-optional gate's own degrade-
+    gracefully precedent."""
+    fragment = _fragment()
+    findings = run_gates(fragment, surface_map_point_ids=["sp-0001"], point_workflow_hints={"sp-0001": "chat"})
+    result = [f for f in findings if f.gate == "sensitivity_tier_meets_pii_floor"]
+    assert result[0].passed
+
+
+def test_direct_pii_workflow_below_floor_fails():
+    fragment = _fragment(signals=[{**_fragment()["signals"][0], "sensitivity_tier": "internal"}])
+    findings = run_gates(
+        fragment, surface_map_point_ids=["sp-0001"],
+        point_workflow_hints={"sp-0001": "chat"}, context=_DIRECT_PII_CONTEXT,
+    )
+    result = [f for f in findings if f.gate == "sensitivity_tier_meets_pii_floor"]
+    assert not result[0].passed
+    assert "confidential" in result[0].reason
+
+
+def test_direct_pii_workflow_at_floor_passes():
+    fragment = _fragment(signals=[{**_fragment()["signals"][0], "sensitivity_tier": "confidential"}])
+    findings = run_gates(
+        fragment, surface_map_point_ids=["sp-0001"],
+        point_workflow_hints={"sp-0001": "chat"}, context=_DIRECT_PII_CONTEXT,
+    )
+    result = [f for f in findings if f.gate == "sensitivity_tier_meets_pii_floor"]
+    assert result[0].passed
+
+
+def test_direct_pii_workflow_above_floor_passes():
+    """The floor is a minimum, not an assignment -- the model's own
+    stricter judgment (restricted) is never penalized."""
+    fragment = _fragment(signals=[{**_fragment()["signals"][0], "sensitivity_tier": "restricted"}])
+    findings = run_gates(
+        fragment, surface_map_point_ids=["sp-0001"],
+        point_workflow_hints={"sp-0001": "chat"}, context=_DIRECT_PII_CONTEXT,
+    )
+    result = [f for f in findings if f.gate == "sensitivity_tier_meets_pii_floor"]
+    assert result[0].passed
+
+
+def test_non_direct_pii_workflow_has_no_floor():
+    """Only pii_presence == 'direct' triggers deterministic treatment --
+    same asymmetry gap_model.py's own weighting already uses. 'none' here
+    leaves even 'public' unconstrained."""
+    fragment = _fragment(signals=[{**_fragment()["signals"][0], "sensitivity_tier": "public"}])
+    findings = run_gates(
+        fragment, surface_map_point_ids=["sp-0001"],
+        point_workflow_hints={"sp-0001": "billing"}, context=_DIRECT_PII_CONTEXT,
+    )
+    result = [f for f in findings if f.gate == "sensitivity_tier_meets_pii_floor"]
+    assert result[0].passed
+
+
+def test_workflow_hint_matching_nothing_in_context_has_no_floor():
+    fragment = _fragment(signals=[{**_fragment()["signals"][0], "sensitivity_tier": "public"}])
+    findings = run_gates(
+        fragment, surface_map_point_ids=["sp-0001"],
+        point_workflow_hints={"sp-0001": "some-unrelated-workflow"}, context=_DIRECT_PII_CONTEXT,
+    )
+    result = [f for f in findings if f.gate == "sensitivity_tier_meets_pii_floor"]
+    assert result[0].passed
+
+
+def test_signal_covering_one_direct_pii_point_among_several_still_gets_the_floor():
+    fragment = _fragment(signals=[{
+        **_fragment()["signals"][0],
+        "surface_point_ids": ["sp-0001", "sp-0002"],
+        "sensitivity_tier": "internal",
+    }])
+    findings = run_gates(
+        fragment, surface_map_point_ids=["sp-0001", "sp-0002"],
+        point_workflow_hints={"sp-0001": "billing", "sp-0002": "chat"}, context=_DIRECT_PII_CONTEXT,
+    )
+    result = [f for f in findings if f.gate == "sensitivity_tier_meets_pii_floor"]
+    assert not result[0].passed

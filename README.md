@@ -561,7 +561,19 @@ ROADMAP.md     milestones, epics, spikes
   S7's own event-schema merge now hard-fails when two lenses design the
   same attribute with disagreeing `health_thresholds`, identical treatment
   to an existing `sensitivity_tier` disagreement — a fragment that
-  declares none where another does is not a conflict.
+  declares none where another does is not a conflict. Continuing that same
+  investigation (`docs/decisions/040`): a workflow `context.yaml` records
+  as `pii_presence: "direct"` now gets a deterministic `sensitivity_tier`
+  floor of `confidential` on every signal covering its points (a floor,
+  not an assignment — a stricter model judgment is never penalized),
+  paired with SKILL.md guidance for `telemetry-cost` to namespace an
+  attribute name by workflow when tier genuinely differs by journey —
+  the actual mechanism that prevents the original S7 conflict, which the
+  floor alone doesn't. Verified with a real Sonnet call: the model
+  produced `oah.telemetry_cost.cardinality_risk.ai_prompt_context` at
+  `confidential` for a direct-PII point and plain
+  `oah.telemetry_cost.cardinality_risk` at `internal` for a `none`-PII
+  point, on its own initiative.
 - `pip install oah` alone is enough for `doctor`, `estimate`, `map --no-disambiguate`,
   `inventory`, `gaps`, and `interview` — fully deterministic, no LLM credential.
 - `pip install "oah[llm]"` plus an `ANTHROPIC_API_KEY` (or another provider

@@ -130,7 +130,26 @@ Every signal must satisfy S5's gates by construction: `surface_point_ids`,
 name), `sensitivity_tier` (telemetry-cost figures are typically
 `internal`; a `cardinality_driver` naming a real attribute that itself
 carries PII risk should be flagged `confidential` and `pii_masked: true`),
-`supports_decision`, `acting_role`. Also set
+`supports_decision`, `acting_role`. When `context.yaml` is given, check
+each point's own `workflow_hint` against `context.workflows[].pii_presence`:
+a point whose workflow is `pii_presence: "direct"` needs `sensitivity_tier`
+at least `confidential` on every signal covering it — S5's
+`sensitivity_tier_meets_pii_floor` gate enforces this deterministically
+(`docs/decisions/040`), so treat it as a hard floor, not a suggestion.
+
+**Namespace the attribute name when tier genuinely varies by journey
+(`docs/decisions/040`, Option B).** If you would otherwise give the same
+`oah.telemetry_cost.*` attribute name to signals covering points from two
+different journeys whose real `sensitivity_tier` differs (e.g. `chat`
+handles direct PII and needs `confidential`, another journey's identical
+signal kind is genuinely `internal`), do **not** emit one shared attribute
+name at two disagreeing tiers — S7's event-schema merge hard-fails on
+exactly that (`docs/decisions/039`/`040`, `EventSchemaConflictError`).
+Instead give each journey's variant its own name, suffixed by the
+workflow (e.g. `oah.telemetry_cost.cardinality_risk.chat` vs the
+unsuffixed default for everything else). Only split the name when the
+tier genuinely differs for a real reason — do not namespace defensively
+when every point actually deserves the same tier. Also set
 `latency_overhead_budget_ms` on at least one signal per point — a
 concrete millisecond estimate for the overhead this lens's own capture
 (reading cardinality/sampling decisions at emission time) adds to the

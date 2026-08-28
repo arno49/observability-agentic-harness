@@ -1573,6 +1573,45 @@ anywhere, so the newly-tracked field stays `None` throughout and never
 reaches the merged output). Full suite re-verified green after this
 phase too.
 
+**Deterministic PII-tier floor + attribute namespacing landed**
+(2026-08-28, `docs/decisions/040`, same-day follow-up). Continuing the
+architecture discussion, "journey-first S4 batching" turned out to be two
+bundled ideas: a batching mechanism (left as an open, not-yet-agreed
+proposal — real cost/quality tradeoffs, no evidence yet it's needed) and
+deterministic `sensitivity_tier` derivation from `context.yaml.pii_presence`
+(the piece that actually targets the original S7 conflict). A further
+correction found mid-design: a **floor** alone (never let tier go below
+some minimum) doesn't prevent the original conflict — it only stops
+under-classification, not the same attribute name landing at two
+different floor-compliant tiers across two journeys. Closing that needs
+a second mechanism, Option B (namespaced attribute names), already named
+and deferred in `docs/decisions/039`. Built both, per explicit user
+decision. `oah/discovery/gap_model.py`'s `_find_workflow` made public
+(`find_workflow` — the identical lookup, not a second implementation) so
+`oah/design/gates.py` could reuse it for a new
+`check_sensitivity_tier_meets_pii_floor` gate: a workflow with
+`pii_presence: "direct"` gets a deterministic floor of `confidential` on
+every signal covering its points — the same asymmetry (`indirect`/`none`
+never get special-cased) `gap_model.py`'s own gap-priority weighting
+already uses. A floor, not an assignment — the gate checks `tier >=
+floor`, never sets it. `run_gates()` gained `point_workflow_hints`/
+`context` keyword args, threaded through both `oah/cli.py` call sites.
+`skills/s4-telemetry-cost/SKILL.md` (the lens with the real, confirmed
+conflict — not rolled out blanket to every lens) gained explicit
+guidance: namespace the attribute by workflow when tier genuinely differs
+by journey, rather than emitting one shared name at disagreeing tiers.
+Verified end to end with a real Sonnet call, first attempt, no bug this
+time: the same 2 real `mf-analyzer-web` points, now with a constructed
+`context.yaml` giving one point's workflow `pii_presence: direct` and the
+other `none` — the model produced
+`oah.telemetry_cost.cardinality_risk.ai_prompt_context` at `confidential`
+for the direct-PII point and plain `oah.telemetry_cost.cardinality_risk`
+at `internal` for the other, on its own initiative from the new
+guidance; the floor gate passed. 8 new gate tests. Real, named, not
+addressed here: the same namespacing gap likely exists in other lenses
+not yet observed hitting it; the batching-mechanism half of the original
+proposal remains open.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

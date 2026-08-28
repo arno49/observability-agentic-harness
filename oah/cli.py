@@ -544,9 +544,13 @@ def cmd_design(args):
         print("No points of a kind any built lens covers to design for.", file=sys.stderr)
         return 0
 
+    point_workflow_hints = {p["id"]: p.get("workflow_hint") for p in surface_map["points"]}
     findings = []
     for fragment in fragments:
-        findings.extend(run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map, target_kinds_by_lens), pack=pack))
+        findings.extend(run_gates(
+            fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map, target_kinds_by_lens),
+            pack=pack, point_workflow_hints=point_workflow_hints, context=context,
+        ))
     # slo_spec/dependency_model (and any future non-design_fragment
     # artifact) each need their own gate set -- run_gates() only ever
     # understands a design_fragment's own flat signal-list shape
@@ -807,9 +811,13 @@ def cmd_readiness(args):
                                                           context=context, model=model)
 
         if fragments:
+            point_workflow_hints = {p["id"]: p.get("workflow_hint") for p in surface_map["points"]}
             gate_findings = [
                 f.__dict__ for fragment in fragments
-                for f in run_gates(fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map, target_kinds_by_lens), pack=pack)
+                for f in run_gates(
+                    fragment, surface_map_point_ids=_point_ids_for_fragment(fragment, surface_map, target_kinds_by_lens),
+                    pack=pack, point_workflow_hints=point_workflow_hints, context=context,
+                )
             ]
             # slo_spec/dependency_model each need their own gate set --
             # run_gates() only understands a design_fragment's flat signal

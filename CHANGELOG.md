@@ -29,6 +29,24 @@
   disagreement -- a hard `EventSchemaConflictError`, never merged by
   picking one arbitrarily; a fragment that declares none where another
   does is not a conflict.
+- A workflow `context.yaml` records as `pii_presence: "direct"` now gets a
+  deterministic `sensitivity_tier` floor of `confidential` on every signal
+  covering its points -- a new S5 gate,
+  `check_sensitivity_tier_meets_pii_floor` (`docs/decisions/040`), the
+  same asymmetric "only `direct` triggers deterministic treatment"
+  precedent `gap_model.py`'s own gap-priority weighting already uses. A
+  floor, not an assignment -- the model's own stricter judgment is never
+  penalized. Paired with SKILL.md guidance for the `telemetry-cost` lens
+  (Option B): namespace the attribute name by workflow when
+  `sensitivity_tier` genuinely differs by journey, instead of emitting one
+  shared attribute name at two disagreeing tiers -- the actual mechanism
+  that prevents the original `docs/decisions/039` S7 conflict, which the
+  floor alone does not. `oah/discovery/gap_model.py`'s `_find_workflow`
+  made public (`find_workflow`) for gates.py to reuse the identical
+  lookup. Verified end to end with a real Sonnet call: the model produced
+  `oah.telemetry_cost.cardinality_risk.ai_prompt_context` at `confidential`
+  for a direct-PII point and plain `oah.telemetry_cost.cardinality_risk`
+  at `internal` for a `none`-PII point, on its own initiative.
 - `oah readiness` gains `--save-intermediates PATH` (`docs/decisions/038`).
   `readiness_report.json`'s own recommendation only ever aggregates gate
   names and counts -- the detail behind a real verdict (which surface

@@ -151,6 +151,12 @@
       "passed": true,
       "reason": "every declared health_thresholds set is well-formed",
       "severity": "error"
+    },
+    {
+      "gate": "sensitivity_tier_meets_pii_floor",
+      "passed": true,
+      "reason": "no context.yaml/workflow data to check against",
+      "severity": "error"
     }
   ],
   "surface_map": {

@@ -55,7 +55,11 @@ def _bump_priority(priority, levels=1):
     return _PRIORITY_ORDER[idx]
 
 
-def _find_workflow(workflow_hint, context):
+def find_workflow(workflow_hint, context):
+    """Was `_find_workflow`, module-private. Made public (docs/decisions/040)
+    when `oah/design/gates.py` needed the identical exact-match lookup for
+    its own deterministic PII-tier floor gate -- the same lookup, not a
+    second one reimplemented."""
     if not workflow_hint or not context:
         return None
     hint = workflow_hint.strip().lower()
@@ -120,7 +124,7 @@ def build_gap_model(surface_map, telemetry_inventory, context=None, harness_vers
         priority = {"dark": "p1", "partial": "p2", "covered": "p3"}[status]
         priority_drivers = []
 
-        workflow = _find_workflow(point.get("workflow_hint"), context)
+        workflow = find_workflow(point.get("workflow_hint"), context)
         if workflow is not None:
             priority = _WEIGHTED_PRIORITY[status][workflow["criticality"]]
             priority_drivers.append("workflow_criticality")
