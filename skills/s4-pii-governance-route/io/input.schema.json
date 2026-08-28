@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oah.dev/schemas/skills/s4-pii-governance-route/input.schema.json",
+  "title": "S4 pii-governance-route lens — input",
+  "description": "Service-pack variant of the pii-governance lens (docs/decisions/041). Governs request/response parameters and query bind values, not captured LLM content -- see skills/s4-pii-governance/io/input.schema.json for the genai-pack variant, whose points are llm_generation only.",
+  "type": "object",
+  "required": ["schema_version", "repo_git_sha", "points"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "0.1.0" },
+    "repo_git_sha": { "type": "string" },
+    "points": {
+      "type": "array",
+      "minItems": 1,
+      "description": "surface_map.json points of kind http_server_route, declarative_route, or db_query only -- the lens designs for these, no others.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "file", "line"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "enum": ["http_server_route", "declarative_route", "db_query"] },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "symbol": { "type": "string" },
+          "framework": { "type": "string" },
+          "has_path_parameter": { "type": "boolean" },
+          "gap_status": { "enum": ["dark", "partial", "covered"], "description": "from gap_model.json, if available" },
+          "gap_priority": { "enum": ["p0", "p1", "p2", "p3"] }
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "context.yaml, if an interview has run -- optional; the lens must produce valid, complete signals for every point with or without it, but pii_presence/data_governance_map (when present, and when the point's own workflow_hint resolves to that workflow) change how strict the designed fields must be.",
+      "properties": {
+        "workflows": { "type": "array" }
+      }
+    }
+  }
+}

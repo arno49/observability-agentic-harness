@@ -185,15 +185,28 @@ def _lens_fns_for_pack(pack, lens_module):
     hand-duplicated dict literals this file used to write out
     independently in cmd_design/cmd_event_schema/cmd_dtos/cmd_readiness --
     a lens missing from one copy went undetected by anything but a manual
-    grep audit, three times in one session (docs/decisions/011). Every
-    design_* function's name is its pack lens name with hyphens replaced
-    by underscores, a convention oah/design/lens.py's functions already
-    follow (design_generation_capture for "generation-capture", etc.); an
-    AttributeError here means the pack names a lens this build of oah
-    doesn't actually have a design function for, and that should be loud,
-    not silently skipped."""
-    return {entry["lens"]: getattr(lens_module, f"design_{entry['lens'].replace('-', '_')}")
-            for entry in pack["lenses"]}
+    grep audit, three times in one session (docs/decisions/011).
+
+    Derives each design_* function name from the pack's own lenses[].skill
+    (stripping the "s4-" prefix, hyphens to underscores) rather than from
+    lens name directly (docs/decisions/041) -- the two used to always
+    agree (every skill was exactly "s4-" + the lens name, underscored)
+    until the service pack's own pii-governance entry needed a different
+    skill (s4-pii-governance-route) from genai's (s4-pii-governance) for
+    the same lens name, which a lens-name-derived lookup can't express.
+    Deliberately still goes through the named design_<skill_suffix>
+    wrapper functions in oah/design/lens.py, not design_lens() directly --
+    every genai/service integration test mocks a lens by patching one of
+    these named attributes (e.g. `patch("oah.design.lens.design_tracing",
+    ...)`), and that seam must keep resolving through getattr() here for
+    those patches to take effect. An AttributeError below means the pack
+    names a skill this build of oah doesn't have a design function for,
+    and that should be loud, not silently skipped."""
+    fns = {}
+    for entry in pack["lenses"]:
+        skill_suffix = entry["skill"].removeprefix("s4-").replace("-", "_")
+        fns[entry["lens"]] = getattr(lens_module, f"design_{skill_suffix}")
+    return fns
 
 
 def _point_ids_for_fragment(fragment, surface_map, target_kinds_by_lens):

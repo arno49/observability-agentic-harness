@@ -1,7 +1,22 @@
-"""E12 phase 1 (docs/decisions/016): the service domain pack's three
-reused-unchanged lenses (tracing, ops, pii-governance), the concrete test
-of the pipeline-core/domain-pack split (docs/decisions/011's DoD (b) for
-E12: "the three reused lenses run with no edit to their SKILL.md files").
+"""E12 phase 1 (docs/decisions/016): the service domain pack's two
+reused-unchanged lenses (tracing, ops), the concrete test of the
+pipeline-core/domain-pack split (docs/decisions/011's DoD (b) for E12:
+"the three reused lenses run with no edit to their SKILL.md files").
+
+Originally three reused lenses, not two -- pii-governance was also
+`reused_from: "genai"` at phase 1, verified by a test that mocked the LLM
+call. docs/decisions/041 found that mock could never have caught the real
+bug: a real Sonnet call against pii-governance's genai-framed SKILL.md
+(masking content captured at an llm_generation point) fed
+http_server_route/declarative_route/db_query points instead has no
+coherent task and produces empty signals or fabricated llm_generation
+content, depending on the run. pii-governance now runs its own service-pack
+skill (s4-pii-governance-route) -- see test_pii_governance_route_lens_runs_
+for_real_against_service_points below, which replaces the old mocked-echo
+proof with one that documents (in its own docstring) where the REAL
+verification for this skill actually happened: a live, out-of-band Sonnet
+call, the same discipline every other lens's real-model claim in this
+project uses, not something the mocked pytest suite itself can prove.
 
 Also the regression test for a real bug this effort found: every design_*
 wrapper in oah/design/lens.py but design_tracing used to hardcode its own
@@ -22,7 +37,7 @@ import pytest
 
 from oah.cli import _design_all_lenses, _lens_fns_for_pack, _target_kinds_for_pack
 from oah.design import lens as lens_module
-from oah.design.lens import (design_tracing, design_ops, design_pii_governance,
+from oah.design.lens import (design_tracing, design_ops, design_pii_governance_route,
                               design_telemetry_cost, LensDesignError)
 from oah.design.gates import run_gates, gates_passed
 from oah.design.dto_generator import generate_dtos
@@ -93,10 +108,13 @@ def test_service_pack_loads_and_declares_its_lenses():
         "tracing", "ops", "pii-governance", "telemetry-cost", "slo", "dependency",
     }
     reused = {l["lens"] for l in pack["lenses"] if l.get("reused_from") == "genai"}
-    assert reused == {"tracing", "ops", "pii-governance"}
+    assert reused == {"tracing", "ops"}
     assert "reused_from" not in next(l for l in pack["lenses"] if l["lens"] == "telemetry-cost")
     assert "reused_from" not in next(l for l in pack["lenses"] if l["lens"] == "slo")
     assert "reused_from" not in next(l for l in pack["lenses"] if l["lens"] == "dependency")
+    pii_governance_entry = next(l for l in pack["lenses"] if l["lens"] == "pii-governance")
+    assert "reused_from" not in pii_governance_entry  # docs/decisions/041 -- no longer reused unchanged
+    assert pii_governance_entry["skill"] == "s4-pii-governance-route"
     slo_entry = next(l for l in pack["lenses"] if l["lens"] == "slo")
     assert slo_entry["emits"] == ["design_fragment", "slo_spec"]
     dependency_entry = next(l for l in pack["lenses"] if l["lens"] == "dependency")
@@ -159,20 +177,25 @@ def test_design_all_lenses_filters_each_lens_by_the_packs_own_target_kinds():
 
 def test_reused_lens_functions_run_for_real_against_service_points_no_skill_md_edit():
     """The deeper proof: not a fake lens_fn, but the REAL design_tracing/
-    design_ops/design_pii_governance/design_telemetry_cost -- real SKILL.md
-    files loaded from skills/s4-tracing, skills/s4-ops,
-    skills/s4-pii-governance (genai's own, zero edits) and
+    design_ops/design_telemetry_cost -- real SKILL.md files loaded from
+    skills/s4-tracing, skills/s4-ops (genai's own, zero edits) and
     skills/s4-telemetry-cost (the service pack's own adapted skill), real
     output-schema validation, only the LLM call itself mocked (no live API
     key in this environment, same reasoning every other lens test in this
-    suite uses). design_slo's own real-function proof lives in
-    tests/test_slo_lens.py -- its two-part {design_fragment, slo_spec}
-    return shape doesn't fit this loop's single-fragment assumption."""
+    suite uses).
+
+    pii-governance is deliberately NOT in this loop -- unlike tracing/ops,
+    it is no longer reused unchanged (docs/decisions/041); its own
+    plumbing proof is test_pii_governance_route_lens_runs_for_real_against_
+    service_points below, against its own dedicated skill.
+
+    design_slo's own real-function proof lives in tests/test_slo_lens.py
+    -- its two-part {design_fragment, slo_spec} return shape doesn't fit
+    this loop's single-fragment assumption."""
     pack = load_pack("service")
     target_kinds_by_lens = _target_kinds_for_pack(pack)
 
     for lens_name, design_fn in [("tracing", design_tracing), ("ops", design_ops),
-                                  ("pii-governance", design_pii_governance),
                                   ("telemetry-cost", design_telemetry_cost)]:
         target_kinds = target_kinds_by_lens[lens_name]
         points = SERVICE_POINTS if target_kinds is None else [
@@ -189,6 +212,37 @@ def test_reused_lens_functions_run_for_real_against_service_points_no_skill_md_e
 
         findings = run_gates(fragment, surface_map_point_ids=point_ids, pack=pack)
         assert gates_passed(findings), f"{lens_name}: {[f for f in findings if not f.passed]}"
+
+
+def test_pii_governance_route_lens_runs_for_real_against_service_points():
+    """Plumbing proof for the new s4-pii-governance-route skill
+    (docs/decisions/041): real SKILL.md/output-schema loaded, output
+    validates, S5 gates pass -- with the LLM call mocked, same as every
+    other lens test in this suite (no live API key in this environment).
+
+    This mocked-echo shape is exactly what let the ORIGINAL bug through at
+    phase 1 -- a mock can't reveal that a real model has no coherent task
+    to perform. This test proves the plumbing is wired correctly (right
+    skill loaded, right schema, gates pass on well-formed output); it does
+    NOT re-prove real-model behavior. That verification already happened
+    out-of-band, against real mf-analyzer-web points and a real
+    context.yaml, documented in docs/decisions/041 directly (raw model
+    output included) rather than asserted here."""
+    pack = load_pack("service")
+    target_kinds_by_lens = _target_kinds_for_pack(pack)
+    pii_points = [p for p in SERVICE_POINTS if p["kind"] in target_kinds_by_lens["pii-governance"]]
+    point_ids = [p["id"] for p in pii_points]
+    assert point_ids == ["sp-0001", "sp-0002", "sp-0003"]  # excludes queue_producer
+
+    def fake(**kwargs):
+        return _fake_response(_fragment_for("pii-governance", point_ids))
+
+    fragment = design_pii_governance_route(pii_points, "deadbeef", _completion_fn=fake)
+    assert fragment is not None, "pii-governance-route produced no fragment for real service-domain points"
+    validate("design_fragment", fragment)
+
+    findings = run_gates(fragment, surface_map_point_ids=point_ids, pack=pack)
+    assert gates_passed(findings), [f for f in findings if not f.passed]
 
 
 def test_declarative_route_and_http_client_call_are_now_gap_model_visible():

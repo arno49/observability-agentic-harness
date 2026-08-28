@@ -1697,6 +1697,33 @@ failure and the journey-first-batching architecture question remain open,
 deferred again by explicit choice — real API budget already spent on step
 3, further spend is the user's call, not a default.
 
+**`pii-governance`'s empty-signals bug: root cause found, its own real
+service-pack skill built (`docs/decisions/041`).** Three isolated real
+Sonnet calls (a 2-point probe, the actual failing 75-point batch, and the
+original run's own log) surfaced three *different* failure modes from
+the same task — honest refusal, hallucinated content ("raw chat
+completions" invented for two plain JSX `<Route>` elements, borrowing
+`chat`'s direct-PII status from a `workflow_hint` that didn't actually
+resolve to it), and the original literal empty array. That signature
+means no coherent task, not a random glitch: `skills/s4-pii-governance`'s
+entire framing is "govern content captured at an `llm_generation` point",
+which has no valid referent for `http_server_route`/`declarative_route`/
+`db_query` points. `domains/service/pack.json`'s own phase-1 claim
+("zero SKILL.md edits") was verified at the time by a test whose LLM call
+was mocked — structurally incapable of catching this. Fixed with a
+genuinely new skill, `skills/s4-pii-governance-route` (masks request/
+response parameters and query bind values instead, with explicit
+anti-hallucination, full-batch-coverage, and workflow-linkage rules
+grounded directly in the three failure modes observed), and a real
+dispatch bug found along the way: `oah/cli.py`'s `_lens_fns_for_pack`
+derived which Python function to call from the **lens name**, never the
+pack's own `lenses[].skill` field — invisible until two packs needed
+different skills under the same lens name. Verified against the exact
+75-point batch that originally failed: 300 signals, 75/75 points covered,
+all 13 gates pass (first attempt hit a real 600s `litellm.Timeout` for a
+response this size — not a logic bug — resolved by re-running with a
+longer timeout). 762 tests passing.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

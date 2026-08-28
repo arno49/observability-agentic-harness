@@ -85,11 +85,15 @@ literals scattered through `oah/cli.py`, `oah/design/gates.py`,
 extracted that seam with zero behavior change (`oah/domains/loader.py` loads and
 validates a pack manifest against `schemas/domain_pack.schema.json`); a second,
 non-AI domain pack (`domains/service/pack.json`, ordinary request-driven
-services) is now real and in progress (E12) rather than a stub — its three
-reused-unchanged lenses (`tracing`, `ops`, `pii-governance`) are verified
-against real service-domain points with zero `SKILL.md` edits
-([docs/decisions/016](docs/decisions/016-e12-service-pack-phase1.md)), a real
-anti-redundancy gate refuses DTOs that would only re-emit an
+services) is now real and in progress (E12) rather than a stub — two
+reused-unchanged lenses (`tracing`, `ops`) are verified against real
+service-domain points with zero `SKILL.md` edits
+([docs/decisions/016](docs/decisions/016-e12-service-pack-phase1.md)); a
+third, `pii-governance`, looked reused-unchanged too under a mocked-LLM
+test but turned out to have no coherent task for these point kinds under a
+real model call, and now runs its own dedicated skill instead
+([docs/decisions/041](docs/decisions/041-pii-governance-service-pack-skill.md)).
+A real anti-redundancy gate refuses DTOs that would only re-emit an
 auto-instrumented signal
 ([017](docs/decisions/017-e12-anti-redundancy-gate.md)), and an Express
 route registry (`--pack service --language typescript`) is the second

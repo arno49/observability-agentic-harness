@@ -49,10 +49,12 @@ def test_no_points_never_calls_the_model():
 
 def test_does_not_filter_by_kind_filtering_is_the_callers_job():
     """docs/decisions/016: filtering moved to oah/cli.py's _design_all_lenses,
-    driven by the loaded pack's own lenses[].target_kinds -- this fix is
-    what actually makes the service pack's own pii-governance reuse real
-    (the pack targets http_server_route/declarative_route/db_query, none
-    of which the old hardcoded llm_generation filter here would have kept)."""
+    driven by the loaded pack's own lenses[].target_kinds -- this design
+    function itself has never filtered by kind, genai or otherwise; the
+    service pack's own pii-governance points now go through the separate
+    s4-pii-governance-route skill (docs/decisions/041), not this one, but
+    the "filtering is the caller's job" contract this test proves is
+    unchanged."""
     calls = []
 
     def fake(**kwargs):

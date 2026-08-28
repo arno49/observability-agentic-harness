@@ -3,6 +3,26 @@
 ## [Unreleased]
 
 ### Added
+- New skill `skills/s4-pii-governance-route` gives the service pack's own
+  `pii-governance` lens a real, dedicated design (`docs/decisions/041`) --
+  it no longer reuses genai's `s4-pii-governance` skill (framed entirely
+  around masking content captured at an `llm_generation` point, with no
+  valid referent for `http_server_route`/`declarative_route`/`db_query`
+  points). Three isolated real Sonnet calls found the old reuse produced
+  three different failure modes across three runs (honest refusal,
+  hallucinated "chat completion" content for plain route points,
+  literal empty signals) -- the signature of no coherent task, not a
+  glitch; a phase-1 test claiming "zero SKILL.md edits" had mocked the
+  LLM call and could never have caught it. The new skill governs request/
+  response parameters and query bind values instead, with explicit
+  anti-hallucination, full-batch-coverage, and workflow-linkage rules.
+  Verified against the exact 75-point batch that originally failed: 300
+  signals, 75/75 points covered, all 13 S5 gates pass. Also fixed along
+  the way: `oah/cli.py`'s `_lens_fns_for_pack` derived which Python
+  design function to call from the **lens name**, never the pack's own
+  declared `lenses[].skill` -- invisible until two packs needed different
+  skills under the same lens name; now derived from `skill` instead,
+  behavior-preserving for every other lens.
 - Any signal in any lens can now declare `health_thresholds` -- a
   `green`/`amber`/`red` state, a `condition`, a `basis`
   (`assumed`/`confirmed`), and a `rationale` (`docs/decisions/039`).

@@ -143,7 +143,7 @@ def test_service_pack_reaches_s9_readiness_end_to_end(tmp_path):
     with patch("oah.design.lens.design_tracing", side_effect=_fake_tracing), \
          patch("oah.design.lens.design_ops", side_effect=_fake_ops), \
          patch("oah.design.lens.design_telemetry_cost", side_effect=_fake_telemetry_cost), \
-         patch("oah.design.lens.design_pii_governance", side_effect=_fake_pii_governance), \
+         patch("oah.design.lens.design_pii_governance_route", side_effect=_fake_pii_governance), \
          patch("oah.design.lens.design_slo", side_effect=_fake_slo), \
          patch("oah.design.lens.design_dependency", side_effect=_fake_dependency), \
          patch("oah.design.panel.run_cost_skeptic", side_effect=_fake_panel), \

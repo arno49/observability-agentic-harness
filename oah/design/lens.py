@@ -104,6 +104,21 @@ def design_pii_governance(points, repo_git_sha, context=None, model=None, _compl
     return design_lens("s4-pii-governance", points, repo_git_sha, context, model, _completion_fn)
 
 
+def design_pii_governance_route(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+    """The service pack's own pii-governance variant (docs/decisions/041)
+    -- NOT the same skill as design_pii_governance above. That one governs
+    content captured at an llm_generation point; this one governs request/
+    response parameters and query bind values at http_server_route,
+    declarative_route, and db_query points, a genuinely different referent
+    that a real Sonnet call found the genai-framed SKILL.md could not
+    coherently handle (empty signals, or fabricated llm_generation content
+    for points that were never llm_generation). Both share the same
+    `lens: "pii-governance"` output value -- S7/S9 aggregate by lens name,
+    not by skill directory, and a target only ever loads one domain pack's
+    worth of lenses at a time, so the two never collide in one run."""
+    return design_lens("s4-pii-governance-route", points, repo_git_sha, context, model, _completion_fn)
+
+
 def design_cost(points, repo_git_sha, context=None, model=None, _completion_fn=None):
     return design_lens("s4-cost", points, repo_git_sha, context, model, _completion_fn)
 
