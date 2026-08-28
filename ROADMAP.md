@@ -1749,6 +1749,30 @@ of this session's work, not investigated further — `ops` (1/375 points
 covered) and `slo` (~9/75) are now this investigation's single largest
 remaining named gap, root cause completely unknown.
 
+**`ops`'s and `slo`'s under-coverage: two different root causes found,
+fixed, NOT live-verified (`docs/decisions/043`).** Direct inspection (no
+model call needed) found `ops`'s own SKILL.md still said, in four places,
+"use for `llm_generation` points" — true under genai, false under the
+service pack's cross-cutting assignment ever since `docs/decisions/016`
+— the same root-cause class `docs/decisions/041` found for
+`pii-governance`, just a softer failure (under-coverage, not empty/
+hallucinated output, since `ops`'s four signal categories don't actually
+depend on LLM-generation content). Corrected throughout to mirror
+`tracing`'s own honest cross-cutting framing. `slo` turned out to be a
+genuinely different cause: its SKILL.md *deliberately* only designs real
+SLOs for `p0`/`critical` journeys — real, documented architecture, not a
+bug — but S5's `every_surface_point_has_decision` gate has no per-lens
+exception, so any lens that intentionally skips points always fails it.
+Fixed by requiring an honest placeholder signal
+(`oah.slo.no_objective_designed`) for every skipped point, not silence —
+same "explicit non-decision" pattern `docs/decisions/041`'s own
+2-point probe already demonstrated. **Neither fix is live-verified**: the
+Anthropic account's API credit balance ran out mid-session, a hard
+external stop stated plainly rather than glossed over — 762 local tests
+still pass, which proves the prose changes broke nothing structural, not
+that a real model now covers every point. First real next step once
+credits are available.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

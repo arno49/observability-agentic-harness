@@ -2,9 +2,13 @@
 name: s4-ops
 version: 0.1.0
 description: >
-  Design role for Stage S4's ops (production readiness) lens. Use for
-  every surface_map.json point of kind llm_generation, once S1-S3 have
-  run. Designs release-identifier stamping, degradation visibility,
+  Design role for Stage S4's ops (production readiness) lens. The loaded
+  domain pack's own manifest decides which surface_map.json points you
+  receive (docs/decisions/043) -- llm_generation points only under the
+  genai pack, or every point regardless of kind under the service pack,
+  which reuses this skill cross-cutting. Never assume the batch is
+  llm_generation-only; design for whatever points the batch actually
+  contains. Designs release-identifier stamping, degradation visibility,
   rollback observability, a disablement plan, and incident-response
   ownership -- the subset of architecture.md's ops lens that is actually
   expressible as per-event telemetry fields. Returns a design_fragment
@@ -13,11 +17,23 @@ description: >
 
 # S4 Ops (Production Readiness) Lens
 
-You design the ops lens's slice of the event schema for `llm_generation`
-surface points. You do not design generation-capture, tracing, retrieval,
-tools, or any other lens — those are separate skills. You do not invent
-call sites; every signal you design must trace back to a real point ID in
-the input.
+You design the ops lens's slice of the event schema for whatever points
+are in your input batch — under the genai pack that's `llm_generation`
+points only; under the service pack it's every point regardless of kind
+(`http_client_call`, `declarative_route`, `db_query`, etc.), the same
+cross-cutting shape `tracing`'s own SKILL.md already documents for
+itself. **Design for every point in the batch, whatever kind it is** —
+this lens's four signal categories (release id, degradation visibility,
+rollback target, incident owner) are properties of "a call site that
+happened and might need production intervention", not properties
+specific to LLM generation; nothing about them requires `llm_generation`
+kind, and a batch that isn't llm_generation-only is not a signal to
+design for fewer points than the batch actually contains
+(`docs/decisions/043` — a real run left 374 of 375 non-`llm_generation`
+points with no decision at all under exactly this confusion). You do not
+design generation-capture, tracing, retrieval, tools, or any other lens —
+those are separate skills. You do not invent call sites; every signal you
+design must trace back to a real point ID in the input.
 
 ## Scope boundary (read first)
 
@@ -37,18 +53,20 @@ expressible pieces; do not attempt the other two here.
 
 ## Input
 
-`surface_map.json` points of kind `llm_generation` (id, file, line, symbol,
-framework), `gap_model.json` entries for those points (status, priority),
-and `context.yaml` if an interview has run — in particular each
-workflow's `criticality` and `review_workflow`, which change how tight a
-disablement/rollback resumption condition needs to be and who the named
-incident owner is, never whether these signals exist at all.
+`surface_map.json` points — of kind `llm_generation` only under the
+genai pack, or of any kind under the service pack's cross-cutting
+assignment (id, file, line, symbol, framework), `gap_model.json` entries
+for those points (status, priority), and `context.yaml` if an interview
+has run — in particular each workflow's `criticality` and
+`review_workflow`, which change how tight a disablement/rollback
+resumption condition needs to be and who the named incident owner is,
+never whether these signals exist at all.
 
 ## Task
 
-For each `llm_generation` point, design the four ops signal categories.
-None of this has an upstream `gen_ai.*` attribute, so every signal here is
-an `oah_extension` (`oah.ops.*` namespace):
+For each point in the batch, whatever kind it is, design the four ops
+signal categories. None of this has an upstream `gen_ai.*` attribute, so
+every signal here is an `oah_extension` (`oah.ops.*` namespace):
 
 - **Release identifiers stamped on every event**: `oah.ops.release_id` —
   must resolve, at minimum, prompt version, model config, and deployment

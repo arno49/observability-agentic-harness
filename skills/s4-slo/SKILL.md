@@ -134,6 +134,20 @@ auto-instrumentation already owns — this half exists so S7's event-schema
 merge and S5's ordinary signal-level gates have something to check, not to
 duplicate the SLO structure itself, which lives entirely in `slo_spec`.
 
+**Every point in the batch needs a `design_fragment` signal, including
+the ones you correctly decide not to give a real SLO** (`docs/decisions/043`).
+S5's `every_surface_point_has_decision` gate requires every input point
+to be covered by some signal — it has no exception for "this lens
+deliberately concentrates effort on `p0`/`critical` journeys first," and
+silently leaving a non-critical route uncovered is not the same thing as
+that gate seeing an honest decision. For every point that does NOT get a
+real `slo_spec`, add a pointer signal anyway (e.g.
+`oah.slo.no_objective_designed`) with `supports_decision` stating plainly
+why (e.g. "route belongs to no known-critical workflow; SLO effort is
+concentrated on p0/critical journeys per this lens's own scope, not
+because this route is unmonitorable") — an explicit, honest non-decision,
+not silence.
+
 Every `design_fragment` signal must satisfy S5's ordinary gates by
 construction: `surface_point_ids`, `maps_to`, `sensitivity_tier`,
 `supports_decision`, `acting_role`. `failure_mode` is always

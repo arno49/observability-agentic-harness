@@ -431,6 +431,18 @@
   intermediates and confirmed pre-existing, not investigated further --
   `ops` (1/375 points covered) and `slo` (~9/75) are the largest named gap
   left open.
+- `ops`'s and `slo`'s under-coverage above: two different root causes
+  found (`docs/decisions/043`). `ops`'s own SKILL.md still said "use for
+  llm_generation points" in four places -- true under genai, false under
+  the service pack's cross-cutting assignment; corrected to mirror
+  `tracing`'s own honest framing. `slo`'s own SKILL.md already
+  *deliberately* only designs real SLOs for `p0`/`critical` journeys --
+  real architecture, not a bug -- but S5's `every_surface_point_has_decision`
+  gate has no per-lens exception; fixed by requiring an honest placeholder
+  signal for every skipped point instead of silence. Neither fix is
+  live-verified -- the Anthropic account's API credit balance ran out
+  mid-session, stated plainly as a real limitation rather than silently
+  skipped; 762 local tests still pass.
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a
