@@ -1448,6 +1448,53 @@ detail for its own S4-S6 scope, `readiness` never had an equivalent.
 New `--save-intermediates PATH` writes exactly that already-computed
 data alongside the normal report, zero additional model calls.
 
+**Real Sonnet pilot run + a design gap named: `health_thresholds`**
+(2026-08-28, `docs/decisions/039`, **designed, not yet built**). The first
+real (non-local-model) `oah readiness` run against `mf-analyzer-web`'s
+375 real points produced `remediate_before_release`: the `ops` lens
+failed schema validation cleanly (`signals: [] should be non-empty`, a
+real rejection, not a reliability concern), and S7's event-schema merge
+failed on `oah.telemetry_cost.cardinality_risk` — one journey's
+`sensitivity_tier` (`confidential`, the real PII-handling `chat` journey)
+disagreed with another's (`internal`). Reading the actual per-journey
+fragments (`--save-intermediates`, `docs/decisions/038`) showed both
+assignments were individually correct — `build_event_schema`'s own
+one-tier-per-attribute-name invariant is what turns a legitimate
+per-journey split into a hard conflict, not a model reliability problem;
+an earlier draft of the published pilot report mischaracterized this as
+"the lens contradicted itself" and should be corrected. Investigating
+fixes surfaced a separate, standing gap: no field anywhere in
+`design_fragment.schema.json`'s signal object says what a *healthy*
+value looks like — the concept exists exactly once, confined to
+`slo_spec.alert_tiers`, unavailable to any other lens. `docs/decisions/039`
+designs `health_thresholds`: an optional per-signal array
+(`state: green/amber/red`, `condition`, `basis: confirmed/assumed`
+reusing `evidence_position`'s own vocabulary, `rationale`), deliberately
+**not** a copy of `alert_tiers`'s burn-rate math — most signals
+(categorical cardinality risk, binary compliance flags) aren't
+ratio-based indicators, so that shape doesn't fit them. A new S5 gate,
+`check_health_thresholds_well_formed`, checks structural validity only
+(no duplicate states, a declared threshold set must name a real `red`
+state, non-trivial `condition`/`rationale`) — same division of labor
+`slo_gates.py` already draws between "the math is internally consistent"
+and "the target was the right one," which stays a lens judgment call.
+Decomposed into phases, none landed: (A) schema field + gate, zero
+behavior change for any existing fragment; (B) targeted SKILL.md rollout
+to `slo`/`telemetry-cost`/`ops`/`dependency` only, not all lenses; (C) S9
+report roll-up, `basis: assumed` flagged with the same honesty treatment
+`evidence_position` gets; (D, open question) S7 merge policy when two
+lenses design the same attribute with conflicting thresholds. Real,
+named, deliberately deferred: a post-S11 recalibration path that could
+promote `basis` to `confirmed`, a gate blocking a lens from claiming
+`confirmed` before any run has happened, and Option B (namespaced
+attribute names) as a smaller independent fix for the original
+`sensitivity_tier` conflict. The separately-discussed journey-first S4
+batching proposal (group points by `workflow_hint` before calling lenses;
+derive `sensitivity_tier` deterministically from `context.yaml`) is
+structurally related — it would reduce how often this class of S7
+conflict arises at all — but is a distinct, larger, not-yet-agreed
+proposal, tracked separately.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and
