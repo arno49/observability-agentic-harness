@@ -1766,12 +1766,16 @@ exception, so any lens that intentionally skips points always fails it.
 Fixed by requiring an honest placeholder signal
 (`oah.slo.no_objective_designed`) for every skipped point, not silence —
 same "explicit non-decision" pattern `docs/decisions/041`'s own
-2-point probe already demonstrated. **Neither fix is live-verified**: the
-Anthropic account's API credit balance ran out mid-session, a hard
-external stop stated plainly rather than glossed over — 762 local tests
-still pass, which proves the prose changes broke nothing structural, not
-that a real model now covers every point. First real next step once
-credits are available.
+2-point probe already demonstrated. Landed without live verification
+first — the Anthropic account's API credit balance ran out mid-session,
+stated plainly rather than glossed over — then **verified for real the
+same day** once the balance was topped up: a 12-point mixed-kind batch
+for `ops` (12/12 covered, all 13 gates pass) and a 6-point
+mixed-criticality batch for `slo` (the one point resolving to a real
+critical workflow got a full `slo_spec`; every other point got an honest
+`oah.slo.no_objective_designed` placeholder naming why,
+`every_surface_point_has_decision` satisfied honestly). Not yet re-run at
+the original full 375/75-point scale.
 
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe

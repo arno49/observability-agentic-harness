@@ -439,10 +439,13 @@
   *deliberately* only designs real SLOs for `p0`/`critical` journeys --
   real architecture, not a bug -- but S5's `every_surface_point_has_decision`
   gate has no per-lens exception; fixed by requiring an honest placeholder
-  signal for every skipped point instead of silence. Neither fix is
-  live-verified -- the Anthropic account's API credit balance ran out
-  mid-session, stated plainly as a real limitation rather than silently
-  skipped; 762 local tests still pass.
+  signal for every skipped point instead of silence. Landed without live
+  verification first -- the Anthropic account's API credit balance ran
+  out mid-session -- then verified for real the same day once topped up:
+  a 12-point mixed-kind batch for `ops` (12/12 covered, all gates pass)
+  and a 6-point mixed-criticality batch for `slo` (real `slo_spec` for
+  the genuinely critical point, honest `oah.slo.no_objective_designed`
+  placeholders elsewhere, coverage gate satisfied honestly).
 
 ### Changed
 - ROADMAP.md: E12 ("second domain pack") rewritten from an unpicked stub into a

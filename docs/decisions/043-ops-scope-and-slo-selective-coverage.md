@@ -1,7 +1,9 @@
 # 043 — `ops`'s stale llm_generation framing and `slo`'s coverage-vs-gate mismatch
 
-Status: **landed, NOT live-verified** (2026-08-28) — see Verification.
-Same-day follow-up to `docs/decisions/042`.
+Status: **landed and live-verified** (2026-08-28) — see Verification.
+Same-day follow-up to `docs/decisions/042`. Landed first without live
+verification (API credit balance exhausted mid-session); verified for
+real once the balance was topped up, same day.
 
 ## Context
 
@@ -89,36 +91,47 @@ general case" reasoning this whole ADR family has used throughout.
 
 ## Verification
 
-**Not live-verified — a real, stated limitation, not a silent gap.**
-Both fixes are grounded in a confirmed mechanism (`ops`'s prompt directly
-contradicted the pack's own point-kind assignment; `slo`'s own SKILL.md
-already explains its selectivity, and the gate's source directly confirms
-zero exceptions) and follow patterns already proven twice this session
-(`docs/decisions/041`'s "explicit non-decision" signal;
-`docs/decisions/039`/`040`'s "correct the framing, verify with a real
-call" sequence) — but the actual verification step, a live Sonnet call
-against a mixed-kind batch for `ops` and a mixed-criticality batch for
-`slo`, could not run: the Anthropic account's API credit balance was
-exhausted mid-session (`litellm.BadRequestError: ... "Your credit balance
-is too low to access the Anthropic API"`), a hard external stop, not a
-cost-tradeoff choice. Local, non-API test suite (762 tests) still passes
-after both changes — proves the prose edits didn't break anything
-structural, proves nothing about whether a real model now covers every
-point.
+**Live-verified once the account's API credit balance was topped up,
+same day.** Two real Sonnet calls, each against a fresh mixed batch built
+from real `mf-analyzer-web` points not used in any prior probe this
+session:
 
-This is a real limitation to close as a first step whenever API access is
-restored, before treating either fix as confirmed the way `docs/decisions/041`'s
-and `042`'s fixes are.
+- **`ops`**: a 12-point batch mixing `http_client_call` (6) and
+  `declarative_route` (6) — the exact cross-kind mix that produced 1/375
+  coverage on the real full run. Result: all 12 points covered (grouped
+  into sensible multi-point signals, e.g. three `ai_prompts`-workflow
+  call sites sharing one `release_id`/`degradation_response` set), every
+  one of S5's 13 gates passes, including `every_surface_point_has_decision`.
+- **`slo`**: a 6-point batch of `declarative_route` points, deliberately
+  spanning both a genuinely critical journey and several
+  unresolved/non-critical `workflow_hint`s. Result: the one point
+  (`sp-0297`) that actually resolves to the critical `sql analysis`
+  workflow got a real `slo_spec` with full burn-rate math (four alert
+  tiers, correct multipliers); every other point got the new honest
+  placeholder (`oah.slo.no_objective_designed`), each with
+  `supports_decision` naming exactly why (e.g. "workflow_hint 'source-code'
+  does not match any workflow named in context.yaml" / "'portfolio'
+  workflow is classified 'high', not 'critical'") — the lens's own real
+  selectivity preserved, `every_surface_point_has_decision` now
+  satisfied honestly rather than by force-designing SLOs nobody asked
+  for. That gate passed; the pre-existing, already-documented
+  `latency_budget_declared_per_point` failure (`docs/decisions/042`,
+  confirmed present before any of today's changes) still failed here too
+  — expected, unrelated to this fix, not attempted in this pass.
+
+Both fixes now carry the same confidence level as `docs/decisions/041`'s
+and `042`'s — grounded in a real model call against real target data, not
+just a plausible mechanism.
 
 ## Consequences
 
-- If both fixes hold under a real call, `ops` and `slo` stop being the
-  largest named gap in this ADR family's own investigation, and
-  `remediate_before_release` on `mf-analyzer-web` would very plausibly
-  clear its two largest current blockers
-  (`every_surface_point_has_decision`, most of
-  `latency_budget_declared_per_point`) — not proven here, a real next
-  step once credits are available.
+- `ops` and `slo` are no longer the largest unverified gap in this ADR
+  family's own investigation — both isolated-batch calls confirm
+  `every_surface_point_has_decision` now passes for each. Whether this
+  holds at the real full 375-point/75-point scale (the same batch size
+  that originally failed) has not been re-run — a real next step, not
+  attempted in this pass to keep cost proportionate to what needed
+  confirming (the mechanism, not another full-scale run).
 - `pii_masked_above_tier` on `telemetry-cost` (one instance,
   `docs/decisions/042`) remains the one other named, unresolved item.
 - The underlying pattern this ADR closes out (a genai-authored SKILL.md's
