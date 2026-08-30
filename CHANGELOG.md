@@ -3,6 +3,20 @@
 ## [Unreleased]
 
 ### Added
+- `oah readiness --html out.html` (`docs/decisions/047`): a third,
+  first-class output for the readiness report, on par with JSON
+  (`-o`/stdout) and the `recommendation`/`rationale` console lines
+  already printed. `oah/design/readiness_html.py` renders a
+  self-contained, pack/target-neutral HTML page from
+  `readiness_report.json`'s own (mostly optional) schema, every
+  free-text field HTML-escaped, optionally enriched with the same
+  per-gate/per-persona detail `--save-intermediates` already computes
+  (no disk round-trip needed -- passed straight from `cmd_readiness`'s
+  own in-memory `gate_findings`/`design_fragments`/`panel_verdicts`).
+  Verified against real full-scale `mf-analyzer-web` data
+  (`docs/decisions/046`'s own run: 88 real gate findings across 6
+  lenses, 3 real S6 panel verdicts), not just hand-built fixtures. 771
+  tests passing.
 - New skill `skills/s4-pii-governance-route` gives the service pack's own
   `pii-governance` lens a real, dedicated design (`docs/decisions/041`) --
   it no longer reuses genai's `s4-pii-governance` skill (framed entirely

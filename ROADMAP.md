@@ -1843,6 +1843,23 @@ S5 gate and S7 conflict found across real `mf-analyzer-web` runs in this
 ADR chain is now fixed-and-confirmed-at-scale or fixed-and-mechanically-
 verified.
 
+**`oah readiness` gains a third, permanent output format: `--html`
+(`docs/decisions/047`, E4).** Every real inspection of a
+`readiness_report.json` across `039`-`046` was done by hand -- raw JSON,
+cross-referencing `--save-intermediates`, one-off HTML built entirely
+outside the framework to make a finding legible to a human. `oah/design/
+readiness_html.py`'s `render_readiness_html()` closes that gap inside the
+tool itself: a pure, pack/target-neutral rendering of
+`readiness_report.json`'s own (mostly-optional) schema, with every
+free-text field HTML-escaped, optionally enriched with the same
+`--save-intermediates` per-gate/per-persona detail when the caller has it
+in memory (no round-trip through disk). `readiness` now has three output
+modes on equal footing -- JSON (`-o`/stdout), the unconditional
+`recommendation`/`rationale` console lines, and `--html PATH` -- none
+requiring another. Verified against real, full-scale `mf-analyzer-web`
+data from `046`'s own run (88 real gate findings across 6 lenses, 3 real
+S6 panel verdicts), not just hand-built test fixtures. 771 tests passing.
+
 **First candidate consumer (informs, does not gate, the design above).** A
 consumer-travel property running a React/TypeScript SPA in front of Adobe
 Experience Manager as a Cloud Service, already carrying Dynatrace, New Relic and

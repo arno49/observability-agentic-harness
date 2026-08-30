@@ -900,6 +900,15 @@ def cmd_readiness(args):
         }, indent=2) + "\n")
         print(f"Wrote intermediates to {save_intermediates_path}", file=sys.stderr)
 
+    html_path = getattr(args, "html", None)
+    if html_path:
+        from oah.design.readiness_html import render_readiness_html
+        Path(html_path).write_text(
+            render_readiness_html(report, gate_findings=gate_findings, design_fragments=fragments,
+                                   panel_verdicts=panel_verdicts)
+        )
+        print(f"Wrote {html_path}", file=sys.stderr)
+
     print(f"\nrecommendation: {report['recommendation']['decision']}", file=sys.stderr)
     print(f"rationale: {report['recommendation']['rationale']}", file=sys.stderr)
     return 0
@@ -1446,6 +1455,13 @@ def build_parser():
                                    "dtos) to this path -- readiness_report.json's own recommendation only ever "
                                    "aggregates gate names and counts; this is the detail that's otherwise "
                                    "computed and silently discarded once S9 assembles its summary.")
+    p_readiness.add_argument("--html", default=None,
+                              help="Also render this run's readiness_report.json as a self-contained HTML "
+                                   "file at this path (docs/decisions/047) -- a third, human-readable output "
+                                   "alongside the JSON (-o/stdout) and the recommendation/rationale lines "
+                                   "already printed to stderr. Enriched with a per-gate pass/fail breakdown "
+                                   "using this same run's own gate_findings/panel_verdicts, the same detail "
+                                   "--save-intermediates writes, without requiring that flag too.")
     p_readiness.add_argument("--model", default=None, help=_MODEL_HELP)
     p_readiness.add_argument("--language", choices=["python", "typescript", "java"], default="python", help=_LANGUAGE_HELP)
     p_readiness.add_argument("--pack", choices=["genai", "service"], default="genai", help=_PACK_HELP)

@@ -31,7 +31,11 @@ OAH ships two co-equal deliverables:
    expansion* — with the epistemic position stated (confirmed vs. assumed vs.
    unknown), scope exclusions, named owners, and the evidence that would change
    the decision. The gate never advances on confidence, urgency, or a successful
-   demo alone.
+   demo alone. `oah readiness --html out.html` (`docs/decisions/047`) renders the
+   same validated report as a self-contained HTML page — a third, human-readable
+   output alongside the JSON (`-o`/stdout) and the `recommendation`/`rationale`
+   lines already printed to the console, enriched with the same per-gate
+   pass/fail detail `--save-intermediates` writes when this run has it in memory.
 
 The two reinforce each other: the readiness decision is only as good as the
 signals behind it, and the installed signals are designed backwards from the
@@ -227,7 +231,7 @@ oah gaps <target> [--context context.yaml] [-o out.json]        # S3: gap model
 oah design <target> [--context context.yaml] [-o out.json] [--model MODEL]      # S4 lenses + S5 gates + S6 panel
 oah event-schema <target> [--context context.yaml] [-o out.json] [--model MODEL]  # S7: event schema
 oah dtos <target> [--context context.yaml] [-o out.json] [--model MODEL]          # S8: implementation DTOs
-oah readiness <target> [--context context.yaml] [-o out.json] [--model MODEL] [--save-intermediates path.json]  # S9: readiness report
+oah readiness <target> [--context context.yaml] [-o out.json] [--model MODEL] [--save-intermediates path.json] [--html out.html]  # S9: readiness report
 oah instrument <target> --dtos implementation_dto.json [-o out.json] [--run-id ID]        # S10 report-only
 oah instrument <target> --dtos implementation_dto.json --mode fix --readiness readiness_report.json  # S10 fix
 oah validate <target> --dtos implementation_dto.json --instrument-report instrument_report.json [-o out.json] [--dynamic] [--live --start-command CMD --port N --requests requests.json [--event-schema event_schema.json] [--setup-script SCRIPT]]  # S11, R4 always + real R2 with --dynamic + R1 mechanism with --live

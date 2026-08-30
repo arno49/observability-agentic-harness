@@ -144,3 +144,64 @@ def test_no_save_intermediates_flag_writes_nothing_extra(tmp_path):
     args = argparse.Namespace(target=str(target), context=None, output=None)
     assert cmd_readiness(args) == 0
     assert not (tmp_path / "intermediates.json").exists()
+
+
+# --- --html (docs/decisions/047) --------------------------------------------
+# A third, human-readable output alongside JSON (-o/stdout) and the
+# recommendation/rationale lines already printed to stderr -- on par with
+# --save-intermediates, using the same in-memory gate_findings/panel_verdicts
+# this run already computed, without requiring --save-intermediates too.
+
+def test_html_flag_writes_self_contained_report(tmp_path):
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text(
+        "import anthropic\nclient = anthropic.Anthropic()\n"
+        "response = client.messages.create(model='x')\n"
+    )
+    _init_git_repo(target)
+
+    def fake_lens(points, repo_git_sha, context=None, model=None, _completion_fn=None):
+        point_id = points[0]["id"]
+        return {
+            "schema_version": "0.1.0", "lens": "generation-capture", "repo_git_sha": repo_git_sha,
+            "failure_mode": "fail_open",
+            "signals": [{
+                "name": "gen_ai.usage.input_tokens", "surface_point_ids": [point_id],
+                "maps_to": {"kind": "otel_genai", "attribute": "gen_ai.usage.input_tokens"},
+                "sensitivity_tier": "internal", "pii_masked": False,
+                "supports_decision": "cost attribution", "acting_role": "cost owner",
+                "latency_overhead_budget_ms": 5,
+            }],
+        }
+
+    def fake_panel(design_fragments, repo_git_sha, context=None, model=None, _completion_fn=None):
+        return {"schema_version": "0.1.0", "persona": "cost_skeptic", "repo_git_sha": repo_git_sha,
+                "overall": "pass", "findings": []}
+
+    html_path = tmp_path / "readiness_report.html"
+    args = argparse.Namespace(target=str(target), context=None, output=None, html=str(html_path))
+    with patch("oah.design.lens.design_generation_capture", side_effect=fake_lens), \
+         patch("oah.design.panel.run_cost_skeptic", side_effect=fake_panel):
+        rc = cmd_readiness(args)
+
+    assert rc == 0
+    out = html_path.read_text()
+    assert "<!DOCTYPE html>" in out
+    assert "remediate_before_release" in out  # a designed-but-uninstrumented gap still blocks
+    assert "gen_ai.usage.input_tokens" in out  # observability_plan.key_signals, from the base report
+    assert "cost_skeptic" in out  # real panel_verdicts detail
+
+
+def test_no_html_flag_writes_nothing_extra(tmp_path):
+    """Byte-identical default: a Namespace without `html` at all (the
+    shape every caller had before this flag existed) must not raise, and
+    must not write anything beyond the normal report."""
+    target = tmp_path / "target_repo"
+    target.mkdir()
+    (target / "app.py").write_text("x = 1\n")
+    _init_git_repo(target)
+
+    args = argparse.Namespace(target=str(target), context=None, output=None)
+    assert cmd_readiness(args) == 0
+    assert not (tmp_path / "readiness_report.html").exists()
